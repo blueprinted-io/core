@@ -1,0 +1,366 @@
+[
+  {
+    "domain": "aws",
+    "title": "Configure S3 bucket versioning",
+    "outcome": "Bucket versioning is enabled and object history is retained.",
+    "procedure_name": "s3-enable-versioning",
+    "facts": ["Versioning is per-bucket", "Existing objects are not duplicated when enabling versioning"],
+    "concepts": ["Versioning enables rollback of overwritten/deleted objects"],
+    "dependencies": ["S3 bucket exists", "IAM permissions for PutBucketVersioning"],
+    "steps": [
+      {"text": "Open the target S3 bucket properties", "completion": "Bucket properties page is visible"},
+      {"text": "Set versioning state to Enabled", "completion": "Versioning state shows Enabled"},
+      {"text": "Verify object upload creates version IDs", "completion": "Uploaded object shows non-null version ID"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Apply S3 lifecycle rule for log archive",
+    "outcome": "Objects transition to archive storage by lifecycle policy.",
+    "procedure_name": "s3-lifecycle-archive",
+    "facts": ["Lifecycle rules evaluate prefixes/tags", "Transitions are asynchronous"],
+    "concepts": ["Lifecycle reduces storage cost over time"],
+    "dependencies": ["S3 bucket contains log objects", "Permission to edit lifecycle configuration"],
+    "steps": [
+      {"text": "Create lifecycle rule scoped to log prefix", "completion": "Lifecycle rule appears in bucket configuration"},
+      {"text": "Set transition to archive class at target age", "completion": "Transition action is configured with correct day threshold"},
+      {"text": "Validate rule status is enabled", "completion": "Rule state shows Enabled"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable default encryption on S3 bucket",
+    "outcome": "New objects are encrypted by default in the bucket.",
+    "procedure_name": "s3-default-encryption",
+    "facts": ["Default encryption applies to future uploads", "SSE-S3 and SSE-KMS are supported"],
+    "concepts": ["Default encryption reduces accidental plaintext storage"],
+    "dependencies": ["Bucket exists", "KMS key permissions if SSE-KMS used"],
+    "steps": [
+      {"text": "Open bucket default encryption settings", "completion": "Encryption settings panel is visible"},
+      {"text": "Select encryption mode and key", "completion": "Default encryption mode and key are saved"},
+      {"text": "Upload test object and confirm encryption metadata", "completion": "Object metadata shows server-side encryption"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create IAM role for EC2 workload",
+    "outcome": "EC2-assumable IAM role exists with required permissions.",
+    "procedure_name": "iam-role-ec2",
+    "facts": ["Trust policy controls principal assumption", "Permission policy defines allowed actions"],
+    "concepts": ["Roles avoid long-lived credentials on instances"],
+    "dependencies": ["IAM admin permissions", "Required policy scope defined"],
+    "steps": [
+      {"text": "Create role with EC2 trust relationship", "completion": "Role trust policy includes ec2.amazonaws.com principal"},
+      {"text": "Attach least-privilege permission policy", "completion": "Policy attachment appears on role"},
+      {"text": "Confirm role can be attached to an instance profile", "completion": "Role is selectable in instance profile workflow"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Rotate IAM access key for service account",
+    "outcome": "Old key is retired and new key is active without service outage.",
+    "procedure_name": "iam-access-key-rotation",
+    "facts": ["IAM users may have up to two active keys", "Rotation requires credential rollout"],
+    "concepts": ["Dual-key window enables safe cutover"],
+    "dependencies": ["Service account inventory exists", "Rollback path documented"],
+    "steps": [
+      {"text": "Create second access key for target IAM user", "completion": "New key ID is visible and recorded securely"},
+      {"text": "Update dependent service secrets with new key", "completion": "Dependent services authenticate successfully with new key"},
+      {"text": "Disable and delete old access key", "completion": "Old key no longer appears as active"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable CloudTrail multi-region logging",
+    "outcome": "API activity is recorded across all regions.",
+    "procedure_name": "cloudtrail-multi-region",
+    "facts": ["Trails can be organization-wide", "Logs are delivered to S3"],
+    "concepts": ["Global logging improves forensic coverage"],
+    "dependencies": ["S3 destination bucket exists", "CloudTrail permissions available"],
+    "steps": [
+      {"text": "Create or update trail to multi-region mode", "completion": "Trail configuration shows multi-region enabled"},
+      {"text": "Set validated S3 destination", "completion": "Delivery status shows success"},
+      {"text": "Verify recent management events are logged", "completion": "CloudTrail event history shows new entries"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create VPC flow logs to CloudWatch",
+    "outcome": "Flow logs are emitted for selected VPC resources.",
+    "procedure_name": "vpc-flow-logs",
+    "facts": ["Flow logs can target VPC, subnet, or ENI", "Log format affects downstream parsing"],
+    "concepts": ["Flow logs support traffic analysis and incident response"],
+    "dependencies": ["VPC exists", "IAM role for flow logs exists"],
+    "steps": [
+      {"text": "Enable flow logs on target VPC", "completion": "Flow log resource is created"},
+      {"text": "Set CloudWatch log group destination", "completion": "Destination points to expected log group"},
+      {"text": "Confirm log stream receives records", "completion": "Recent flow log entries are visible in CloudWatch"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable GuardDuty in account",
+    "outcome": "GuardDuty detector is active for threat detection.",
+    "procedure_name": "guardduty-enable",
+    "facts": ["GuardDuty analyzes CloudTrail, VPC DNS, and flow telemetry"],
+    "concepts": ["Managed detection complements preventive controls"],
+    "dependencies": ["Security admin permissions"],
+    "steps": [
+      {"text": "Create GuardDuty detector", "completion": "Detector status shows enabled"},
+      {"text": "Enable desired data sources", "completion": "Configured data sources show enabled"},
+      {"text": "Validate findings can be queried", "completion": "Findings page loads without permission errors"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Configure Security Hub standards",
+    "outcome": "Selected compliance standards are enabled and evaluated.",
+    "procedure_name": "securityhub-standards",
+    "facts": ["Standards controls may produce initial large finding volume"],
+    "concepts": ["Standards provide baseline control visibility"],
+    "dependencies": ["Security Hub enabled", "Security ownership assigned"],
+    "steps": [
+      {"text": "Enable required Security Hub standards", "completion": "Standards list shows enabled state"},
+      {"text": "Confirm control checks are running", "completion": "Controls display evaluation status"},
+      {"text": "Review finding severities for baseline", "completion": "Findings are grouped by severity"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create CloudWatch alarm for EC2 CPU",
+    "outcome": "Alarm triggers when instance CPU breaches threshold.",
+    "procedure_name": "cw-alarm-ec2-cpu",
+    "facts": ["Alarm evaluation period affects sensitivity"],
+    "concepts": ["Threshold alarms support early saturation detection"],
+    "dependencies": ["EC2 instance exists", "CloudWatch metrics available"],
+    "steps": [
+      {"text": "Create alarm on CPUUtilization metric", "completion": "Alarm resource exists"},
+      {"text": "Set threshold and evaluation periods", "completion": "Alarm threshold configuration matches target"},
+      {"text": "Validate alarm transitions with test load", "completion": "Alarm enters ALARM state under sustained load"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable detailed monitoring for EC2 instance",
+    "outcome": "Instance emits 1-minute CloudWatch metrics.",
+    "procedure_name": "ec2-detailed-monitoring",
+    "facts": ["Detailed monitoring increases metric resolution"],
+    "concepts": ["Higher resolution improves alert responsiveness"],
+    "dependencies": ["Running EC2 instance", "Permission to modify instance monitoring"],
+    "steps": [
+      {"text": "Enable detailed monitoring on target instance", "completion": "Instance monitoring state shows enabled"},
+      {"text": "Wait for 1-minute datapoints", "completion": "Metric period options include 1 minute"},
+      {"text": "Confirm dashboard panel refreshes at higher granularity", "completion": "Dashboard displays 1-minute metric points"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Attach EBS volume to EC2 instance",
+    "outcome": "Volume is attached and visible to the OS.",
+    "procedure_name": "ebs-attach-volume",
+    "facts": ["Volume and instance must be in same AZ", "OS-level mount is separate from attachment"],
+    "concepts": ["Attachment exposes block device to guest OS"],
+    "dependencies": ["EBS volume exists", "EC2 instance running in same AZ"],
+    "steps": [
+      {"text": "Attach volume to target instance with device name", "completion": "Attachment state is attached"},
+      {"text": "Verify device presence in operating system", "completion": "New block device appears in OS inventory"},
+      {"text": "Record mapping for mount configuration", "completion": "Device mapping is documented"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create encrypted EBS snapshot",
+    "outcome": "Encrypted snapshot exists for target volume.",
+    "procedure_name": "ebs-snapshot-encrypted",
+    "facts": ["Snapshots are point-in-time and incremental"],
+    "concepts": ["Snapshots support backup and recovery operations"],
+    "dependencies": ["Source volume exists", "KMS access available"],
+    "steps": [
+      {"text": "Initiate snapshot creation for source volume", "completion": "Snapshot state begins pending/completed lifecycle"},
+      {"text": "Ensure encryption is enabled with expected key", "completion": "Snapshot metadata shows encrypted=true and correct KMS key"},
+      {"text": "Tag snapshot for retention policy", "completion": "Snapshot has required retention tags"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create RDS automated backup retention policy",
+    "outcome": "RDS instance retains automated backups per policy.",
+    "procedure_name": "rds-backup-retention",
+    "facts": ["Retention period controls recovery window"],
+    "concepts": ["Backup retention balances recoverability and cost"],
+    "dependencies": ["RDS instance exists", "RDS modify permissions"],
+    "steps": [
+      {"text": "Set backup retention period on RDS instance", "completion": "Instance config shows expected retention days"},
+      {"text": "Confirm preferred backup window", "completion": "Backup window is configured"},
+      {"text": "Verify automated backup artifact appears", "completion": "Recent automated backup is visible"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable RDS Performance Insights",
+    "outcome": "Performance Insights is enabled for database workload analysis.",
+    "procedure_name": "rds-performance-insights",
+    "facts": ["Performance Insights stores query and load diagnostics"],
+    "concepts": ["Database bottlenecks require workload-level visibility"],
+    "dependencies": ["RDS instance supports Performance Insights"],
+    "steps": [
+      {"text": "Enable Performance Insights on RDS instance", "completion": "Performance Insights status is enabled"},
+      {"text": "Set retention period for insights data", "completion": "Retention period reflects target setting"},
+      {"text": "Open Performance Insights dashboard", "completion": "Dashboard renders database load metrics"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Configure ALB access logs to S3",
+    "outcome": "Application Load Balancer writes access logs to S3.",
+    "procedure_name": "alb-access-logs",
+    "facts": ["Bucket policy must allow ELB log delivery"],
+    "concepts": ["Access logs enable request-level observability"],
+    "dependencies": ["ALB exists", "S3 bucket and policy configured"],
+    "steps": [
+      {"text": "Enable ALB access logging", "completion": "ALB attributes show access logs enabled"},
+      {"text": "Set destination bucket and prefix", "completion": "Configured destination matches target bucket/prefix"},
+      {"text": "Verify log object delivery", "completion": "New ALB log file appears in S3 prefix"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create Route53 weighted record",
+    "outcome": "Weighted DNS record routes traffic by configured weights.",
+    "procedure_name": "route53-weighted-record",
+    "facts": ["Weighted routing requires multiple records with same name/type"],
+    "concepts": ["Weighted records support controlled traffic shifting"],
+    "dependencies": ["Hosted zone exists", "Target endpoints available"],
+    "steps": [
+      {"text": "Create weighted records for each endpoint", "completion": "Records with matching name/type and weights exist"},
+      {"text": "Set health checks if required", "completion": "Health check association is visible"},
+      {"text": "Validate DNS answers reflect weight distribution", "completion": "Repeated queries show expected answer mix"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Configure AWS Backup plan for EBS resources",
+    "outcome": "Backup plan schedules and retains EBS backups automatically.",
+    "procedure_name": "aws-backup-plan-ebs",
+    "facts": ["Backup plans use resource selection by tags or explicit assignment"],
+    "concepts": ["Centralized backup policy reduces per-service drift"],
+    "dependencies": ["AWS Backup service enabled", "Target resources tagged"],
+    "steps": [
+      {"text": "Create backup plan with schedule and retention", "completion": "Backup plan appears with expected rules"},
+      {"text": "Assign resources using tags", "completion": "Resource assignment shows target EBS volumes"},
+      {"text": "Confirm backup job execution", "completion": "Completed backup job appears in AWS Backup"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable ECR image scanning on push",
+    "outcome": "New container images are scanned automatically after push.",
+    "procedure_name": "ecr-scan-on-push",
+    "facts": ["Scan results depend on vulnerability database freshness"],
+    "concepts": ["Early image scanning reduces deployment risk"],
+    "dependencies": ["ECR repository exists"],
+    "steps": [
+      {"text": "Enable scan-on-push in repository settings", "completion": "Repository scanning setting is enabled"},
+      {"text": "Push test image tag", "completion": "Image appears in repository"},
+      {"text": "Verify scan findings are generated", "completion": "Scan results are visible for the pushed image"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Create EventBridge rule for failed backup jobs",
+    "outcome": "Failed backup jobs emit actionable event notifications.",
+    "procedure_name": "eventbridge-backup-failure-rule",
+    "facts": ["Event patterns filter on source/detail-type/detail"],
+    "concepts": ["Event-driven alerts reduce detection latency"],
+    "dependencies": ["EventBridge permissions", "Notification target exists"],
+    "steps": [
+      {"text": "Create EventBridge rule matching backup failure events", "completion": "Rule is enabled with expected event pattern"},
+      {"text": "Attach SNS or queue target", "completion": "Target binding appears on rule"},
+      {"text": "Validate with test event or real failure", "completion": "Target receives matching event payload"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable Config recorder and delivery channel",
+    "outcome": "AWS Config continuously records resource configuration changes.",
+    "procedure_name": "aws-config-recorder",
+    "facts": ["Config requires recorder plus delivery channel"],
+    "concepts": ["Config supports compliance and change traceability"],
+    "dependencies": ["S3 bucket exists for Config delivery", "IAM role for Config"],
+    "steps": [
+      {"text": "Create or verify Config delivery channel", "completion": "Delivery channel targets expected S3 bucket"},
+      {"text": "Enable Config recorder", "completion": "Recorder status is recording"},
+      {"text": "Confirm configuration items are arriving", "completion": "Recent configuration items are visible"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Configure CloudFront origin access control",
+    "outcome": "CloudFront accesses S3 origin privately using origin access control.",
+    "procedure_name": "cloudfront-oac",
+    "facts": ["Public bucket access is not required with OAC"],
+    "concepts": ["Private origin access reduces data exposure"],
+    "dependencies": ["CloudFront distribution exists", "S3 origin bucket exists"],
+    "steps": [
+      {"text": "Create origin access control", "completion": "OAC resource exists"},
+      {"text": "Attach OAC to S3 origin in distribution", "completion": "Origin config references OAC"},
+      {"text": "Update bucket policy for CloudFront principal", "completion": "Bucket policy allows CloudFront signed origin requests"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable EKS control plane logging",
+    "outcome": "Selected EKS control plane logs are sent to CloudWatch.",
+    "procedure_name": "eks-control-plane-logs",
+    "facts": ["Logging types include API, audit, authenticator, controller, scheduler"],
+    "concepts": ["Control plane logs are essential for cluster forensics"],
+    "dependencies": ["EKS cluster exists", "CloudWatch permissions available"],
+    "steps": [
+      {"text": "Enable required control plane log types", "completion": "Cluster logging configuration shows selected types enabled"},
+      {"text": "Verify CloudWatch log groups are created", "completion": "Expected EKS log groups exist"},
+      {"text": "Confirm recent log ingestion", "completion": "Log streams show current timestamped entries"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Configure SQS dead-letter queue redrive policy",
+    "outcome": "Failed messages are routed to dead-letter queue after retry threshold.",
+    "procedure_name": "sqs-dlq-redrive",
+    "facts": ["Redrive policy uses maxReceiveCount"],
+    "concepts": ["DLQs isolate poison messages for controlled handling"],
+    "dependencies": ["Primary and DLQ queues exist"],
+    "steps": [
+      {"text": "Associate dead-letter queue with source queue", "completion": "Redrive policy is present on source queue"},
+      {"text": "Set maxReceiveCount threshold", "completion": "Threshold matches retry policy"},
+      {"text": "Validate failed message appears in DLQ", "completion": "Test poison message is visible in DLQ"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Enable SNS delivery status logging",
+    "outcome": "SNS delivery outcomes are logged for endpoint troubleshooting.",
+    "procedure_name": "sns-delivery-logging",
+    "facts": ["Delivery status varies by protocol", "CloudWatch role is required"],
+    "concepts": ["Delivery logs reduce blind spots in notification pipelines"],
+    "dependencies": ["SNS topic exists", "CloudWatch logging role exists"],
+    "steps": [
+      {"text": "Enable delivery status logging on SNS topic", "completion": "Delivery status attributes are configured"},
+      {"text": "Publish test notification", "completion": "Publish request succeeds"},
+      {"text": "Verify delivery log entries in CloudWatch", "completion": "Delivery success/failure entries appear in log group"}
+    ]
+  },
+  {
+    "domain": "aws",
+    "title": "Apply SCP deny for root account usage",
+    "outcome": "Organization policy prevents prohibited root account actions.",
+    "procedure_name": "org-scp-root-deny",
+    "facts": ["SCPs define maximum allowed permissions", "SCPs do not grant permissions"],
+    "concepts": ["Guardrail policies reduce blast radius of privileged misuse"],
+    "dependencies": ["AWS Organizations in use", "Target OU/account identified"],
+    "steps": [
+      {"text": "Create SCP policy document for root action deny", "completion": "SCP policy is created with required statements"},
+      {"text": "Attach SCP to target OU or account", "completion": "Policy attachment is visible on target"},
+      {"text": "Validate denied action is blocked", "completion": "Simulated or real denied action returns explicit authorization failure"}
+    ]
+  }
+]

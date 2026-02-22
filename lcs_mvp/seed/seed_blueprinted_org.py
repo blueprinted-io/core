@@ -81,6 +81,11 @@ CANONICAL_TASK_LIBRARIES = {
     "postgres": ROOT / "seed" / "canonical_tasks_postgres.json",
     "arch": ROOT / "seed" / "canonical_tasks_arch.json",
     "debian": ROOT / "seed" / "canonical_tasks_debian.json",
+    "ansible": ROOT / "seed" / "canonical_tasks_ansible.json",
+    "azure": ROOT / "seed" / "canonical_tasks_azure.json",
+    "gcp": ROOT / "seed" / "canonical_tasks_gcp.json",
+    "terraform": ROOT / "seed" / "canonical_tasks_terraform.json",
+    "vmware": ROOT / "seed" / "canonical_tasks_vmware.json",
 }
 
 CANONICAL_WORKFLOW_LIBRARIES = {
