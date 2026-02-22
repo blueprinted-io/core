@@ -228,6 +228,39 @@ def choose_domain(rng: random.Random, profile: str = "balanced") -> str:
     return rng.choices(DOMAINS, weights=domain_weights(profile), k=1)[0]
 
 
+def pick_status_biased(domain: str, rng: random.Random, entity_type: str) -> str:
+    """
+    Return status with domain-specific bias to create RED/AMBER/GREEN distribution.
+    
+    Target distribution:
+    - RED domains (low health): kubernetes, aws (~35% confirmed)
+    - AMBER domains (medium health): windows, postgres (~60% confirmed)
+    - GREEN domains (healthy): debian, arch, ansible, azure, gcp, terraform, vmware (~85% confirmed)
+    """
+    # Domain categories
+    RED_DOMAINS = {"kubernetes", "aws"}
+    AMBER_DOMAINS = {"windows", "postgres"}
+    
+    # Status weights by category (draft, submitted, returned, confirmed)
+    if domain in RED_DOMAINS:
+        # Low health: mostly submitted/returned, few confirmed
+        weights = {"draft": 0.10, "submitted": 0.35, "returned": 0.20, "confirmed": 0.35}
+    elif domain in AMBER_DOMAINS:
+        # Medium health: balanced mix
+        weights = {"draft": 0.15, "submitted": 0.15, "returned": 0.10, "confirmed": 0.60}
+    else:
+        # GREEN: mostly confirmed, healthy
+        weights = {"draft": 0.10, "submitted": 0.05, "returned": 0.00, "confirmed": 0.85}
+    
+    r = rng.random()
+    cumulative = 0.0
+    for status, weight in weights.items():
+        cumulative += weight
+        if r <= cumulative:
+            return status
+    return "confirmed"
+
+
 def seed_tasks(conn: sqlite3.Connection, rng: random.Random, n: int, pressure_profile: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     now = utc_now_iso()
@@ -427,7 +460,8 @@ def seed_assessments(conn: sqlite3.Connection, rng: random.Random, n: int, press
     for i in range(1, n + 1):
         rid = f"ASM-{i:06d}"
         domain = choose_domain(rng, pressure_profile)
-        status = pick_status(rng, STATUS_PROFILES["assessment"])
+        # Use domain-biased status for visual RED/AMBER/GREEN distribution
+        status = pick_status_biased(domain, rng, "assessment")
         stem = f"Which control best validates {domain} procedure {i}?"
 
         conn.execute(
