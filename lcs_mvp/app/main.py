@@ -1731,6 +1731,9 @@ def home(request: Request):
                     "submitted_assessments": 0,
                     "returned_total": 0,
                     "blocked_workflows": 0,
+                    "confirmed_tasks": 0,
+                    "confirmed_workflows": 0,
+                    "confirmed_assessments": 0,
                 }
                 for d in doms
             }
@@ -1770,6 +1773,9 @@ def home(request: Request):
                             "submitted_assessments": 0,
                             "returned_total": 0,
                             "blocked_workflows": 0,
+                            "confirmed_tasks": 0,
+                            "confirmed_workflows": 0,
+                            "confirmed_assessments": 0,
                         }
                     if wstatus == "submitted":
                         domain_pressure[d]["submitted_workflows"] += 1
@@ -1777,6 +1783,8 @@ def home(request: Request):
                             domain_pressure[d]["blocked_workflows"] += 1
                     elif wstatus == "returned":
                         domain_pressure[d]["returned_total"] += 1
+                    elif wstatus == "confirmed":
+                        domain_pressure[d]["confirmed_workflows"] += 1
 
             task_rows = conn.execute(
                 "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id"
@@ -1798,11 +1806,16 @@ def home(request: Request):
                             "submitted_assessments": 0,
                             "returned_total": 0,
                             "blocked_workflows": 0,
+                            "confirmed_tasks": 0,
+                            "confirmed_workflows": 0,
+                            "confirmed_assessments": 0,
                         }
                     if str(t["status"]) == "submitted":
                         domain_pressure[d]["submitted_tasks"] += 1
                     elif str(t["status"]) == "returned":
                         domain_pressure[d]["returned_total"] += 1
+                    elif str(t["status"]) == "confirmed":
+                        domain_pressure[d]["confirmed_tasks"] += 1
 
             assessment_rows = conn.execute(
                 "SELECT record_id, MAX(version) AS latest_version FROM assessment_items GROUP BY record_id"
@@ -1824,40 +1837,53 @@ def home(request: Request):
                             "submitted_assessments": 0,
                             "returned_total": 0,
                             "blocked_workflows": 0,
+                            "confirmed_tasks": 0,
+                            "confirmed_workflows": 0,
+                            "confirmed_assessments": 0,
                         }
                     if str(a["status"]) == "submitted":
                         domain_pressure[d]["submitted_assessments"] += 1
                     elif str(a["status"]) == "returned":
                         domain_pressure[d]["returned_total"] += 1
+                    elif str(a["status"]) == "confirmed":
+                        domain_pressure[d]["confirmed_assessments"] += 1
 
             domain_pressure_rows: list[dict[str, Any]] = []
             for d, m in domain_pressure.items():
-                score = (
-                    m["submitted_tasks"] * 1.0
-                    + m["submitted_workflows"] * 2.0
-                    + m["submitted_assessments"] * 1.5
-                    + m["returned_total"] * 1.5
-                    + m["blocked_workflows"] * 3.0
+                # Domain health = % of items confirmed (higher is better)
+                total_items = (
+                    m["submitted_tasks"] + m["submitted_workflows"] + m["submitted_assessments"] +
+                    m["returned_total"] + m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
                 )
-                # Thresholds adjusted for realistic data volumes (medium/large datasets)
-                # With ~1000 items, scores typically range 40-100
-                if score >= 70:
-                    level = "red"
-                elif score >= 40:
+                confirmed_items = m["confirmed_tasks"] + m["confirmed_workflows"] + m["confirmed_assessments"]
+                
+                if total_items > 0:
+                    health_pct = round((confirmed_items / total_items) * 100, 1)
+                else:
+                    health_pct = 100.0
+                
+                # Status thresholds (higher health = better)
+                # Calibrated for realistic seed distributions (~50-60% confirmed)
+                if health_pct >= 70:
+                    level = "green"
+                elif health_pct >= 50:
                     level = "amber"
                 else:
-                    level = "green"
+                    level = "red"
+
+                # Score for sorting (lower health = higher "pressure" priority)
+                pressure_score = 100 - health_pct
 
                 domain_pressure_rows.append(
                     {
                         "domain": d,
-                        "score": round(score, 1),
+                        "health_pct": health_pct,
                         "level": level,
                         **m,
                         "href": f"/tasks?status=submitted&domain={d}",
                     }
                 )
-            domain_pressure_rows.sort(key=lambda x: (-float(x["score"]), x["domain"]))
+            domain_pressure_rows.sort(key=lambda x: (x["health_pct"], x["domain"]))
 
             tasks_status = {
                 "draft": _count_tasks_by_status("draft"),

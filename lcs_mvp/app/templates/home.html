@@ -85,13 +85,13 @@
       {% if admin_panels.domain_pressure %}
         <div class="domain-pressure-table" role="table" aria-label="Domain pressure">
           <div class="domain-pressure-head" role="row">
-            <div>Domain</div><div>Status</div><div>Score</div><div>Signals</div><div></div>
+            <div>Domain</div><div>Status</div><div>Health %</div><div>Signals</div><div></div>
           </div>
           {% for d in admin_panels.domain_pressure %}
             <div class="domain-pressure-row" role="row">
               <div><b>{{ d.domain }}</b></div>
               <div><span class="pressure-chip pressure-{{ d.level }}">{{ d.level }}</span></div>
-              <div><span class="pressure-score pressure-{{ d.level }}">{{ d.score }}</span></div>
+              <div><span class="pressure-score pressure-{{ d.level }}">{{ d.health_pct }}%</span></div>
               <div class="muted">T{{ d.submitted_tasks }} · W{{ d.submitted_workflows }} · A{{ d.submitted_assessments }} · R{{ d.returned_total }} · B{{ d.blocked_workflows }}</div>
               <div><a href="{{ d.href }}">Open</a></div>
             </div>
