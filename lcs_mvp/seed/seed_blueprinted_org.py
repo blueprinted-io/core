@@ -74,6 +74,18 @@ SCALE_PRESETS = {
     "large": (1600, 480, 1000),
 }
 
+CANONICAL_TASK_LIBRARIES = {
+    "aws": ROOT / "seed" / "canonical_tasks_aws.json",
+    "kubernetes": ROOT / "seed" / "canonical_tasks_kubernetes.json",
+    "windows": ROOT / "seed" / "canonical_tasks_windows.json",
+    "postgres": ROOT / "seed" / "canonical_tasks_postgres.json",
+    "arch": ROOT / "seed" / "canonical_tasks_arch.json",
+}
+
+CANONICAL_WORKFLOW_LIBRARIES = {
+    "aws": ROOT / "seed" / "canonical_workflows_aws.json",
+}
+
 
 @dataclass
 class Counts:
@@ -94,6 +106,76 @@ def pick_status(rng: random.Random, profile: dict[str, float]) -> str:
 
 def j(x: Any) -> str:
     return json.dumps(x, ensure_ascii=False)
+
+
+def load_canonical_tasks(domain: str) -> list[dict[str, Any]]:
+    p = CANONICAL_TASK_LIBRARIES.get(domain)
+    if not p or not p.exists():
+        return []
+    try:
+        raw = json.loads(p.read_text())
+        if isinstance(raw, list):
+            return [x for x in raw if isinstance(x, dict)]
+    except Exception:
+        return []
+    return []
+
+
+def load_canonical_workflows(domain: str) -> list[dict[str, Any]]:
+    p = CANONICAL_WORKFLOW_LIBRARIES.get(domain)
+    if not p or not p.exists():
+        return []
+    try:
+        raw = json.loads(p.read_text())
+        if isinstance(raw, list):
+            return [x for x in raw if isinstance(x, dict)]
+    except Exception:
+        return []
+    return []
+
+
+def make_task_variant(base: dict[str, Any], idx: int, rng: random.Random) -> dict[str, Any]:
+    suffixes = [
+        "(prod)",
+        "(staging)",
+        "(shared services)",
+        "(regional)",
+        "(high-availability)",
+        "(cost-optimized)",
+        "(hardened)",
+        "(standard)",
+    ]
+    title = str(base.get("title") or "task").strip()
+    if rng.random() < 0.75:
+        title = f"{title} {rng.choice(suffixes)}"
+
+    return {
+        "title": title,
+        "outcome": str(base.get("outcome") or "Operational objective achieved."),
+        "procedure_name": str(base.get("procedure_name") or "standard-operating-procedure"),
+        "facts": [str(x) for x in (base.get("facts") or [])],
+        "concepts": [str(x) for x in (base.get("concepts") or [])],
+        "dependencies": [str(x) for x in (base.get("dependencies") or [])],
+        "steps": list(base.get("steps") or []),
+    }
+
+
+def make_workflow_variant(base: dict[str, Any], idx: int, rng: random.Random) -> dict[str, Any]:
+    suffixes = [
+        "(production)",
+        "(staging)",
+        "(shared services)",
+        "(regional)",
+        "(resilience)",
+    ]
+    title = str(base.get("title") or "workflow").strip()
+    objective = str(base.get("objective") or "Deliver domain operational objective.").strip()
+    if rng.random() < 0.65:
+        title = f"{title} {rng.choice(suffixes)}"
+    tags = [str(x).strip().lower() for x in (base.get("tags") or []) if str(x).strip()]
+    if not tags:
+        tags = rng.sample(WORKFLOW_TAGS, k=rng.randint(1, 3))
+    return {"title": title, "objective": objective, "tags": tags[:3]}
 
 
 def ensure_domains(conn: sqlite3.Connection) -> None:
@@ -139,26 +221,66 @@ def choose_domain(rng: random.Random, profile: str = "balanced") -> str:
 def seed_tasks(conn: sqlite3.Connection, rng: random.Random, n: int, pressure_profile: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     now = utc_now_iso()
+
+    canonical_by_domain: dict[str, list[dict[str, Any]]] = {
+        d: load_canonical_tasks(d) for d in DOMAINS
+    }
+
+    # Track used titles per domain to enforce uniqueness
+    used_titles_by_domain: dict[str, set[str]] = {d: set() for d in DOMAINS}
+
     for i in range(1, n + 1):
         rid = f"TSK-{i:06d}"
         domain = choose_domain(rng, pressure_profile)
         status = pick_status(rng, STATUS_PROFILES["task"])
-        title = f"{domain} task {i}"
-        outcome = f"Operational objective for {domain} task {i}"
-        steps = [
-            {
-                "text": "Prepare preconditions",
-                "actions": ["verify state", "capture baseline"],
-                "notes": "Record current values",
-                "completion": "preconditions validated",
-            },
-            {
-                "text": "Apply change",
-                "actions": ["execute procedure", "verify output"],
-                "notes": "Follow change controls",
-                "completion": "change applied",
-            },
-        ]
+
+        canonical = canonical_by_domain.get(domain) or []
+        if canonical:
+            # Cycle through canonicals but ensure unique title within domain
+            base = canonical[(i - 1) % len(canonical)]
+            variant = make_task_variant(base, i, rng)
+            title = variant["title"]
+            # Ensure uniqueness by adding index suffix if needed
+            original_title = title
+            suffix = 1
+            while title in used_titles_by_domain[domain]:
+                title = f"{original_title} ({suffix})"
+                suffix += 1
+            used_titles_by_domain[domain].add(title)
+            outcome = variant["outcome"]
+            procedure_name = variant["procedure_name"]
+            facts = variant["facts"]
+            concepts = variant["concepts"]
+            dependencies = variant["dependencies"]
+            steps = variant["steps"]
+        else:
+            # Fallback generation with uniqueness
+            base_title = f"{domain} task {i}"
+            title = base_title
+            suffix = 1
+            while title in used_titles_by_domain[domain]:
+                title = f"{base_title} ({suffix})"
+                suffix += 1
+            used_titles_by_domain[domain].add(title)
+            outcome = f"Operational objective for {domain} task {i}"
+            procedure_name = "standard-operating-procedure"
+            facts = [f"fact {i}", f"domain {domain}"]
+            concepts = ["safety", "rollback"]
+            dependencies = ["access", "maintenance-window"]
+            steps = [
+                {
+                    "text": "Prepare preconditions",
+                    "actions": ["verify state", "capture baseline"],
+                    "notes": "Record current values",
+                    "completion": "preconditions validated",
+                },
+                {
+                    "text": "Apply change",
+                    "actions": ["execute procedure", "verify output"],
+                    "notes": "Follow change controls",
+                    "completion": "change applied",
+                },
+            ]
 
         conn.execute(
             """
@@ -177,11 +299,11 @@ def seed_tasks(conn: sqlite3.Connection, rng: random.Random, n: int, pressure_pr
                 status,
                 title,
                 outcome,
-                j([f"fact {i}", f"domain {domain}"]),
-                j(["safety", "rollback"]),
-                "standard-operating-procedure",
+                j(facts),
+                j(concepts),
+                procedure_name,
                 j(steps),
-                j(["access", "maintenance-window"]),
+                j(dependencies),
                 0,
                 j([]),
                 domain,
@@ -209,6 +331,10 @@ def seed_workflows(conn: sqlite3.Connection, rng: random.Random, n: int, tasks: 
     for t in tasks:
         by_domain.setdefault(t["domain"], []).append(t)
 
+    canonical_by_domain: dict[str, list[dict[str, Any]]] = {
+        d: load_canonical_workflows(d) for d in DOMAINS
+    }
+
     for i in range(1, n + 1):
         rid = f"WF-{i:06d}"
         domain = choose_domain(rng, pressure_profile)
@@ -233,7 +359,17 @@ def seed_workflows(conn: sqlite3.Connection, rng: random.Random, n: int, tasks: 
         else:
             refs = rng.sample(pool, k=min(refs_n, len(pool)))
 
-        tags = rng.sample(WORKFLOW_TAGS, k=rng.randint(1, 3))
+        canonical = canonical_by_domain.get(domain) or []
+        if canonical:
+            wf_base = canonical[(i - 1) % len(canonical)]
+            wf_variant = make_workflow_variant(wf_base, i, rng)
+            wf_title = wf_variant["title"]
+            wf_objective = wf_variant["objective"]
+            tags = wf_variant["tags"]
+        else:
+            wf_title = f"{domain} workflow {i}"
+            wf_objective = f"Deliver {domain} operational objective {i}"
+            tags = rng.sample(WORKFLOW_TAGS, k=rng.randint(1, 3))
 
         conn.execute(
             """
@@ -249,8 +385,8 @@ def seed_workflows(conn: sqlite3.Connection, rng: random.Random, n: int, tasks: 
                 rid,
                 1,
                 status,
-                f"{domain} workflow {i}",
-                f"Deliver {domain} operational objective {i}",
+                wf_title,
+                wf_objective,
                 j([domain]),
                 j(tags),
                 j({"seed": SEED_NOTE}),
