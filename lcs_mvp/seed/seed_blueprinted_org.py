@@ -80,6 +80,7 @@ CANONICAL_TASK_LIBRARIES = {
     "windows": ROOT / "seed" / "canonical_tasks_windows.json",
     "postgres": ROOT / "seed" / "canonical_tasks_postgres.json",
     "arch": ROOT / "seed" / "canonical_tasks_arch.json",
+    "debian": ROOT / "seed" / "canonical_tasks_debian.json",
 }
 
 CANONICAL_WORKFLOW_LIBRARIES = {
