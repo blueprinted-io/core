@@ -948,10 +948,14 @@ version is published and affected records are flagged for update.
 
 - **Outcome** – atomic, observable state change produced by a Task.
 
+- **Domain** – A strict operational area (e.g., `linux`, `aws`) used for access control and content routing.
+
 - **Task** – smallest reusable unit of work that produces one Outcome.
 
 - **Workflow** – ordered composition of Tasks that
   achieves one Objective. (Only confirmed workflows are authoritative; they may reference confirmed task versions only.)
+
+- **Tag** – A descriptive label applied to Workflows only (e.g., `security`, `networking`) to indicate intent or context.
 
 - **Facts** – literal information required to execute a Task. Stored as
   an array in the Task.
