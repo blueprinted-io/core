@@ -243,14 +243,17 @@ def pick_status_biased(domain: str, rng: random.Random, entity_type: str) -> str
     
     # Status weights by category (draft, submitted, returned, confirmed)
     if domain in RED_DOMAINS:
-        # Low health: mostly submitted/returned, few confirmed
-        weights = {"draft": 0.10, "submitted": 0.35, "returned": 0.20, "confirmed": 0.35}
+        # Crisis mode: very few confirmed, mostly submitted/returned
+        # Target ~30-35% confirmed for RED status (<50%)
+        weights = {"draft": 0.05, "submitted": 0.40, "returned": 0.25, "confirmed": 0.30}
     elif domain in AMBER_DOMAINS:
-        # Medium health: balanced mix
-        weights = {"draft": 0.15, "submitted": 0.15, "returned": 0.10, "confirmed": 0.60}
+        # Watch list: balanced mix
+        # Target ~60-65% confirmed for AMBER status (50-70%)
+        weights = {"draft": 0.10, "submitted": 0.15, "returned": 0.10, "confirmed": 0.65}
     else:
-        # GREEN: mostly confirmed, healthy
-        weights = {"draft": 0.10, "submitted": 0.05, "returned": 0.00, "confirmed": 0.85}
+        # Healthy: mostly confirmed
+        # Target ~85%+ confirmed for GREEN status (>70%)
+        weights = {"draft": 0.08, "submitted": 0.05, "returned": 0.02, "confirmed": 0.85}
     
     r = rng.random()
     cumulative = 0.0
