@@ -28,21 +28,37 @@ Role = Literal["viewer", "author", "assessment_author", "content_publisher", "re
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_debian.db")
+DB_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_blueprinted_org.db")
 DB_DEMO_LEGACY_PATH = os.path.join(DATA_DIR, "lcs_demo.db")
+DB_OLD_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_debian.db")
 DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
 
-# Per-request DB selection (MVP): use a cookie. Default to debian.
+# Per-request DB selection (MVP): use a cookie. Default to blueprinted_org.
 DB_KEY_COOKIE = "lcs_db"
-DB_KEY_DEBIAN = "debian"
-DB_KEY_DEMO_ALIAS = "demo"  # backward-compatible cookie/form alias
+DB_KEY_DEBIAN = "blueprinted_org"
+DB_KEY_DEBIAN_ALIAS = "debian"  # backward-compatible alias
+DB_KEY_DEMO_ALIAS = "demo"  # backward-compatible alias
 DB_KEY_BLANK = "blank"
 DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEBIAN_PATH)
 DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEBIAN)
 
 DB_PROFILE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+
+PHASE1_OPERATIONAL_DOMAINS = [
+    "debian",
+    "arch",
+    "kubernetes",
+    "aws",
+    "postgres",
+    "windows",
+    "azure",
+    "gcp",
+    "terraform",
+    "ansible",
+    "vmware",
+]
 
 LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
@@ -386,7 +402,7 @@ def utc_now_iso() -> str:
 
 def _normalize_db_key(key: str | None) -> str:
     k = (key or "").strip().lower()
-    if k == DB_KEY_DEMO_ALIAS:
+    if k in (DB_KEY_DEMO_ALIAS, DB_KEY_DEBIAN_ALIAS):
         return DB_KEY_DEBIAN
     return k
 
@@ -413,11 +429,20 @@ def _available_db_keys() -> set[str]:
     return {DB_KEY_DEBIAN, DB_KEY_BLANK, *_list_custom_db_keys()}
 
 
+def _db_profile_label(key: str) -> str:
+    k = _normalize_db_key(key)
+    if k == DB_KEY_DEBIAN:
+        return "blueprinted org"
+    if k == DB_KEY_BLANK:
+        return "blank"
+    return k.replace("_", " ")
+
+
 def _list_custom_db_keys() -> list[str]:
     """Return custom db profile keys from files in DATA_DIR.
 
     Custom DB files are named: lcs_<key>.db
-    Reserved keys debian/demo/blank are excluded.
+    Reserved keys blueprinted_org/debian/demo/blank are excluded.
     """
     os.makedirs(DATA_DIR, exist_ok=True)
     keys: list[str] = []
@@ -429,7 +454,7 @@ def _list_custom_db_keys() -> list[str]:
         key = name[len("lcs_") : -len(".db")].strip().lower()
         if not key:
             continue
-        if key in (DB_KEY_DEBIAN, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
+        if key in (DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
             continue
         if not DB_PROFILE_KEY_RE.match(key):
             # ignore weird files
@@ -441,7 +466,7 @@ def _list_custom_db_keys() -> list[str]:
 
 def _create_custom_db_profile(key: str) -> None:
     key = (key or "").strip().lower()
-    if key in (DB_KEY_DEBIAN, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
+    if key in (DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
         raise HTTPException(status_code=400, detail="Reserved profile key")
     if not DB_PROFILE_KEY_RE.match(key):
         raise HTTPException(status_code=400, detail="Invalid profile key (use: a-z, 0-9, _, -)")
@@ -731,6 +756,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "tasks", "meta_json"):
             conn.execute("ALTER TABLE tasks ADD COLUMN meta_json TEXT NOT NULL DEFAULT '{}'")
+        # Phase 1 enforcement: tasks are tagless (workflow-only tags model).
+        conn.execute("UPDATE tasks SET tags_json='[]' WHERE COALESCE(tags_json,'[]') <> '[]'")
         if not _column_exists(conn, "workflows", "domains_json"):
             conn.execute("ALTER TABLE workflows ADD COLUMN domains_json TEXT NOT NULL DEFAULT '[]'")
         if not _column_exists(conn, "workflows", "tags_json"):
@@ -814,18 +841,21 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
 
 def _seed_demo_domains(conn: sqlite3.Connection) -> None:
     now = utc_now_iso()
-    # Minimal initial registry (admin can manage later)
-    initial = [
-        "linux",
-        "kubernetes",
-        "postgres",
-        "aws",
-    ]
-    for d in initial:
+
+    # Ensure canonical operational domains exist and are enabled.
+    for d in PHASE1_OPERATIONAL_DOMAINS:
         conn.execute(
             "INSERT OR IGNORE INTO domains(name, created_at, created_by) VALUES (?,?,?)",
             (d, now, "seed"),
         )
+        conn.execute("UPDATE domains SET disabled_at=NULL WHERE name=?", (d,))
+
+    # Phase 1 enforcement: disable non-canonical domains (preserve history, do not delete).
+    qmarks = ",".join(["?"] * len(PHASE1_OPERATIONAL_DOMAINS))
+    conn.execute(
+        f"UPDATE domains SET disabled_at=COALESCE(disabled_at, ?) WHERE name NOT IN ({qmarks})",
+        [now, *PHASE1_OPERATIONAL_DOMAINS],
+    )
 
 
 def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
@@ -835,10 +865,10 @@ def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
         r = conn.execute("SELECT id FROM users WHERE username=? AND disabled_at IS NULL", (name,)).fetchone()
         return int(r["id"]) if r else None
 
-    # Keep this conservative: authors/reviewers only get linux by default.
+    # Keep this conservative: authors/reviewers only get debian by default.
     assignments: dict[str, list[str]] = {
-        "jhendrix": ["linux"],
-        "jjoplin": ["linux"],
+        "jhendrix": ["debian"],
+        "jjoplin": ["debian"],
     }
 
     for username, domains in assignments.items():
@@ -853,8 +883,13 @@ def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
-    # Ensure the default debian DB exists. If only the legacy demo DB exists, adopt it.
-    if os.path.exists(DB_DEMO_LEGACY_PATH) and not os.path.exists(DB_DEBIAN_PATH):
+    # Ensure the default blueprinted_org DB exists.
+    # Migration order for backward compatibility:
+    # 1) old debian DB -> blueprinted_org
+    # 2) legacy demo DB -> blueprinted_org
+    if not os.path.exists(DB_DEBIAN_PATH) and os.path.exists(DB_OLD_DEBIAN_PATH):
+        shutil.copy2(DB_OLD_DEBIAN_PATH, DB_DEBIAN_PATH)
+    if not os.path.exists(DB_DEBIAN_PATH) and os.path.exists(DB_DEMO_LEGACY_PATH):
         shutil.copy2(DB_DEMO_LEGACY_PATH, DB_DEBIAN_PATH)
 
     init_db_path(DB_DEBIAN_PATH)
@@ -1388,7 +1423,7 @@ def login_form(request: Request):
         ).fetchall()
 
     custom = _list_custom_db_keys()
-    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
+    profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
         "login.html",
@@ -1804,9 +1839,11 @@ def home(request: Request):
                     + m["returned_total"] * 1.5
                     + m["blocked_workflows"] * 3.0
                 )
-                if score >= 8:
+                # Thresholds adjusted for realistic data volumes (medium/large datasets)
+                # With ~1000 items, scores typically range 40-100
+                if score >= 70:
                     level = "red"
-                elif score > 0:
+                elif score >= 40:
                     level = "amber"
                 else:
                     level = "green"
@@ -1921,13 +1958,12 @@ def search(request: Request, q: str = ""):
             domain_val = str(t["domain"] or "").strip().lower()
             if role != "admin" and domain_val not in dset:
                 continue
-            tags = [str(x).strip().lower() for x in (_json_load(t["tags_json"] or "[]") or []) if str(x).strip()]
+            tags: list[str] = []  # Phase 1: tasks are tagless.
             hay = " ".join([
                 str(t["record_id"] or ""),
                 str(t["title"] or ""),
                 str(t["outcome"] or ""),
                 str(t["domain"] or ""),
-                " ".join(tags),
             ]).lower()
             if q_norm not in hay:
                 continue
@@ -2108,7 +2144,7 @@ def pulse(request: Request):
 @app.get("/db", response_class=HTMLResponse)
 def db_switch_form(request: Request):
     require(request.state.role, "db:switch")
-    profiles = [{"key": k, "label": k} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + _list_custom_db_keys()]
+    profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + _list_custom_db_keys()]
     return templates.TemplateResponse(request, "db_switch.html", {"profiles": profiles})
 
 
@@ -3663,7 +3699,8 @@ def task_create(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
-    tags_list = parse_tags(tags)
+    # Phase 1: tasks are intentionally tagless (workflow-only tags model).
+    tags_list: list[str] = []
     meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
     _validate_steps_required(steps_list)
@@ -3857,7 +3894,8 @@ def task_save(
     facts_list = parse_lines(facts)
     concepts_list = parse_lines(concepts)
     deps_list = parse_lines(dependencies)
-    tags_list = parse_tags(tags)
+    # Phase 1: tasks are intentionally tagless (workflow-only tags model).
+    tags_list: list[str] = []
     meta_obj = parse_meta(meta)
     steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
     _validate_steps_required(steps_list)
@@ -3975,7 +4013,7 @@ def task_new_version(request: Request, record_id: str, version: int):
                 src["irreversible_flag"],
                 src["task_assets_json"],
                 (src["domain"] if "domain" in src.keys() else ""),
-                (src["tags_json"] if "tags_json" in src.keys() else "[]"),
+                "[]",  # Phase 1: tasks are tagless.
                 (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,
                 now,
