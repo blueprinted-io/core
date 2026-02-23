@@ -4238,8 +4238,8 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
     """When a task is confirmed, cascade to workflows referencing previous versions.
     
     For each confirmed workflow referencing an older version of this task:
-    - If workflow has a draft version: update that draft to reference the new task version
-    - If no draft: create a new draft version with updated task reference
+    - If workflow has a non-confirmed version: update it to reference the new task version
+    - If no non-confirmed version: create a new submitted version with updated task reference
     """
     # Find all confirmed workflows that reference any version of this task (except the new one)
     workflows_to_update = conn.execute(
@@ -4284,14 +4284,14 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
             else:
                 updated_refs.append((ref["task_record_id"], ref["task_version"], ref["order_index"]))
         
-        # Check if draft already exists
-        draft_exists = conn.execute(
-            "SELECT 1 FROM workflows WHERE record_id = ? AND version = ? AND status = 'draft'",
+        # Check if non-confirmed version already exists
+        non_confirmed = conn.execute(
+            "SELECT 1 FROM workflows WHERE record_id = ? AND version = ? AND status != 'confirmed'",
             (wf_record_id, latest_wf_version)
         ).fetchone()
         
-        if draft_exists:
-            # Update existing draft's task refs
+        if non_confirmed:
+            # Update existing non-confirmed version's task refs
             conn.execute(
                 "DELETE FROM workflow_task_refs WHERE workflow_record_id = ? AND workflow_version = ?",
                 (wf_record_id, latest_wf_version)
@@ -4309,7 +4309,7 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                 (utc_now_iso(), actor, wf_record_id, latest_wf_version)
             )
         else:
-            # Create new draft version
+            # Create new submitted version
             new_wf_version = latest_wf_version + 1
             now = utc_now_iso()
             
@@ -4329,7 +4329,7 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        wf_record_id, new_wf_version, "draft",
+                        wf_record_id, new_wf_version, "submitted",
                         src_wf["title"],
                         src_wf["objective"],
                         src_wf["domains_json"],
