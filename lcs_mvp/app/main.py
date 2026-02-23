@@ -4065,6 +4065,7 @@ def task_new_version(request: Request, record_id: str, version: int):
 
         # Cascade: update workflows referencing previous task version
         _cascade_workflow_updates(conn, record_id, new_v, actor)
+        conn.commit()
 
     audit("task", record_id, new_v, "new_version", actor, note=f"from v{version}")
     return RedirectResponse(url=f"/tasks/{record_id}/{new_v}/edit", status_code=303)
@@ -4230,6 +4231,9 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
     - While workflow is unconfirmed (submitted/draft) → accumulate task changes (no new version)
     - When workflow confirmed again → new version if more task updates arrive
     """
+    import sys
+    print(f"DEBUG CASCADE: task={task_record_id} v{new_task_version}", file=sys.stderr)
+    
     # Find all confirmed workflows that reference any version of this task (except the new one)
     workflows_to_update = conn.execute(
         """
@@ -4242,6 +4246,9 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
         """,
         (task_record_id, new_task_version)
     ).fetchall()
+    
+    import sys
+    print(f"DEBUG CASCADE: found {len(workflows_to_update)} workflows to update", file=sys.stderr)
     
     for wf in workflows_to_update:
         wf_record_id = wf["record_id"]
@@ -4309,6 +4316,8 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
             ).fetchone()
             
             if src_wf:
+                import sys
+                print(f"DEBUG CASCADE: creating {wf_record_id} v{new_wf_version}", file=sys.stderr)
                 conn.execute(
                     """
                     INSERT INTO workflows (
@@ -4337,6 +4346,7 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                         """,
                         (wf_record_id, new_wf_version, ref_record_id, ref_version, order_idx)
                     )
+                print(f"DEBUG CASCADE: done", file=sys.stderr)
 
 
 # ---- Workflows ----
