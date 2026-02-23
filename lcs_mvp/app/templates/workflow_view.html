@@ -3,7 +3,20 @@
 <div class="page-header">
   <div>
     <h1>{{ workflow.title }}</h1>
-    <p class="muted">Workflow · Version <code>{{ workflow.version }}</code></p>
+    <p class="muted">Workflow · Record <code>{{ workflow.record_id[:8] }}…</code> · Version <code>{{ workflow.version }}</code></p>
+    
+    {% if all_versions|length > 1 %}
+    <div style="margin-top:8px">
+      <span class="muted">Versions:</span>
+      {% for v in all_versions %}
+        {% if v.version == workflow.version %}
+          <span class="badge badge-{{ v.status }}" style="margin-left:4px">v{{ v.version }} ({{ v.status }})</span>
+        {% else %}
+          <a href="/workflows/{{ workflow.record_id }}/{{ v.version }}" class="badge" style="margin-left:4px">v{{ v.version }} ({{ v.status }})</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   <div class="row-right">
     <span class="badge badge-{{ workflow.status }}">{{ workflow.status }}</span>

@@ -4623,6 +4623,13 @@ def workflow_view(request: Request, record_id: str, version: int):
         ).fetchone()
         if not wf:
             raise HTTPException(404)
+        
+        # Get all versions for this workflow record
+        all_versions = conn.execute(
+            "SELECT version, status FROM workflows WHERE record_id=? ORDER BY version",
+            (record_id,)
+        ).fetchall()
+        
         refs = conn.execute(
             """
             SELECT r.order_index, t.record_id, t.version, t.title, t.status as task_status
@@ -4643,6 +4650,7 @@ def workflow_view(request: Request, record_id: str, version: int):
         "workflow_view.html",
         {
             "workflow": dict(wf),
+            "all_versions": all_versions,
             "refs": refs,
             "readiness": readiness_info["readiness"],
             "readiness_reasons": readiness_info["reasons"],
