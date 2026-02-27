@@ -4192,6 +4192,9 @@ def task_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
+        # Keep any pending workflow replacement in sync with the newest confirmed task version.
+        _cascade_workflow_updates(conn, record_id, version, actor)
+
     audit("task", record_id, version, "confirm", actor)
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
@@ -4226,6 +4229,9 @@ def task_force_confirm(request: Request, record_id: str, version: int):
             """,
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
+
+        # Keep any pending workflow replacement in sync with the newest confirmed task version.
+        _cascade_workflow_updates(conn, record_id, version, actor)
 
     audit("task", record_id, version, "force_confirm", actor, note="admin forced confirmation")
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
