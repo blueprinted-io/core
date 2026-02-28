@@ -48,7 +48,7 @@ python3 seed/seed_debian_corpus.py --reset-db
 
 This MVP uses **two local SQLite files**:
 
-- Demo DB: `lcs_mvp/data/lcs_demo.db`
+- Default demo DB: `lcs_mvp/data/lcs_blueprinted_org.db`
 - Blank DB: `lcs_mvp/data/lcs_blank.db`
 
 If you switch to the `admin` role in the UI, you can toggle between them via `/db`.
@@ -57,9 +57,14 @@ If you switch to the `admin` role in the UI, you can toggle between them via `/d
 
 This is cookie-based role switching (not real authentication):
 
-- `viewer` / `author` / `reviewer`: normal app roles (no audit log access)
+- `viewer` / `author` / `assessment_author` / `reviewer` / `content_publisher`: normal app roles (no audit log access)
 - `audit`: read-only access, including audit log
 - `admin`: can see everything; can also **force submit/confirm** (logged distinctly)
+
+Notes:
+- Delivery export from the `/delivery` page is restricted to `content_publisher`.
+- Confirmed content export endpoints are intentionally readable by any authenticated role.
+- Domain assignment is admin-managed (no self-service domain assignment on profile).
 
 ## Post-MVP TODOs
 

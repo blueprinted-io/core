@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Profile</h1>
-<p class="muted">MVP demo profile. Edit your display name, bio, avatar, and (for now) self-select domains.</p>
+<p class="muted">MVP demo profile. Edit your display name, bio, and avatar.</p>
 
 {% if msg %}
   <div class="callout" style="border-left:4px solid #14532d">
@@ -56,27 +56,17 @@
   </form>
 </div>
 
-<div class="card" {% if role in ('viewer', 'audit', 'content_publisher') %}style="opacity:0.5;pointer-events:none"{% endif %}>
-  <h2 style="margin-top:0">Domains (self-select for demo)</h2>
-  {% if role in ('viewer', 'audit', 'content_publisher') %}
-    <p class="muted">Domain assignment does not apply to your role. Your role has implicit visibility across all domains.</p>
-  {% else %}
-    <p class="muted">This is temporary. Eventually domain entitlements should be managed by admins/policy.</p>
-  {% endif %}
-
-  <form method="post" action="/profile/domains/save">
-    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px">
-      {% for d in domains %}
-        <label class="check" style="margin:0">
-          <input type="checkbox" name="domain" value="{{ d }}" {% if d in selected %}checked{% endif %} {% if role in ('viewer', 'audit', 'content_publisher') %}disabled{% endif %} />
-          <span>{{ d }}</span>
-        </label>
-      {% endfor %}
-    </div>
-    <div style="margin-top:12px">
-      <button class="btn secondary" type="submit" {% if role in ('viewer', 'audit', 'content_publisher') %}disabled{% endif %}>Save domains</button>
-    </div>
-  </form>
+<div class="card">
+  <h2 style="margin-top:0">Domains</h2>
+  <p class="muted">Domain entitlements are admin-managed. Use <code>/admin/users</code> to update assignments.</p>
+  <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px">
+    {% for d in domains %}
+      <label class="check" style="margin:0;opacity:.7">
+        <input type="checkbox" disabled {% if d in selected %}checked{% endif %} />
+        <span>{{ d }}</span>
+      </label>
+    {% endfor %}
+  </div>
 </div>
 
 <script>

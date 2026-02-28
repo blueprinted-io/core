@@ -23,6 +23,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .utils import _json_dump, _json_load, parse_lines, parse_meta, parse_tags
+
 Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated", "retired"]
 Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
 
@@ -1254,14 +1256,6 @@ def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max
         raise HTTPException(status_code=502, detail=f"LM Studio HTTP error: {e}")
 
 
-def _json_load(s: str) -> Any:
-    return json.loads(s) if s else None
-
-
-def _json_dump(v: Any) -> str:
-    return json.dumps(v, ensure_ascii=False)
-
-
 def _sha256_bytes(b: bytes) -> str:
     h = hashlib.sha256()
     h.update(b)
@@ -1380,35 +1374,6 @@ def require_can_edit(status: str) -> None:
             status_code=409,
             detail="Confirmed records are immutable. Create a new version.",
         )
-
-
-def parse_lines(text: str) -> list[str]:
-    # Accept newline-separated list
-    lines = [ln.strip() for ln in (text or "").splitlines()]
-    return [ln for ln in lines if ln]
-
-
-def parse_tags(text: str) -> list[str]:
-    raw = (text or "").strip()
-    if not raw:
-        return []
-    parts = [p.strip() for p in raw.split(",")]
-    return [p for p in parts if p]
-
-
-def parse_meta(text: str) -> dict[str, str]:
-    meta: dict[str, str] = {}
-    for ln in parse_lines(text or ""):
-        if "=" not in ln:
-            # ignore malformed lines in MVP
-            continue
-        k, v = ln.split("=", 1)
-        k = k.strip()
-        v = v.strip()
-        if not k:
-            continue
-        meta[k] = v
-    return meta
 
 
 # --- Routes ---
@@ -1618,30 +1583,10 @@ def profile_save(
 
 @app.post("/profile/domains/save")
 def profile_domains_save(request: Request, domain: list[str] = Form([])):
-    actor = request.state.user
-    selected = sorted({(d or "").strip().lower() for d in (domain or []) if (d or "").strip()})
-
-    with db() as conn:
-        allowed = set(_active_domains(conn))
-        for d in selected:
-            if d not in allowed:
-                raise HTTPException(status_code=400, detail=f"Invalid domain '{d}'")
-
-        uid = _user_id(conn, actor)
-        if uid is None:
-            raise HTTPException(404)
-
-        conn.execute("DELETE FROM user_domains WHERE user_id=?", (uid,))
-        now = utc_now_iso()
-        for d in selected:
-            conn.execute(
-                "INSERT INTO user_domains(user_id, domain, created_at, created_by) VALUES (?,?,?,?)",
-                (uid, d, now, actor),
-            )
-
-        audit("user", actor, 1, "self_set_domains", actor, note=",".join(selected), conn=conn)
-
-    return RedirectResponse(url="/profile?msg=domains_saved", status_code=303)
+    raise HTTPException(
+        status_code=403,
+        detail="Domain entitlements are admin-managed. Use the admin users page.",
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
