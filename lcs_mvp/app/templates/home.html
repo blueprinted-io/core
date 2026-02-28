@@ -24,99 +24,237 @@
 </div>
 
 {% if admin_mode %}
-  <section class="dashboard-section">
-    <div class="section-header">State health</div>
-    <div class="status-breakdown-grid">
-      {% for s in (admin_panels.status_breakdown or []) %}
-        {% set total = s.draft + s.submitted + s.returned + s.confirmed %}
-        <a class="card status-breakdown-card" href="{{ s.href }}">
-          <div class="status-breakdown-head">
-            <b>{{ s.title }}</b>
-            <span class="muted">Total {{ total }}</span>
-          </div>
-          <div class="status-bar" aria-label="{{ s.title }} status mix">
-            {% if total > 0 %}
-              <span class="seg seg-draft" style="width: {{ (s.draft * 100 / total)|round(1) }}%"></span>
-              <span class="seg seg-submitted" style="width: {{ (s.submitted * 100 / total)|round(1) }}%"></span>
-              <span class="seg seg-returned" style="width: {{ (s.returned * 100 / total)|round(1) }}%"></span>
-              <span class="seg seg-confirmed" style="width: {{ (s.confirmed * 100 / total)|round(1) }}%"></span>
-            {% endif %}
-          </div>
-          <div class="status-legend">
-            <span><i class="dot dot-draft"></i>Draft {{ s.draft }}</span>
-            <span><i class="dot dot-submitted"></i>Submitted {{ s.submitted }}</span>
-            <span><i class="dot dot-returned"></i>Returned {{ s.returned }}</span>
-            <span><i class="dot dot-confirmed"></i>Confirmed {{ s.confirmed }}</span>
-          </div>
-        </a>
-      {% endfor %}
+  {% set viz = (admin_panels.viz or {}) %}
+  {% set spider = (viz.domain_spider or {}) %}
+  {% set coverage = (viz.coverage_rank or {}) %}
+  {% set flow = (viz.pipeline_flow or {}) %}
+  {% set returns_pie = (viz.returns_pie or {}) %}
+  {% set cycle = (viz.cycle_histogram or {}) %}
+  {% set heat = (viz.pressure_heat or {}) %}
+
+  {% set alert = namespace(returned_assessments=0, blocked_workflows=0, submitted_workflows=0, draft_assessments=0) %}
+  {% for c in (admin_panels.blockers or []) %}
+    {% if c.title == 'Returned assessments' %}{% set alert.returned_assessments = c.value %}{% endif %}
+    {% if c.title == 'Workflows blocked by tasks' %}{% set alert.blocked_workflows = c.value %}{% endif %}
+  {% endfor %}
+  {% for s in (admin_panels.status_breakdown or []) %}
+    {% if s.title == 'Workflows' %}{% set alert.submitted_workflows = s.submitted %}{% endif %}
+    {% if s.title == 'Assessments' %}{% set alert.draft_assessments = s.draft %}{% endif %}
+  {% endfor %}
+
+  <section class="dashboard-section admin-alert-layer">
+    <div class="section-header">Priority alerts</div>
+    <div class="admin-alert-grid">
+      <a href="/assessments?status=returned" class="card admin-alert-card critical {% if alert.returned_assessments == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Returned assessments</div>
+        <div class="admin-alert-value">{{ alert.returned_assessments }}</div>
+      </a>
+      <a href="/workflows?status=submitted" class="card admin-alert-card warning {% if alert.submitted_workflows == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Submitted workflows</div>
+        <div class="admin-alert-value">{{ alert.submitted_workflows }}</div>
+      </a>
+      <a href="/assessments?status=draft" class="card admin-alert-card warning {% if alert.draft_assessments == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Draft assessments</div>
+        <div class="admin-alert-value">{{ alert.draft_assessments }}</div>
+      </a>
+      <a href="/workflows?status=submitted" class="card admin-alert-card {% if alert.blocked_workflows > 0 %}warning{% else %}healthy is-zero{% endif %}">
+        <div class="admin-alert-label">Workflows blocked by tasks</div>
+        <div class="admin-alert-value">{{ alert.blocked_workflows }}</div>
+      </a>
     </div>
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Blockers and pressure</div>
-    <div class="dashboard-grid">
-      {% for c in (admin_panels.blockers or []) %}
-        <a class="card dashboard-card" href="{{ c.href }}">
-          <div class="dashboard-card-title">{{ c.title }}</div>
-          <div class="dashboard-card-value">{{ c.value }}</div>
-          <div class="muted">Open records</div>
-        </a>
-      {% endfor %}
-    </div>
-    {% set bt = admin_panels.blocker_total or 0 %}
-    <div class="card blocker-composition-card">
-      <div class="dashboard-card-title">Blocker composition</div>
-      <div class="status-bar" aria-label="Blocker composition">
-        {% if bt > 0 %}
-          {% for c in (admin_panels.blockers or []) %}
-            <span class="seg seg-{{ loop.index }}" style="width: {{ (c.value * 100 / bt)|round(1) }}%"></span>
-          {% endfor %}
+    <div class="section-header">Domain health spider</div>
+    <div class="card">
+      {% if spider.axes %}
+      <div class="muted" style="margin-bottom:8px">Center is 100% health. Outer ring is current lowest domain health ({{ spider.outer_health }}%).</div>
+      <svg class="spider-svg" viewBox="0 0 {{ spider.width }} {{ spider.height }}" role="img" aria-label="Domain health spider chart">
+        {% for ring in spider.rings %}
+          <circle cx="{{ spider.cx }}" cy="{{ spider.cy }}" r="{{ ring.r }}" fill="none" stroke="currentColor" opacity="0.12" />
+          <text x="{{ spider.cx + 4 }}" y="{{ spider.cy - ring.r + 10 }}" font-size="10" opacity="0.65">{{ ring.health }}</text>
+        {% endfor %}
+        {% for a in spider.axes %}
+          <line x1="{{ spider.cx }}" y1="{{ spider.cy }}" x2="{{ a.axis_x }}" y2="{{ a.axis_y }}" stroke="currentColor" opacity="0.13" />
+        {% endfor %}
+        {% if spider.polygon %}
+          <polygon points="{{ spider.polygon }}" class="spider-shape"></polygon>
         {% endif %}
-      </div>
-      <div class="status-legend">
-        {% for c in (admin_panels.blockers or []) %}
-          <span><i class="dot dot-{{ loop.index }}"></i>{{ c.title }} {{ c.value }}</span>
+        {% for a in spider.axes %}
+          <circle cx="{{ a.point_x }}" cy="{{ a.point_y }}" r="{% if a.focus %}4.5{% else %}3.2{% endif %}" fill="{{ a.color }}" />
+        {% endfor %}
+        {% for a in spider.axes %}
+          <text x="{{ a.label_x }}" y="{{ a.label_y }}" text-anchor="{{ a.anchor }}" class="spider-label {% if a.focus %}focus{% else %}muted{% endif %}">
+            {{ a.domain }} {{ a.health }}%
+          </text>
+        {% endfor %}
+        <circle cx="{{ spider.cx }}" cy="{{ spider.cy }}" r="2.5" fill="currentColor" opacity="0.7" />
+        <text x="{{ spider.cx + 5 }}" y="{{ spider.cy - 6 }}" font-size="10" opacity="0.75">100</text>
+      </svg>
+      {% if spider.focus %}
+      <div class="spider-focus">
+        {% for a in spider.focus %}
+          <span class="badge badge-returned">{{ a.domain }} {{ a.health }}%</span>
         {% endfor %}
       </div>
-    </div>
-  </section>
-
-  <section class="dashboard-section">
-    <div class="section-header">Domain pressure</div>
-    <div class="card domain-pressure-card">
-      {% if admin_panels.domain_pressure %}
-        <div class="domain-pressure-table" role="table" aria-label="Domain pressure">
-          <div class="domain-pressure-head" role="row">
-            <div>Domain</div><div>Status</div><div>Health %</div><div>Signals</div><div></div>
-          </div>
-          {% for d in admin_panels.domain_pressure %}
-            <div class="domain-pressure-row" role="row">
-              <div><b>{{ d.domain }}</b></div>
-              <div><span class="pressure-chip pressure-{{ d.level }}">{{ d.level }}</span></div>
-              <div><span class="pressure-score pressure-{{ d.level }}">{{ d.health_pct }}%</span></div>
-              <div class="muted">T{{ d.submitted_tasks }} · W{{ d.submitted_workflows }} · A{{ d.submitted_assessments }} · R{{ d.returned_total }} · B{{ d.blocked_workflows }}</div>
-              <div><a href="{{ d.href }}">Open</a></div>
-            </div>
-          {% endfor %}
-        </div>
+      {% endif %}
       {% else %}
-        <div class="muted">No domain pressure signals yet.</div>
+      <div class="muted">No domain health data yet.</div>
       {% endif %}
     </div>
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Integrity checks</div>
-    <div class="dashboard-grid reviewer-dashboard-grid">
-      {% for c in (admin_panels.integrity or []) %}
-        {% set ok = (c.value == 0) %}
-        <a class="card dashboard-card integrity-card integrity-{{ 'pass' if ok else 'fail' }}" href="{{ c.href }}">
-          <div class="dashboard-card-title">{{ c.title }}</div>
-          <div class="dashboard-card-value">{{ c.value }}</div>
-          <div class="integrity-state {{ 'ok' if ok else 'alert' }}">{{ 'PASS' if ok else 'ACTION NEEDED' }}</div>
-        </a>
+    <div class="section-header">Coverage gap by domain</div>
+    <div class="card">
+      {% if coverage["items"] and coverage.total_gap > 0 %}
+        <div class="gap-list">
+          {% for t in coverage["items"] %}
+          <div class="gap-row">
+            <div class="gap-row-head">
+              <b>{{ t.domain }}</b>
+              <span class="muted">{{ t.covered }}/{{ t.confirmed }} covered</span>
+            </div>
+            <div class="gap-bar">
+              <span class="gap-fill gap-{{ t.severity }}" style="width: {{ t.bar_pct }}%"></span>
+            </div>
+            <div class="gap-row-val">{{ t.gap }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="muted" style="margin-top:8px">Total uncovered tasks: {{ coverage.total_gap }}</div>
+      {% else %}
+        <div class="muted">No coverage gap right now.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Pipeline flow</div>
+    <div class="card">
+      {% if flow.stages %}
+        <div class="flow-row">
+          {% for st in flow.stages %}
+            <div class="flow-stage flow-stage-{{ st.key }}" style="flex: {{ st.value if st.value > 0 else 1 }}">
+              <div class="flow-stage-title">{{ st.name }}</div>
+              <div class="flow-stage-value">{{ st.value }}</div>
+            </div>
+            {% if not loop.last %}<div class="flow-arrow">→</div>{% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% set ret = namespace(max=1) %}
+      {% for r in flow.returns or [] %}
+        {% if r.value > ret.max %}{% set ret.max = r.value %}{% endif %}
       {% endfor %}
+      <div class="flow-return-row">
+        {% for r in flow.returns or [] %}
+          <div class="flow-return-item">
+            <span class="muted">{{ r.name }}</span>
+            <div class="flow-return-bar"><span style="width: {{ (r.value * 100 // ret.max) if ret.max else 0 }}%"></span></div>
+            <b>{{ r.value }}</b>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="muted" style="margin-top:8px">Returned volume pinpoints where confirm loops are stalling.</div>
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Return composition by domain</div>
+    <div class="card">
+      {% if returns_pie.total and returns_pie.slices %}
+        <div class="pie-wrap">
+          <svg class="pie-svg" viewBox="0 0 {{ returns_pie.size }} {{ returns_pie.size }}" role="img" aria-label="Return distribution by domain">
+            {% for s in returns_pie.slices %}
+              <path d="{{ s.path }}" fill="{{ s.color }}"></path>
+            {% endfor %}
+            <circle cx="{{ returns_pie.cx }}" cy="{{ returns_pie.cy }}" r="{{ (returns_pie.r * 0.48) | round(2) }}" fill="var(--panel)"></circle>
+            <text x="{{ returns_pie.cx }}" y="{{ returns_pie.cy - 4 }}" text-anchor="middle" class="pie-total">{{ returns_pie.total }}</text>
+            <text x="{{ returns_pie.cx }}" y="{{ returns_pie.cy + 14 }}" text-anchor="middle" class="pie-sub">returns</text>
+          </svg>
+          <div class="pie-legend">
+            {% for s in returns_pie.slices %}
+              <div class="pie-item" title="{{ s.domain }} · {{ s.value }} returns">
+                <i style="background:{{ s.color }}"></i>
+                <span>{{ s.domain }}</span>
+                <b>{{ s.value }} ({{ s.pct }}%)</b>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        <div class="muted">No return data yet.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Cycle time profile (workflows)</div>
+    <div class="card">
+      {% if cycle.groups %}
+        <div class="muted" style="margin-bottom:8px">Distribution of submit→confirm times over the last 90 days ({{ cycle.sample_count }} workflows).</div>
+        <div class="cycle-groups">
+          {% for g in cycle.groups %}
+          <div class="cycle-row">
+            <div class="cycle-row-head">
+              <span class="cycle-chip cycle-{{ g.key }}">{{ g.label }}</span>
+              <span class="muted">{{ g.pct }}%</span>
+            </div>
+            <div class="cycle-track">
+              <span class="cycle-fill cycle-{{ g.key }}" style="width: {{ g.pct }}%"></span>
+            </div>
+            <div class="cycle-count">{{ g.count }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="cycle-summary">
+          <span>Avg: <b>{% if cycle.avg_hours is not none %}{{ cycle.avg_hours }}h{% else %}—{% endif %}</b></span>
+          <span>Median: <b>{% if cycle.median_hours is not none %}{{ cycle.median_hours }}h{% else %}—{% endif %}</b></span>
+          <span>P90: <b>{% if cycle.p90_hours is not none %}{{ cycle.p90_hours }}h{% else %}—{% endif %}</b></span>
+          <span>8h+ tail: <b>{% if cycle.tail_pct is not none %}{{ cycle.tail_count }} ({{ cycle.tail_pct }}%){% else %}—{% endif %}</b></span>
+        </div>
+      {% else %}
+        <div class="muted">No cycle-time data yet.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="dashboard-section">
+    <div class="section-header">Pressure heat grid</div>
+    <div class="card">
+      <div class="heat-legend">
+        <span><i class="heat-swatch heat-green"></i>Healthy (>=95%)</span>
+        <span><i class="heat-swatch heat-amber"></i>Watch (80-94%)</span>
+        <span><i class="heat-swatch heat-red"></i>Risk (&lt;80%)</span>
+      </div>
+      {% if heat.focus_rows %}
+      <div class="heat-focus">
+        <span class="muted">Action focus:</span>
+        {% for r in heat.focus_rows %}
+          <span class="badge badge-returned" title="Worst {{ r.worst }}% on {{ r.worst_day }}">{{ r.domain }} {{ r.current }}%</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if heat.rows and heat.days %}
+        <div class="heat-grid" style="grid-template-columns: 140px 58px repeat({{ heat.days|length }}, minmax(22px, 1fr));">
+          <div class="heat-head muted">Domain</div>
+          <div class="heat-head muted" style="text-align:center">Now</div>
+          {% for d in heat.days %}
+            <div class="heat-day muted">{{ d[5:] }}</div>
+          {% endfor %}
+          {% for r in heat.rows %}
+            <div class="heat-domain">{{ r.domain }}</div>
+            <div class="heat-current {% if r.current >= 95 %}green{% elif r.current >= 80 %}amber{% else %}red{% endif %}">{{ r.current }}%</div>
+            {% for c in r.cells %}
+              <div class="heat-cell heat-{{ c.level }}" title="{{ r.domain }} · {{ heat.days[loop.index0] }} · {{ c.value }}%"></div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="muted">No heat-grid data yet.</div>
+      {% endif %}
     </div>
   </section>
 
@@ -220,4 +358,118 @@
   </div>
 {% endif %}
 {% endif %}
+
+<section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
+  <div class="section-header">Pipeline velocity · last 30 days</div>
+  <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
+    <div>
+      <div class="muted">Throughput</div>
+      <div style="font-size:1.2rem;font-weight:700">{{ system_health.velocity.throughput }}</div>
+    </div>
+    <div>
+      <div class="muted">Cycle</div>
+      <div style="font-size:1.2rem;font-weight:700">{% if system_health.velocity.cycle_hours %}{{ system_health.velocity.cycle_hours }}h{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="muted">Return rate</div>
+      <div style="font-size:1.2rem;font-weight:700">{% if system_health.velocity.return_rate_pct is not none %}{{ system_health.velocity.return_rate_pct }}%{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="muted">Recovery</div>
+      <div style="font-size:1.2rem;font-weight:700">{% if system_health.velocity.recovery_hours %}{{ system_health.velocity.recovery_hours }}h{% else %}—{% endif %}</div>
+    </div>
+  </div>
+</section>
+
+<section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
+  <div class="section-header">Content stability · confirmed records reviewed within {{ staleness_days }} days</div>
+  <div class="card">
+    {% set st = namespace(confirmed=0, stale=0) %}
+    {% for row in system_health.staleness %}
+      {% set st.confirmed = st.confirmed + row.confirmed_tasks + row.confirmed_workflows %}
+      {% set st.stale = st.stale + row.stale_tasks + row.stale_workflows %}
+    {% endfor %}
+    {% set st_stable = st.confirmed - st.stale %}
+    {% set st_pct = ((st_stable * 100 // st.confirmed) if st.confirmed else 0) %}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end;margin-bottom:10px">
+      <div>
+        <div class="muted">Stable records</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ st_stable }}</div>
+      </div>
+      <div>
+        <div class="muted">Confirmed total</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ st.confirmed }}</div>
+      </div>
+      <div>
+        <div class="muted">Stability</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ st_pct }}%</div>
+      </div>
+    </div>
+
+    {% if system_health.staleness %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for row in system_health.staleness %}
+          {% set total_confirmed = row.confirmed_tasks + row.confirmed_workflows %}
+          {% set total_stale = row.stale_tasks + row.stale_workflows %}
+          {% set stable = total_confirmed - total_stale %}
+          {% set stable_pct = ((stable * 100 // total_confirmed) if total_confirmed else 0) %}
+          <span
+            class="badge {% if stable_pct >= 90 %}badge-confirmed{% elif stable_pct >= 70 %}badge-warn{% else %}badge-returned{% endif %}"
+            title="{{ stable }} stable of {{ total_confirmed }} confirmed"
+          >
+            {{ row.domain }} {{ stable_pct }}%
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">No confirmed content yet.</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
+  <div class="section-header">Assessment coverage · confirmed tasks with a linked confirmed assessment</div>
+  <div class="card">
+    {% set cv = namespace(confirmed=0, covered=0) %}
+    {% for row in system_health.coverage %}
+      {% set cv.confirmed = cv.confirmed + row.confirmed_tasks %}
+      {% set cv.covered = cv.covered + row.covered_tasks %}
+    {% endfor %}
+    {% set cv_gap = cv.confirmed - cv.covered %}
+    {% set cv_pct = ((cv.covered * 100 // cv.confirmed) if cv.confirmed else 0) %}
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end;margin-bottom:10px">
+      <div>
+        <div class="muted">Coverage</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ cv_pct }}%</div>
+      </div>
+      <div>
+        <div class="muted">Covered tasks</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ cv.covered }}/{{ cv.confirmed }}</div>
+      </div>
+      <div>
+        <div class="muted">Coverage gap</div>
+        <div style="font-size:1.2rem;font-weight:700">{{ cv_gap }}</div>
+      </div>
+    </div>
+
+    {% if system_health.coverage %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for row in system_health.coverage %}
+          {% set pct = (row.covered_tasks * 100 // row.confirmed_tasks) if row.confirmed_tasks else 0 %}
+          <span
+            class="badge {% if pct >= 80 %}badge-confirmed{% elif pct >= 40 %}badge-warn{% else %}badge-returned{% endif %}"
+            title="{{ row.covered_tasks }}/{{ row.confirmed_tasks }} covered"
+          >
+            {{ row.domain }} {{ pct }}%
+          </span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">No confirmed tasks yet.</div>
+    {% endif %}
+  </div>
+</section>
+
 {% endblock %}

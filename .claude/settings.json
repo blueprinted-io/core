@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(gh pr list)"
+      "Bash(gh pr list)",
+      "Bash(xargs grep -l \"CREATE TABLE\")"
     ]
   }
 }
