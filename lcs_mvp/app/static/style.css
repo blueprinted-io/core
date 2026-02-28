@@ -591,6 +591,7 @@ body.spa-v1 .reviewer-card-icon{
   margin-bottom:6px;
 }
 body.spa-v1 .author-action-card{border-style:dashed}
+body.spa-v1 .author-action-icon{font-size:28px;line-height:1;margin-bottom:8px;opacity:.9}
 body.spa-v1 .author-action-card .dashboard-card-value{font-size:22px;font-weight:500;color:var(--muted)}
 
 body.spa-v1 .status-breakdown-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
