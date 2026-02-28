@@ -4,6 +4,7 @@
 {% set reviewer_mode = (request.state.role == 'reviewer') %}
 {% set author_mode = (request.state.role == 'author') %}
 {% set assessment_author_mode = (request.state.role == 'assessment_author') %}
+{% set domain_agnostic_mode = (request.state.role in ('viewer', 'audit', 'content_publisher')) %}
 
 <div class="page-header">
   <div>
@@ -14,6 +15,8 @@
       <div class="muted">Review queue overview.</div>
     {% elif author_mode %}
       <div class="muted">Returned-items-first author workspace.</div>
+    {% elif domain_agnostic_mode %}
+      <div class="muted">Confirmed content by domain.</div>
     {% else %}
       <div class="muted">Actionable summary for your current role and domain access.</div>
     {% endif %}
@@ -118,6 +121,39 @@
   </section>
 
 {% else %}
+  {% if domain_agnostic_mode %}
+    <div class="card" style="padding:0;overflow:hidden">
+      <table class="table" style="margin:0">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th style="text-align:right">Tasks</th>
+            <th style="text-align:right">Workflows</th>
+            <th style="text-align:right">Assessments</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in domain_breakdown %}
+          <tr>
+            <td><b>{{ row.domain }}</b></td>
+            <td style="text-align:right">
+              {% if row.tasks > 0 %}<a href="{{ row.tasks_href }}">{{ row.tasks }}</a>{% else %}<span class="muted">0</span>{% endif %}
+            </td>
+            <td style="text-align:right">
+              {% if row.workflows > 0 %}<a href="{{ row.workflows_href }}">{{ row.workflows }}</a>{% else %}<span class="muted">0</span>{% endif %}
+            </td>
+            <td style="text-align:right">
+              {% if row.assessments > 0 %}<a href="{{ row.assessments_href }}">{{ row.assessments }}</a>{% else %}<span class="muted">0</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">No active domains.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+
   {% if domains and not reviewer_mode and not author_mode %}
     <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
   {% endif %}
@@ -177,5 +213,6 @@
     </section>
     {% endif %}
   </div>
+{% endif %}
 {% endif %}
 {% endblock %}

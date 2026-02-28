@@ -1717,6 +1717,7 @@ def home(request: Request):
             return c
 
         admin_panels: dict[str, Any] = {}
+        domain_breakdown: list[dict[str, Any]] = []
         if role == "reviewer":
             cards = [
                 {"title": "Tasks outstanding for review", "value": _count_tasks_by_status("submitted"), "href": "/review?item_type=task"},
@@ -1947,12 +1948,56 @@ def home(request: Request):
                 "domain_pressure": domain_pressure_rows,
             }
             cards = []
+        elif _domain_agnostic:
+            cards = []
+            # Build per-domain confirmed breakdown for domain-agnostic roles.
+            # Each row: domain, confirmed task/workflow/assessment counts with filter hrefs.
+            domain_breakdown = []
+            for d in sorted(doms):
+                d_lower = d.strip().lower()
+
+                task_count = conn.execute(
+                    """SELECT COUNT(*) FROM (
+                        SELECT record_id, MAX(version) AS v FROM tasks GROUP BY record_id
+                    ) sub JOIN tasks t ON t.record_id=sub.record_id AND t.version=sub.v
+                    WHERE t.status='confirmed' AND LOWER(TRIM(COALESCE(t.domain,'')))=?""",
+                    (d_lower,),
+                ).fetchone()[0]
+
+                wf_count = conn.execute(
+                    """SELECT COUNT(*) FROM (
+                        SELECT record_id, MAX(version) AS v FROM workflows GROUP BY record_id
+                    ) sub JOIN workflows w ON w.record_id=sub.record_id AND w.version=sub.v,
+                    json_each(COALESCE(w.domains_json,'[]')) je
+                    WHERE w.status='confirmed' AND LOWER(TRIM(je.value))=?""",
+                    (d_lower,),
+                ).fetchone()[0]
+
+                as_count = conn.execute(
+                    """SELECT COUNT(*) FROM (
+                        SELECT record_id, MAX(version) AS v FROM assessment_items GROUP BY record_id
+                    ) sub JOIN assessment_items a ON a.record_id=sub.record_id AND a.version=sub.v,
+                    json_each(COALESCE(a.domains_json,'[]')) je
+                    WHERE a.status='confirmed' AND LOWER(TRIM(je.value))=?""",
+                    (d_lower,),
+                ).fetchone()[0]
+
+                domain_breakdown.append({
+                    "domain": d,
+                    "tasks": task_count,
+                    "workflows": wf_count,
+                    "assessments": as_count,
+                    "tasks_href": f"/tasks?status=confirmed&domain={d}",
+                    "workflows_href": f"/workflows?status=confirmed&domain={d}",
+                    "assessments_href": f"/assessments?status=confirmed&domain={d}",
+                })
         else:
             cards = [
                 {"title": "Confirmed Tasks", "value": _count_tasks_by_status("confirmed"), "href": "/tasks?status=confirmed"},
                 {"title": "Confirmed Workflows", "value": _count_workflows_by_status("confirmed"), "href": "/workflows?status=confirmed"},
                 {"title": "Confirmed Assessments", "value": _count_assessments_by_status("confirmed"), "href": "/assessments?status=confirmed"},
             ]
+            domain_breakdown = []
 
         last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
 
@@ -1964,6 +2009,7 @@ def home(request: Request):
             "domains": doms,
             "last_audit": dict(last_audit) if last_audit else None,
             "admin_panels": admin_panels,
+            "domain_breakdown": domain_breakdown,
         },
     )
 
