@@ -508,6 +508,7 @@ body.spa-v1 .sidebar-header{
   justify-content:space-between;
   margin-bottom:8px;
   padding:4px 2px;
+  position:relative;
 }
 body.spa-v1 .sidebar-logo{
   display:flex;
@@ -515,13 +516,15 @@ body.spa-v1 .sidebar-logo{
   text-decoration:none;
 }
 body.spa-v1 .sidebar-logo img{
-  height:32px;
+  height:24px;
   width:auto;
   display:block;
 }
-body.spa-v1 .rail-close-mobile{
-  position:static;
-  margin-left:auto;
+body.spa-v1 .sidebar-header .rail-close-mobile{
+  position:absolute;
+  top:4px;
+  right:2px;
+  display:inline-flex;
 }
 
 @media (max-width:980px){
