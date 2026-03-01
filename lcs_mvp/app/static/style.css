@@ -1097,6 +1097,25 @@ body.spa-v1 .dot-4{background:#eab308}
 body.spa-v1 .integrity-card{position:relative}
 body.spa-v1 .integrity-pass{border-color:color-mix(in oklab, #10b981 40%, var(--border));background:color-mix(in oklab, #10b981 8%, var(--panel))}
 body.spa-v1 .integrity-fail{border-color:color-mix(in oklab, #ef4444 40%, var(--border));background:color-mix(in oklab, #ef4444 8%, var(--panel))}
+
+/* Login page - demo user cards */
+.demo-users-list{display:flex;flex-direction:column;gap:12px;margin-top:16px}
+.demo-user-card{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--panel);border:1px solid var(--border);border-radius:14px;transition:box-shadow .15s ease}
+.demo-user-card:hover{box-shadow:0 4px 20px rgba(17,24,39,.08)}
+.demo-user-avatar{width:48px;height:48px;border-radius:999px;object-fit:cover;flex-shrink:0;background:color-mix(in oklab, var(--bg) 80%, var(--border))}
+.demo-user-info{display:flex;flex-direction:column;gap:2px;min-width:100px}
+.demo-user-name{font-weight:600;font-size:15px;color:var(--ink)}
+.demo-user-role{font-size:12px;color:var(--muted);text-transform:capitalize}
+.demo-user-domains{display:flex;flex-wrap:wrap;gap:6px;flex:1;justify-content:flex-end}
+.demo-user-domains .badge{font-size:11px;padding:4px 10px}
+.demo-user-login{margin-left:auto;flex-shrink:0}
+
+@media (max-width:640px){
+  .demo-user-card{flex-wrap:wrap;gap:12px}
+  .demo-user-info{flex:1;min-width:auto}
+  .demo-user-domains{width:100%;justify-content:flex-start;margin-top:4px}
+  .demo-user-login{width:100%;margin-left:0}
+}
 body.spa-v1 .integrity-state{margin-top:6px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
 body.spa-v1 .integrity-state.ok{color:#166534}
 body.spa-v1 .integrity-state.alert{color:#991b1b}

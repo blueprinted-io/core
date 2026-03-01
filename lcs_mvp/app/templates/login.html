@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=55" />
+  <link rel="stylesheet" href="/static/style.css?v=56" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
@@ -24,7 +24,7 @@
       <div class="row" style="align-items:flex-start">
         <div>
           <h1 style="margin-top:0">Login</h1>
-          <p class="muted">Pick a demo user below and log in. Passwords are shown for convenience in this MVP demo.</p>
+          <p class="muted">Pick a demo user below and click Login. The button auto-fills credentials for convenience.</p>
         </div>
         <div class="row-right">
           <form method="post" action="/db/pick" style="display:flex; gap:8px; align-items:end">
@@ -41,43 +41,30 @@
         </div>
       </div>
 
-      <table class="table">
-        <thead>
-          <tr>
-            <th>username</th>
-            <th>role</th>
-            <th>domains</th>
-            <th>password</th>
-            <th style="width:140px">quick login</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for u in users %}
-          <tr>
-            <td><code>{{ u.username }}</code></td>
-            <td><span class="badge">{{ u.role }}</span></td>
-            <td>
-              {% if u.domains %}
-                {% for d in u.domains %}
-                  <span class="badge" style="margin-right:4px; margin-bottom:2px; display:inline-block">{{ d }}</span>
-                {% endfor %}
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            </td>
-            <td><code>{{ u.demo_password }}</code></td>
-            <td>
-              <button
-                class="btn secondary js-quick-login"
-                type="button"
-                data-username="{{ u.username }}"
-                data-password="{{ u.demo_password }}"
-              >Login</button>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="demo-users-list">
+        {% for u in users %}
+        <div class="demo-user-card">
+          <img class="demo-user-avatar" src="/profile/avatar?user={{ u.username }}" alt="" />
+          <div class="demo-user-info">
+            <div class="demo-user-name">{{ u.username }}</div>
+            <div class="demo-user-role">{{ u.role }}</div>
+          </div>
+          <div class="demo-user-domains">
+            {% if u.domains %}
+              {% for d in u.domains %}
+                <span class="badge">{{ d }}</span>
+              {% endfor %}
+            {% endif %}
+          </div>
+          <button
+            class="btn secondary js-quick-login demo-user-login"
+            type="button"
+            data-username="{{ u.username }}"
+            data-password="{{ u.demo_password }}"
+          >Login</button>
+        </div>
+        {% endfor %}
+      </div>
     </div>
 
     <form method="post" action="/login" class="card" id="login-form">
