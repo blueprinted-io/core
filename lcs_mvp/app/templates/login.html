@@ -4,13 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=54" />
+  <link rel="stylesheet" href="/static/style.css?v=55" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
     <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px">
       <div style="display:flex; align-items:center; gap:12px">
-        <img class="brand-logo" src="/static/logo-light.svg" alt="blueprinted.io" style="height:42px; width:auto" />
+        <img class="brand-logo logo-light" src="/static/logo-light.svg" alt="blueprinted.io" style="height:42px; width:auto; display:block" />
+        <img class="brand-logo logo-dark" src="/static/logo-dark.svg" alt="blueprinted.io" style="height:42px; width:auto; display:none" />
         <div>
           <div style="font-weight:700">blueprinted.io</div>
           <div class="muted">Demo-mode local auth</div>
@@ -93,12 +94,18 @@
     (function(){
       function setTheme(mode){
         const root = document.documentElement;
+        const logoLight = document.querySelector('.brand-logo.logo-light');
+        const logoDark = document.querySelector('.brand-logo.logo-dark');
         if(mode === 'dark'){
           root.setAttribute('data-theme','dark');
           try{ localStorage.setItem('theme','dark'); }catch(e){}
+          if(logoLight) logoLight.style.display = 'none';
+          if(logoDark) logoDark.style.display = 'block';
         } else {
           root.removeAttribute('data-theme');
           try{ localStorage.setItem('theme','light'); }catch(e){}
+          if(logoLight) logoLight.style.display = 'block';
+          if(logoDark) logoDark.style.display = 'none';
         }
         const btn = document.getElementById('theme-toggle');
         if(btn){
