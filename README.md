@@ -1,4 +1,4 @@
-# blueprinted.io — Learning Content System
+# blueprinted.io: Learning Content System
 
 ## Executive Summary
 
