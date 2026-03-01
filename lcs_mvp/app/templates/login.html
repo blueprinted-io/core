@@ -44,7 +44,7 @@
       <div class="demo-users-list">
         {% for u in users %}
         <div class="demo-user-card">
-          <img class="demo-user-avatar" src="/profile/avatar?user={{ u.username }}" alt="" />
+          <img class="demo-user-avatar" src="/avatar/{{ u.username }}" alt="" />
           <div class="demo-user-info">
             <div class="demo-user-name">{{ u.username }}</div>
             <div class="demo-user-role">{{ u.role }}</div>

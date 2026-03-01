@@ -1536,6 +1536,49 @@ def profile_avatar(request: Request):
     )
 
 
+@app.get("/avatar/{username}")
+def public_avatar(username: str):
+    """Public avatar endpoint for login page (no auth required)."""
+    with db() as conn:
+        row = conn.execute("SELECT COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL", (username,)).fetchone()
+        if not row:
+            raise HTTPException(404)
+        p = str(row["avatar_path"] or "").strip()
+
+    if not p:
+        raise HTTPException(status_code=404, detail="No avatar")
+
+    base = Path(UPLOADS_DIR).resolve()
+    f = Path(p)
+    try:
+        f_abs = f.resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid avatar path")
+
+    if base not in f_abs.parents:
+        raise HTTPException(status_code=400, detail="Invalid avatar path")
+    if not f_abs.exists():
+        raise HTTPException(status_code=404, detail="Avatar missing")
+
+    # best-effort mime
+    mt = "application/octet-stream"
+    low = f_abs.name.lower()
+    if low.endswith(".png"):
+        mt = "image/png"
+    elif low.endswith(".jpg") or low.endswith(".jpeg"):
+        mt = "image/jpeg"
+    elif low.endswith(".webp"):
+        mt = "image/webp"
+
+    return FileResponse(
+        str(f_abs),
+        media_type=mt,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
 @app.post("/profile/save")
 def profile_save(
     request: Request,
