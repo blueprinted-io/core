@@ -67,6 +67,7 @@ LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:12
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
 
 STALENESS_DAYS = 90  # confirmed content not reviewed within this threshold is considered stale
+STATIC_ASSET_VERSION = "62"
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -399,6 +400,7 @@ app.add_middleware(AuthMiddleware)
 
 # make permission checks available in templates
 templates.env.globals["can"] = can
+templates.env.globals["asset_v"] = STATIC_ASSET_VERSION
 
 
 def utc_now_iso() -> str:
@@ -1491,15 +1493,8 @@ def profile_view(request: Request, msg: str | None = None):
     )
 
 
-@app.get("/profile/avatar")
-def profile_avatar(request: Request):
-    actor = request.state.user
-    with db() as conn:
-        row = conn.execute("SELECT COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL", (actor,)).fetchone()
-        if not row:
-            raise HTTPException(404)
-        p = str(row["avatar_path"] or "").strip()
-
+def _avatar_file_response(avatar_path: str, *, no_store: bool) -> FileResponse:
+    p = str(avatar_path or "").strip()
     if not p:
         raise HTTPException(status_code=404, detail="No avatar")
 
@@ -1515,7 +1510,6 @@ def profile_avatar(request: Request):
     if not f_abs.exists():
         raise HTTPException(status_code=404, detail="Avatar missing")
 
-    # best-effort mime
     mt = "application/octet-stream"
     low = f_abs.name.lower()
     if low.endswith(".png"):
@@ -1525,15 +1519,27 @@ def profile_avatar(request: Request):
     elif low.endswith(".webp"):
         mt = "image/webp"
 
-    return FileResponse(
-        str(f_abs),
-        media_type=mt,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
+    headers = {
+        "Pragma": "no-cache",
+    }
+    if no_store:
+        headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        headers["Expires"] = "0"
+    else:
+        headers["Cache-Control"] = "no-cache, must-revalidate"
+
+    return FileResponse(str(f_abs), media_type=mt, headers=headers)
+
+
+@app.get("/profile/avatar")
+def profile_avatar(request: Request):
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute("SELECT COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL", (actor,)).fetchone()
+        if not row:
+            raise HTTPException(404)
+        p = str(row["avatar_path"] or "")
+    return _avatar_file_response(p, no_store=True)
 
 
 @app.get("/avatar/{username}")
@@ -1543,41 +1549,8 @@ def public_avatar(username: str):
         row = conn.execute("SELECT COALESCE(avatar_path,'') AS avatar_path FROM users WHERE username=? AND disabled_at IS NULL", (username,)).fetchone()
         if not row:
             raise HTTPException(404)
-        p = str(row["avatar_path"] or "").strip()
-
-    if not p:
-        raise HTTPException(status_code=404, detail="No avatar")
-
-    base = Path(UPLOADS_DIR).resolve()
-    f = Path(p)
-    try:
-        f_abs = f.resolve()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid avatar path")
-
-    if base not in f_abs.parents:
-        raise HTTPException(status_code=400, detail="Invalid avatar path")
-    if not f_abs.exists():
-        raise HTTPException(status_code=404, detail="Avatar missing")
-
-    # best-effort mime
-    mt = "application/octet-stream"
-    low = f_abs.name.lower()
-    if low.endswith(".png"):
-        mt = "image/png"
-    elif low.endswith(".jpg") or low.endswith(".jpeg"):
-        mt = "image/jpeg"
-    elif low.endswith(".webp"):
-        mt = "image/webp"
-
-    return FileResponse(
-        str(f_abs),
-        media_type=mt,
-        headers={
-            "Cache-Control": "no-cache, must-revalidate",
-            "Pragma": "no-cache",
-        },
-    )
+        p = str(row["avatar_path"] or "")
+    return _avatar_file_response(p, no_store=False)
 
 
 @app.post("/profile/save")
@@ -1798,12 +1771,8 @@ def _admin_dashboard_visuals(
                 "gap": gap,
                 "pct": pct,
                 "severity": sev,
-                "width_pct": 0.0,
             }
         )
-    if total_gap > 0:
-        for x in cov_items:
-            x["width_pct"] = round((float(x["gap"]) * 100.0) / float(total_gap), 1)
     cov_items.sort(key=lambda x: (-int(x["gap"]), str(x["domain"])))
     cov_rank = [x for x in cov_items if int(x["gap"]) > 0]
     cov_rank_max = max([int(x["gap"]) for x in cov_rank] + [1])
@@ -1848,9 +1817,6 @@ def _admin_dashboard_visuals(
         for d in domain_pressure_rows
     ]
     return_dist.sort(key=lambda x: (-int(x["value"]), str(x["domain"])))
-    ret_max = max([int(x["value"]) for x in return_dist] + [1])
-    for x in return_dist:
-        x["height_pct"] = round((float(x["value"]) * 100.0) / float(ret_max), 1)
     return_pie_total = int(sum(int(x["value"]) for x in return_dist))
     pie_cx = 120.0
     pie_cy = 120.0
@@ -1934,9 +1900,7 @@ def _admin_dashboard_visuals(
             c = sum(1 for d in durations if d >= lo and d < hi)
         cycle_hist.append({"label": label, "count": int(c)})
     cycle_total = int(sum(int(x["count"]) for x in cycle_hist))
-    cycle_max = max([int(x["count"]) for x in cycle_hist] + [1])
     for x in cycle_hist:
-        x["height_pct"] = round((float(x["count"]) * 100.0) / float(cycle_max), 1)
         x["pct_total"] = round((float(x["count"]) * 100.0) / float(cycle_total), 1) if cycle_total else 0.0
 
     group_defs = [
@@ -1952,21 +1916,11 @@ def _admin_dashboard_visuals(
         p = round((float(c) * 100.0) / float(cycle_total), 1) if cycle_total else 0.0
         cycle_groups.append({"key": key, "label": label, "count": c, "pct": p})
     if cycle_avg is None:
-        cycle_avg_bin = None
         cycle_median = None
         cycle_p90 = None
         cycle_tail_count = 0
         cycle_tail_pct = None
-        cycle_peak_bin = None
     else:
-        cycle_avg_bin = 0
-        for idx, (_label, lo, hi) in enumerate(bins):
-            if hi is None and cycle_avg >= lo:
-                cycle_avg_bin = idx
-                break
-            if hi is not None and cycle_avg >= lo and cycle_avg < hi:
-                cycle_avg_bin = idx
-                break
         d_sorted = sorted(durations)
         mid = len(d_sorted) // 2
         if len(d_sorted) % 2 == 0:
@@ -1977,7 +1931,6 @@ def _admin_dashboard_visuals(
         cycle_p90 = round(d_sorted[p90_idx], 1)
         cycle_tail_count = int(sum(1 for d in d_sorted if d >= 8.0))
         cycle_tail_pct = round((float(cycle_tail_count) * 100.0) / float(len(d_sorted)), 1) if d_sorted else None
-        cycle_peak_bin = max(cycle_hist, key=lambda x: int(x["count"]))["label"] if cycle_hist else None
 
     # --- Domain health trend + pressure heat grid (daily snapshots) ---
     domain_set = {str(d).strip().lower() for d in active_domains if str(d).strip()}
@@ -2130,39 +2083,15 @@ def _admin_dashboard_visuals(
         if len(vals) < len(hist_days):
             vals.extend([100.0] * (len(hist_days) - len(vals)))
 
-    # Build SVG polyline points.
-    chart_w = 720
-    chart_h = 220
+    # Build current per-domain ordering from the daily matrix.
     trend_series: list[dict[str, Any]] = []
     for d in sorted(health_matrix.keys()):
         vals = health_matrix[d]
-        pts: list[str] = []
-        if len(vals) <= 1:
-            x = 0
-            y = int(((100.0 - float(vals[0])) / 100.0) * chart_h) if vals else chart_h
-            pts.append(f"{x},{y}")
-        else:
-            for i, v in enumerate(vals):
-                x = int((float(i) / float(len(vals) - 1)) * chart_w)
-                y = int(((100.0 - float(v)) / 100.0) * chart_h)
-                pts.append(f"{x},{y}")
         current = float(vals[-1]) if vals else 100.0
-        if current < 80.0:
-            color = "#dc2626"
-            weight = 3
-        elif current < 95.0:
-            color = "#f59e0b"
-            weight = 2.5
-        else:
-            color = "#9ca3af"
-            weight = 1.5
         trend_series.append(
             {
                 "domain": d,
-                "points": " ".join(pts),
                 "current": round(current, 1),
-                "color": color,
-                "weight": weight,
                 "is_focus": bool(current < 95.0),
             }
         )
@@ -2265,10 +2194,8 @@ def _admin_dashboard_visuals(
     heat_focus = sorted([r for r in heat_rows if float(r["current"]) < 95.0], key=lambda x: float(x["current"]))[:3]
 
     return {
-        "coverage_treemap": {"total_gap": int(total_gap), "items": cov_items},
         "coverage_rank": {"total_gap": int(total_gap), "items": cov_rank},
         "pipeline_flow": {"stages": flow_stages, "returns": flow_returns},
-        "returns_bar": {"items": return_dist},
         "returns_pie": {
             "total": return_pie_total,
             "size": 240,
@@ -2279,21 +2206,12 @@ def _admin_dashboard_visuals(
         },
         "cycle_histogram": {
             "avg_hours": cycle_avg,
-            "avg_bin": cycle_avg_bin,
             "median_hours": cycle_median,
             "p90_hours": cycle_p90,
             "tail_count": cycle_tail_count,
             "tail_pct": cycle_tail_pct,
-            "peak_bin": cycle_peak_bin,
             "sample_count": cycle_total,
             "groups": cycle_groups,
-            "bins": cycle_hist,
-        },
-        "domain_trend": {
-            "width": chart_w,
-            "height": chart_h,
-            "days": hist_days,
-            "series": trend_series,
         },
         "domain_spider": {
             "width": spider_w,

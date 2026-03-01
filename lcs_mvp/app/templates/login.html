@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Login · blueprinted.io</title>
-  <link rel="stylesheet" href="/static/style.css?v=61" />
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}" />
 </head>
 <body>
   <div class="wrap" style="padding: 24px 0">
@@ -45,7 +45,7 @@
         {% for u in users %}
         <button class="demo-user-card js-quick-login" type="button" data-username="{{ u.username }}" data-password="{{ u.demo_password }}">
           <div class="demo-user-avatar-wrap">
-            <img class="demo-user-avatar" src="/avatar/{{ u.username }}?v=1" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+            <img class="demo-user-avatar" src="/avatar/{{ u.username }}?v={{ asset_v }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
             <span class="demo-user-avatar-fallback" style="display:none">{{ u.username[:1]|upper }}</span>
           </div>
           <div class="demo-user-info">

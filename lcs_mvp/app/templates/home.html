@@ -7,34 +7,13 @@
 {% set domain_agnostic_mode = (request.state.role in ('viewer', 'audit', 'content_publisher')) %}
 
 <!-- Info Overlay -->
-<div id="info-overlay" class="info-overlay" onclick="if(event.target===this)closeInfoOverlay()">
-  <div class="info-overlay-content">
-    <button class="info-overlay-close" onclick="closeInfoOverlay()">✕</button>
-    <div id="info-overlay-body"></div>
+<div id="info-overlay" class="info-overlay" hidden>
+  <div class="info-overlay-content" role="dialog" aria-modal="true" aria-labelledby="info-overlay-title">
+    <button type="button" class="info-overlay-close" id="info-overlay-close" aria-label="Close information panel">x</button>
+    <h3 id="info-overlay-title"></h3>
+    <p id="info-overlay-body"></p>
   </div>
 </div>
-
-<script>
-function showInfoOverlay(title, content){
-  document.getElementById('info-overlay-body').innerHTML = '<h3>' + title + '</h3><p>' + content + '</p>';
-  document.getElementById('info-overlay').classList.add('active');
-}
-function closeInfoOverlay(){
-  document.getElementById('info-overlay').classList.remove('active');
-}
-</script>
-
-<style>
-.info-btn{cursor:pointer;margin-left:8px;opacity:.6;transition:opacity .15s;font-size:14px}
-.info-btn:hover{opacity:1}
-.info-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;opacity:0;pointer-events:none;transition:opacity .2s}
-.info-overlay.active{opacity:1;pointer-events:auto}
-.info-overlay-content{position:relative;max-width:420px;margin:20px;padding:24px;background:var(--panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.info-overlay-content h3{margin-top:0;font-size:18px;font-weight:600}
-.info-overlay-content p{margin:0;line-height:1.6;color:var(--muted)}
-.info-overlay-close{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:8px;border:0;background:transparent;cursor:pointer;font-size:16px;color:var(--muted)}
-.info-overlay-close:hover{background:var(--bg)}
-</style>
 
 <div class="page-header">
   <div>
@@ -73,7 +52,7 @@ function closeInfoOverlay(){
   {% endfor %}
 
   <section class="dashboard-section admin-alert-layer">
-    <div class="section-header">Priority alerts <span class="info-btn" onclick="showInfoOverlay('Priority alerts', 'Items that need immediate attention. Returned assessments need fixes, submitted workflows await approval, and blocked workflows have tasks preventing progress.')">ⓘ</span></div>
+    <div class="section-header">Priority alerts <button type="button" class="info-btn js-info-btn" data-info-title="Priority alerts" data-info-content="Items that need immediate attention. Returned assessments need fixes, submitted workflows await approval, and blocked workflows have tasks preventing progress." aria-label="Explain Priority alerts">i</button></div>
     <div class="admin-alert-grid">
       <a href="/assessments?status=returned" class="card admin-alert-card critical {% if alert.returned_assessments == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Returned assessments</div>
@@ -95,7 +74,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Domain health spider <span class="info-btn" onclick="showInfoOverlay('Domain health spider', 'Shows how healthy each domain is based on task completion rates. The closer a domain is to the center, the better its health. Outer rings show where problems are building up.')">ⓘ</span></div>
+    <div class="section-header">Domain health spider <button type="button" class="info-btn js-info-btn" data-info-title="Domain health spider" data-info-content="Shows how healthy each domain is based on task completion rates. The closer a domain is to the center, the better its health. Outer rings show where problems are building up." aria-label="Explain Domain health spider">i</button></div>
     <div class="card">
       {% if spider.axes %}
       <div class="muted" style="margin-bottom:8px">Center is 100% health. Outer ring is current lowest domain health ({{ spider.outer_health }}%).</div>
@@ -135,7 +114,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Coverage gap by domain <span class="info-btn" onclick="showInfoOverlay('Coverage gap by domain', 'Shows which domains have tasks that are not covered by any workflow. A high gap means there are orphaned tasks that need to be linked to workflows.')">ⓘ</span></div>
+    <div class="section-header">Coverage gap by domain <button type="button" class="info-btn js-info-btn" data-info-title="Coverage gap by domain" data-info-content="Shows which domains have tasks that are not covered by any workflow. A high gap means there are orphaned tasks that need to be linked to workflows." aria-label="Explain Coverage gap by domain">i</button></div>
     <div class="card">
       {% if coverage["items"] and coverage.total_gap > 0 %}
         <div class="gap-list">
@@ -160,7 +139,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Pipeline flow <span class="info-btn" onclick="showInfoOverlay('Pipeline flow', 'Shows how content moves through your system. Draft items become submitted, then confirmed. High return volumes indicate items getting stuck in review loops.')">ⓘ</span></div>
+    <div class="section-header">Pipeline flow <button type="button" class="info-btn js-info-btn" data-info-title="Pipeline flow" data-info-content="Shows how content moves through your system. Draft items become submitted, then confirmed. High return volumes indicate items getting stuck in review loops." aria-label="Explain Pipeline flow">i</button></div>
     <div class="card">
       {% if flow.stages %}
         <div class="flow-row">
@@ -192,7 +171,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Return composition by domain <span class="info-btn" onclick="showInfoOverlay('Return composition by domain', 'Shows which domains generate the most returns. Large slices mean reviewers are sending items back for fixes in that domain—often a sign of unclear requirements or quality issues.')">ⓘ</span></div>
+    <div class="section-header">Return composition by domain <button type="button" class="info-btn js-info-btn" data-info-title="Return composition by domain" data-info-content="Shows which domains generate the most returns. Large slices mean reviewers are sending items back for fixes in that domain, often a sign of unclear requirements or quality issues." aria-label="Explain Return composition by domain">i</button></div>
     <div class="card">
       {% if returns_pie.total and returns_pie.slices %}
         <div class="pie-wrap">
@@ -221,7 +200,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Cycle time profile (workflows) <span class="info-btn" onclick="showInfoOverlay('Cycle time profile', 'Shows how long workflows take from submission to confirmation. Fast cycles mean smooth reviews. Slow cycles or a long tail suggest bottlenecks in the review process.')">ⓘ</span></div>
+    <div class="section-header">Cycle time profile (workflows) <button type="button" class="info-btn js-info-btn" data-info-title="Cycle time profile" data-info-content="Shows how long workflows take from submission to confirmation. Fast cycles mean smooth reviews. Slow cycles or a long tail suggest bottlenecks in the review process." aria-label="Explain Cycle time profile">i</button></div>
     <div class="card">
       {% if cycle.groups %}
         <div class="muted" style="margin-bottom:8px">Distribution of submit→confirm times over the last 90 days ({{ cycle.sample_count }} workflows).</div>
@@ -252,7 +231,7 @@ function closeInfoOverlay(){
   </section>
 
   <section class="dashboard-section">
-    <div class="section-header">Pressure heat grid <span class="info-btn" onclick="showInfoOverlay('Pressure heat grid', 'Shows domain health over the last week. Green means healthy, amber means watch closely, red means at risk. Use this to spot domains that are trending downward before they become critical.')">ⓘ</span></div>
+    <div class="section-header">Pressure heat grid <button type="button" class="info-btn js-info-btn" data-info-title="Pressure heat grid" data-info-content="Shows domain health over the last week. Green means healthy, amber means watch closely, red means at risk. Use this to spot domains that are trending downward before they become critical." aria-label="Explain Pressure heat grid">i</button></div>
     <div class="card">
       <div class="heat-legend">
         <span><i class="heat-swatch heat-green"></i>Healthy (>=95%)</span>
@@ -390,7 +369,7 @@ function closeInfoOverlay(){
 {% endif %}
 
 <section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
-  <div class="section-header">Pipeline velocity · last 30 days <span class="info-btn" onclick="showInfoOverlay('Pipeline velocity', 'Measures how fast content flows through your system. Throughput is items confirmed per day. Cycle time is average hours from submission to confirmation. Return rate shows how often items get sent back.')">ⓘ</span></div>
+  <div class="section-header">Pipeline velocity · last 30 days <button type="button" class="info-btn js-info-btn" data-info-title="Pipeline velocity" data-info-content="Measures how fast content flows through your system. Throughput is items confirmed per day. Cycle time is average hours from submission to confirmation. Return rate shows how often items get sent back." aria-label="Explain Pipeline velocity">i</button></div>
   <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
     <div>
       <div class="muted">Throughput</div>
@@ -412,7 +391,7 @@ function closeInfoOverlay(){
 </section>
 
 <section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
-  <div class="section-header">Content stability · confirmed records reviewed within {{ staleness_days }} days <span class="info-btn" onclick="showInfoOverlay('Content stability', 'Shows how current your confirmed content is. Stable records have been reviewed recently. Low stability means content is getting old and may need refreshing to stay accurate.')">ⓘ</span></div>
+  <div class="section-header">Content stability · confirmed records reviewed within {{ staleness_days }} days <button type="button" class="info-btn js-info-btn" data-info-title="Content stability" data-info-content="Shows how current your confirmed content is. Stable records have been reviewed recently. Low stability means content is getting old and may need refreshing to stay accurate." aria-label="Explain Content stability">i</button></div>
   <div class="card">
     {% set st = namespace(confirmed=0, stale=0) %}
     {% for row in system_health.staleness %}
@@ -459,7 +438,7 @@ function closeInfoOverlay(){
 </section>
 
 <section class="dashboard-section {% if admin_mode %}admin-operator-only{% endif %}">
-  <div class="section-header">Assessment coverage · confirmed tasks with a linked confirmed assessment <span class="info-btn" onclick="showInfoOverlay('Assessment coverage', 'Shows how many of your tasks have assessments linked to them. High coverage means most tasks have quiz questions ready for learners. Low coverage means gaps in your testing material.')">ⓘ</span></div>
+  <div class="section-header">Assessment coverage · confirmed tasks with a linked confirmed assessment <button type="button" class="info-btn js-info-btn" data-info-title="Assessment coverage" data-info-content="Shows how many of your tasks have assessments linked to them. High coverage means most tasks have quiz questions ready for learners. Low coverage means gaps in your testing material." aria-label="Explain Assessment coverage">i</button></div>
   <div class="card">
     {% set cv = namespace(confirmed=0, covered=0) %}
     {% for row in system_health.coverage %}
@@ -501,5 +480,7 @@ function closeInfoOverlay(){
     {% endif %}
   </div>
 </section>
+
+<script src="/static/home_info_overlay.js?v={{ asset_v }}" defer></script>
 
 {% endblock %}
