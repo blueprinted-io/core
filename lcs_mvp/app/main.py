@@ -67,7 +67,7 @@ LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:12
 LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
 
 STALENESS_DAYS = 90  # confirmed content not reviewed within this threshold is considered stale
-STATIC_ASSET_VERSION = "62"
+STATIC_ASSET_VERSION = "63"
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
