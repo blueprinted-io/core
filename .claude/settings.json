@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(gh pr list)",
-      "Bash(xargs grep -l \"CREATE TABLE\")"
+      "Bash(xargs grep -l \"CREATE TABLE\")",
+      "Bash(python -m pytest tests/ -v)"
     ]
   }
 }
