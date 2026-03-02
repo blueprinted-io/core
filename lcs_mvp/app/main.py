@@ -2111,7 +2111,6 @@ def _admin_dashboard_visuals(
     )
     spider_axes: list[dict[str, Any]] = []
     spider_pts: list[str] = []
-    domain_focus = {"kubernetes", "aws"}
     axis_count = len(spider_source)
     spider_outer_health = min([float(x["current"]) for x in spider_source] + [100.0])
     spider_scale_range = max(0.1, 100.0 - spider_outer_health)
@@ -2133,7 +2132,8 @@ def _admin_dashboard_visuals(
         else:
             anchor = "middle"
         dname = str(s["domain"])
-        focus = dname.strip().lower() in domain_focus or health < 85.0
+        # Focus is now purely data-driven (health < 85%), not hardcoded.
+        focus = health < 85.0
         point_color = "#dc2626" if focus else "#6b7280"
         spider_pts.append(f"{value_x:.2f},{value_y:.2f}")
         spider_axes.append(
