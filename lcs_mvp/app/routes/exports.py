@@ -282,6 +282,118 @@ def export_download(request: Request, export_id: str):
     )
 
 
+@router.get("/workflows/{record_id}/{version}/export.html")
+def workflow_export_html(record_id: str, version: int):
+    """Export a confirmed workflow as a standalone, print-friendly HTML file."""
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+
+        if wf["status"] != "confirmed":
+            raise HTTPException(status_code=409, detail="Export is allowed for confirmed workflows only")
+
+        refs = conn.execute(
+            """
+            SELECT r.order_index, t.*
+            FROM workflow_task_refs r
+            JOIN tasks t ON t.record_id=r.task_record_id AND t.version=r.task_version
+            WHERE r.workflow_record_id=? AND r.workflow_version=?
+            ORDER BY r.order_index
+            """,
+            (record_id, version),
+        ).fetchall()
+
+        readiness = workflow_readiness(
+            conn,
+            [(r["record_id"], int(r["version"])) for r in refs],
+        )
+        if readiness != "ready":
+            raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
+
+    def _esc(s: str) -> str:
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def _steps_rows(steps_data: list[dict[str, Any]]) -> str:
+        rows = []
+        for i, st in enumerate(steps_data, 1):
+            actions = st.get("actions") or []
+            actions_html = "<br>".join(_esc(str(a)) for a in actions if str(a).strip()) if actions else "—"
+            rows.append(
+                f"<tr><td>{i}</td><td>{_esc(str(st.get('text','') or ''))}</td>"
+                f"<td>{actions_html}</td>"
+                f"<td>{_esc(str(st.get('notes','') or '')) or '—'}</td>"
+                f"<td>{_esc(str(st.get('completion','') or '')) or '—'}</td></tr>"
+            )
+        return "\n".join(rows)
+
+    tasks_html = []
+    for r in refs:
+        steps = _normalize_steps(_json_load(r["steps_json"]) or [])
+        facts = _json_load(r["facts_json"]) or []
+        concepts = _json_load(r["concepts_json"]) or []
+        deps = _json_load(r["dependencies_json"]) or []
+
+        facts_html = "".join(f"<li>{_esc(str(f))}</li>" for f in facts) if facts else "<li><em>None</em></li>"
+        concepts_html = "".join(f"<li>{_esc(str(c))}</li>" for c in concepts) if concepts else "<li><em>None</em></li>"
+        deps_html = "".join(f"<li>{_esc(str(d))}</li>" for d in deps) if deps else "<li><em>None</em></li>"
+        irr_note = "<p><strong>\u26a0 Irreversible:</strong> This task cannot be undone.</p>" if r["irreversible_flag"] else ""
+
+        tasks_html.append(f"""
+<section class="task">
+  <h2>Task {r['order_index']}: {_esc(str(r['title']))}</h2>
+  {irr_note}
+  <p><strong>Outcome:</strong> {_esc(str(r['outcome']))}</p>
+  <h3>Facts</h3><ul>{facts_html}</ul>
+  <h3>Concepts</h3><ul>{concepts_html}</ul>
+  <h3>Dependencies</h3><ul>{deps_html}</ul>
+  <h3>Procedure: {_esc(str(r['procedure_name']))}</h3>
+  <table>
+    <thead><tr><th>#</th><th>Step</th><th>Actions</th><th>Notes</th><th>Completion</th></tr></thead>
+    <tbody>{_steps_rows(steps)}</tbody>
+  </table>
+</section>""")
+
+    trace = f"{record_id}@{version} \u00b7 exported {utc_now_iso().split('T')[0]}"
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{_esc(str(wf['title']))}</title>
+<style>
+  body{{font-family:Georgia,serif;max-width:900px;margin:40px auto;padding:0 24px;color:#111;line-height:1.6}}
+  h1{{font-size:2em;border-bottom:2px solid #111;padding-bottom:8px}}
+  h2{{font-size:1.35em;margin-top:2em;border-bottom:1px solid #ccc;padding-bottom:4px}}
+  h3{{font-size:1em;text-transform:uppercase;letter-spacing:.05em;color:#555;margin-top:1.2em}}
+  table{{border-collapse:collapse;width:100%;margin-top:8px;font-size:.9em}}
+  th,td{{border:1px solid #ccc;padding:6px 10px;vertical-align:top;text-align:left}}
+  th{{background:#f5f5f5;font-weight:600}}
+  ul{{margin:4px 0;padding-left:20px}}
+  .task{{page-break-before:always}}
+  .task:first-child{{page-break-before:avoid}}
+  .provenance{{font-size:.75em;color:#888;margin-top:3em;border-top:1px solid #eee;padding-top:8px}}
+  @media print{{body{{margin:0;padding:16px}}.task{{page-break-before:always}}}}
+</style>
+</head>
+<body>
+<h1>{_esc(str(wf['title']))}</h1>
+<p><strong>Objective:</strong> {_esc(str(wf['objective']))}</p>
+<h2>Task Overview</h2>
+<ol>{"".join(f"<li>{_esc(str(r['title']))}</li>" for r in refs)}</ol>
+{"".join(tasks_html)}
+<div class="provenance">Trace: {_esc(trace)}</div>
+</body>
+</html>"""
+
+    filename = f"workflow__{_short_code('WF', record_id)}__v{version}.html"
+    return HTMLResponse(
+        content=html,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @router.get("/review", response_class=HTMLResponse)
 def review_queue(request: Request, item_type: str = ""):
     # Reviewers and admins only. (Admin implicitly has all domains.)

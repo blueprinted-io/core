@@ -40,11 +40,40 @@
 
 <div class="detail-layout">
   <section class="detail-main">
+    {% if force_action %}
+      <div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel));margin-bottom:14px">
+        <b>Admin override — {{ force_action.action | replace('_', ' ') }}</b>
+        <div class="muted" style="margin-top:6px">By {{ force_action.actor }} at {{ force_action.at }}{% if force_action.note %} — {{ force_action.note }}{% endif %}</div>
+        <div style="margin-top:6px;font-size:13px">This record was advanced by an administrator without following the normal review process. It has not passed standard peer review.</div>
+      </div>
+    {% endif %}
+
+    {% if return_note %}
+      <div class="callout warn" style="margin-bottom:14px">
+        <b>Returned for changes
+          {% if return_note.severity == 'critical' %}<span class="badge badge-danger" style="margin-left:6px">critical</span>
+          {% elif return_note.severity == 'info' %}<span class="badge" style="margin-left:6px">info</span>
+          {% else %}<span class="badge badge-warn" style="margin-left:6px">warning</span>{% endif %}
+        </b>
+        <div class="muted" style="margin-top:6px">By {{ return_note.actor }} at {{ return_note.at }}</div>
+        <div style="margin-top:10px">{{ return_note.note }}</div>
+      </div>
+    {% endif %}
+
     <div class="card stack-sm">
       <p><b>Objective:</b> {{ workflow.objective }}</p>
 
       {% if domains %}
         <p class="muted">Domains (derived): {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+      {% endif %}
+
+      {% if workflow.needs_review_flag %}
+        <div class="callout warn">
+          <b>Flagged for review</b>
+          {% if workflow.needs_review_note %}
+            <div style="margin-top:6px">{{ workflow.needs_review_note }}</div>
+          {% endif %}
+        </div>
       {% endif %}
 
       {% if readiness != 'ready' %}
@@ -146,6 +175,20 @@
     {% if workflow.status == 'submitted' and can(request.state.role, 'workflow:confirm') %}
     <form method="post" action="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/confirm">
       <button class="btn" type="submit">Confirm (reviewer)</button>
+    </form>
+
+    <form method="post" action="/workflows/{{ workflow.record_id }}/{{ workflow.version }}/return" class="card detail-inline-card">
+      <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
+      <label>Severity</label>
+      <select name="severity">
+        <option value="info">Info — minor suggestion</option>
+        <option value="warning" selected>Warning — must address before confirmation</option>
+        <option value="critical">Critical — significant issue, blocks confirmation</option>
+      </select>
+      <textarea name="note" rows="3" placeholder="What must change before this can be confirmed?" required style="margin-top:8px"></textarea>
+      <div style="margin-top:8px">
+        <button class="btn" type="submit">Return</button>
+      </div>
     </form>
     {% endif %}
 

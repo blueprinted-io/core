@@ -62,6 +62,7 @@
     <tr>
       <td>
         <a href="/workflows/{{ it.record_id }}/{{ it.latest_version }}">{{ it.title }}</a>
+        {% if it.needs_review_flag %}<span class="badge badge-warn" style="margin-left:6px">needs_review</span>{% endif %}
         {% if request.state.role == 'admin' %}
           <div class="muted" style="margin-top:4px">Record: <code>{{ it.record_id }}</code></div>
         {% endif %}

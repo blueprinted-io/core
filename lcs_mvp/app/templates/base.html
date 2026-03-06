@@ -91,11 +91,30 @@
           const w = data.workflows || {};
           const asmt = data.assessments || {};
 
+          const role = data.role || '';
+          const scoped = data.role_scoped || null;
+
           const tasksEl = document.getElementById('pulse-tasks');
-          if(tasksEl) tasksEl.textContent = `Tasks: ${t.draft||0} draft · ${t.submitted||0} submitted · ${t.confirmed||0} confirmed`;
+          if(tasksEl){
+            if(role === 'reviewer' && scoped){
+              tasksEl.textContent = `Tasks: ${scoped.tasks||0} submitted (your domains) · ${t.confirmed||0} confirmed`;
+            } else if(role === 'author' && scoped){
+              tasksEl.textContent = `Tasks: ${scoped.tasks_draft||0} draft · ${scoped.tasks_returned||0} returned · ${scoped.tasks_submitted||0} submitted`;
+            } else {
+              tasksEl.textContent = `Tasks: ${t.draft||0} draft · ${t.submitted||0} submitted · ${t.confirmed||0} confirmed`;
+            }
+          }
 
           const wfEl = document.getElementById('pulse-workflows');
-          if(wfEl) wfEl.textContent = `Workflows: ${w.draft||0} draft · ${w.submitted||0} submitted · ${w.confirmed||0} confirmed`;
+          if(wfEl){
+            if(role === 'reviewer' && scoped){
+              wfEl.textContent = `Workflows: ${scoped.workflows||0} submitted (your domains) · ${w.confirmed||0} confirmed`;
+            } else if(role === 'author' && scoped){
+              wfEl.textContent = `Workflows: ${scoped.workflows_draft||0} draft · ${scoped.workflows_returned||0} returned · ${scoped.workflows_submitted||0} submitted`;
+            } else {
+              wfEl.textContent = `Workflows: ${w.draft||0} draft · ${w.submitted||0} submitted · ${w.confirmed||0} confirmed`;
+            }
+          }
 
           const asEl = document.getElementById('pulse-assessments');
           if(asEl) asEl.textContent = `Assessments: ${asmt.draft||0} draft · ${asmt.submitted||0} submitted · ${asmt.confirmed||0} confirmed`;
@@ -221,11 +240,49 @@
         });
       }
 
+      async function loadBadgeToasts(){
+        const params = new URLSearchParams(window.location.search);
+        const codes = params.get('badges');
+        if(!codes) return;
+        // Remove ?badges from URL bar without reload
+        try{
+          const clean = window.location.pathname + (window.location.search.replace(/[?&]badges=[^&]*/,'').replace(/^\?$/,'') || '');
+          window.history.replaceState(null,'', clean);
+        }catch(e){}
+        try{
+          const r = await fetch('/profile/badges-meta?codes=' + encodeURIComponent(codes), {headers:{'Accept':'application/json'}});
+          if(!r.ok) return;
+          const badges = await r.json();
+          if(!badges || !badges.length) return;
+          let container = document.getElementById('toast-container');
+          if(!container){
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            document.body.appendChild(container);
+          }
+          badges.forEach(function(b, i){
+            setTimeout(function(){
+              const t = document.createElement('div');
+              t.className = 'toast';
+              t.innerHTML = '<span class="toast-icon">' + (b.icon||'🏅') + '</span>'
+                + '<div class="toast-body"><div class="toast-title">Achievement unlocked!</div>'
+                + '<div class="toast-name">' + b.name + '</div>'
+                + '<div class="toast-desc">' + b.description + '</div></div>'
+                + '<button class="toast-close" onclick="this.parentElement.remove()">✕</button>';
+              container.appendChild(t);
+              requestAnimationFrame(function(){ t.classList.add('toast-in'); });
+              setTimeout(function(){ t.classList.remove('toast-in'); t.classList.add('toast-out'); setTimeout(function(){ t.remove(); }, 400); }, 6000);
+            }, i * 600);
+          });
+        }catch(e){}
+      }
+
       function boot(){
         initTheme();
         initRail();
         loadPulse();
         initDevBanner();
+        loadBadgeToasts();
       }
 
       function initDevBanner(){
@@ -293,7 +350,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -305,7 +362,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Ingestion <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Ingestion</div>
           <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
           <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
         </div>
@@ -320,7 +377,7 @@
       {% elif role == 'author' %}
         {% if can(role, 'import:pdf') or can(role, 'import:json') %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Ingestion <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Ingestion</div>
           {% if can(role, 'import:pdf') %}
             <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
           {% endif %}
@@ -337,7 +394,7 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -362,14 +419,14 @@
         </div>
 
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
 
       {% elif role == 'content_publisher' %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>
@@ -382,7 +439,7 @@
 
       {% else %}
         <div class="sidebar-section">
-          <div class="sidebar-title">Delivery <span class="sidebar-flag">not yet functional</span></div>
+          <div class="sidebar-title">Delivery</div>
           <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
           <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
         </div>

@@ -8,8 +8,6 @@
   {% endif %}
 </h1>
 
-<p class="muted">Workflows may reference <b>confirmed Task versions only</b>. Add task refs as <code>record_id@version</code>, one per line.</p>
-
 <form method="post" action="{% if mode=='new' %}/workflows/new{% else %}/workflows/{{ workflow.record_id }}/{{ workflow.version }}/revise{% endif %}">
 
   <label>Title</label>
@@ -18,29 +16,181 @@
   <label>Objective</label>
   <textarea name="objective" rows="2" required>{{ workflow.objective if workflow else '' }}</textarea>
 
-  <label>Task references (one per line, format: record_id@version)</label>
-  <textarea name="task_refs" rows="6" required placeholder="e.g.
-123e4567-e89b-12d3-a456-426614174000@1">{{ refs_text or '' }}</textarea>
-
   {% if mode!='new' %}
     <label>Change note (required)</label>
     <input name="change_note" required placeholder="Required: why are you changing this?" />
   {% endif %}
 
-  <div class="card">
-    <h3>Confirmed tasks (copy/paste IDs)</h3>
-    {% if confirmed_tasks %}
-      <ul>
-      {% for t in confirmed_tasks %}
-        <li><code>{{ t.record_id }}@{{ t.version }}</code> — {{ t.title }}</li>
-      {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">None yet. Confirm at least one Task first.</p>
-    {% endif %}
-  </div>
+  <!-- Hidden field kept in sync by the picker JS -->
+  <textarea name="task_refs" id="task-refs-hidden" style="display:none" aria-hidden="true"></textarea>
 
-  <button class="btn" type="submit">{% if mode=='new' %}Create workflow{% else %}Create new version{% endif %}</button>
-  <a class="btn secondary" href="/workflows">Cancel</a>
+  <label style="margin-top:16px">Tasks <span class="muted" style="font-weight:400;font-size:13px">— confirmed versions only, ordered</span></label>
+  <div class="task-picker" id="task-picker">
+    <div class="task-picker-left">
+      <div class="task-picker-search-row">
+        <input type="text" id="task-picker-search" placeholder="Search by title or domain…" autocomplete="off" />
+      </div>
+      <div class="task-picker-list" id="task-picker-list"></div>
+    </div>
+    <div class="task-picker-right">
+      <div class="task-picker-right-header">Selected tasks — in order</div>
+      <div class="task-picker-selected" id="task-picker-selected"></div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:6px;font-size:13px">Click a task on the left to add it. Use ↑↓ to reorder, ✕ to remove.</p>
+
+  <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
+    <button class="btn" type="submit" id="submit-btn">{% if mode=='new' %}Create workflow{% else %}Create new version{% endif %}</button>
+    <a class="btn secondary" href="/workflows">Cancel</a>
+    <span class="muted" id="picker-count" style="font-size:13px"></span>
+  </div>
 </form>
+
+<script>
+(function(){
+  var CATALOG = {{ confirmed_tasks_json | safe }};
+  var refsText = {{ refs_text_json | safe }};
+  var selected = [];
+
+  // Pre-populate from existing refs (revise mode)
+  if (refsText) {
+    refsText.split('\n').forEach(function(line){
+      line = line.trim();
+      if (!line) return;
+      var at = line.lastIndexOf('@');
+      if (at < 0) return;
+      var rid = line.slice(0, at).trim();
+      var ver = parseInt(line.slice(at + 1).trim(), 10);
+      var task = CATALOG.find(function(t){ return t.record_id === rid && t.version === ver; });
+      if (task) selected.push(JSON.parse(JSON.stringify(task)));
+    });
+  }
+
+  function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function syncHidden(){
+    var ta = document.getElementById('task-refs-hidden');
+    ta.value = selected.map(function(t){ return t.record_id + '@' + t.version; }).join('\n');
+    var ct = document.getElementById('picker-count');
+    if (ct) ct.textContent = selected.length === 0 ? 'No tasks selected' : selected.length + ' task' + (selected.length === 1 ? '' : 's') + ' selected';
+  }
+
+  function isSelected(rid, ver){
+    return selected.some(function(t){ return t.record_id === rid && t.version === ver; });
+  }
+
+  function renderList(){
+    var q = (document.getElementById('task-picker-search').value || '').toLowerCase().trim();
+    var list = document.getElementById('task-picker-list');
+    list.innerHTML = '';
+    var shown = 0;
+    CATALOG.forEach(function(t){
+      if (q && !(t.title.toLowerCase().indexOf(q) >= 0 || (t.domain||'').toLowerCase().indexOf(q) >= 0)) return;
+      shown++;
+      var div = document.createElement('div');
+      div.className = 'task-picker-item' + (isSelected(t.record_id, t.version) ? ' is-selected' : '');
+      div.innerHTML =
+        '<span class="task-picker-item-title">' + esc(t.title) + '</span>' +
+        '<span class="task-picker-item-meta">' + (t.domain ? esc(t.domain) + ' \u00b7 ' : '') + 'v' + t.version + '</span>';
+      div.addEventListener('click', function(){
+        if (isSelected(t.record_id, t.version)){
+          selected = selected.filter(function(s){ return !(s.record_id === t.record_id && s.version === t.version); });
+        } else {
+          selected.push(JSON.parse(JSON.stringify(t)));
+        }
+        syncHidden(); renderList(); renderSelected();
+      });
+      list.appendChild(div);
+    });
+    if (!shown){
+      var em = document.createElement('div');
+      em.className = 'task-picker-empty-msg';
+      em.textContent = CATALOG.length === 0 ? 'No confirmed tasks exist yet. Confirm a task first.' : 'No tasks match "' + q + '".';
+      list.appendChild(em);
+    }
+  }
+
+  function move(idx, dir){
+    var j = idx + dir;
+    if (j < 0 || j >= selected.length) return;
+    var tmp = selected[idx]; selected[idx] = selected[j]; selected[j] = tmp;
+    syncHidden(); renderList(); renderSelected();
+  }
+
+  function remove(idx){
+    selected.splice(idx, 1);
+    syncHidden(); renderList(); renderSelected();
+  }
+
+  function renderSelected(){
+    var el = document.getElementById('task-picker-selected');
+    el.innerHTML = '';
+    if (selected.length === 0){
+      var p = document.createElement('div');
+      p.className = 'task-picker-empty-msg';
+      p.textContent = 'No tasks selected yet. Click tasks on the left to add them.';
+      el.appendChild(p);
+      return;
+    }
+    selected.forEach(function(t, idx){
+      var row = document.createElement('div');
+      row.className = 'task-picker-selected-row';
+
+      var order = document.createElement('span');
+      order.className = 'task-picker-selected-order';
+      order.textContent = idx + 1;
+
+      var text = document.createElement('span');
+      text.className = 'task-picker-selected-text';
+      text.innerHTML =
+        '<span class="task-picker-item-title">' + esc(t.title) + '</span>' +
+        '<span class="task-picker-item-meta">' + (t.domain ? esc(t.domain) + ' \u00b7 ' : '') + esc(t.record_id) + '@' + t.version + '</span>';
+
+      var actions = document.createElement('span');
+      actions.className = 'task-picker-selected-actions';
+
+      var upBtn = document.createElement('button');
+      upBtn.type = 'button'; upBtn.className = 'btn secondary btn-xs';
+      upBtn.title = 'Move up'; upBtn.textContent = '\u2191';
+      if (idx === 0) upBtn.disabled = true;
+      upBtn.addEventListener('click', function(){ move(idx, -1); });
+
+      var downBtn = document.createElement('button');
+      downBtn.type = 'button'; downBtn.className = 'btn secondary btn-xs';
+      downBtn.title = 'Move down'; downBtn.textContent = '\u2193';
+      if (idx === selected.length - 1) downBtn.disabled = true;
+      downBtn.addEventListener('click', function(){ move(idx, 1); });
+
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button'; removeBtn.className = 'btn secondary btn-xs';
+      removeBtn.title = 'Remove'; removeBtn.textContent = '\u2715';
+      removeBtn.addEventListener('click', function(){ remove(idx); });
+
+      actions.appendChild(upBtn);
+      actions.appendChild(downBtn);
+      actions.appendChild(removeBtn);
+
+      row.appendChild(order);
+      row.appendChild(text);
+      row.appendChild(actions);
+      el.appendChild(row);
+    });
+  }
+
+  document.getElementById('task-picker-search').addEventListener('input', renderList);
+
+  // Validate on submit: at least one task must be selected
+  var form = document.querySelector('form');
+  if (form){
+    form.addEventListener('submit', function(e){
+      if (selected.length === 0){
+        e.preventDefault();
+        alert('Please select at least one confirmed task.');
+      }
+    });
+  }
+
+  syncHidden(); renderList(); renderSelected();
+})();
+</script>
 {% endblock %}

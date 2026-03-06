@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -12,7 +13,7 @@ from ..database import (
     workflow_readiness, workflow_readiness_detail,
     enforce_workflow_ref_rules,
 )
-from ..audit import audit, _normalize_domains, get_latest_version
+from ..audit import audit, _normalize_domains, _fetch_return_note, _fetch_force_action, get_latest_version
 from ..auth import require
 from ..utils import _json_dump, _json_load, parse_lines, parse_meta, parse_tags
 
@@ -123,6 +124,8 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
                     "domains": doms,
                     "tags": tags,
                     "replacement_state": replacement_state,
+                    "needs_review_flag": bool(latest["needs_review_flag"]),
+                    "needs_review_note": latest["needs_review_note"],
                 }
             )
 
@@ -133,17 +136,27 @@ def workflows_list(request: Request, status: str | None = None, q: str | None = 
     )
 
 
+def _confirmed_tasks_json(conn: Any) -> str:
+    rows = conn.execute(
+        "SELECT record_id, version, title, domain FROM tasks WHERE status='confirmed' ORDER BY title"
+    ).fetchall()
+    return json.dumps([
+        {"record_id": str(r["record_id"]), "version": int(r["version"]),
+         "title": str(r["title"]), "domain": str(r["domain"] or "")}
+        for r in rows
+    ])
+
+
 @router.get("/workflows/new", response_class=HTMLResponse)
 def workflow_new_form(request: Request):
     require(request.state.role, "workflow:create")
     with db() as conn:
-        confirmed_tasks = conn.execute(
-            "SELECT record_id, version, title FROM tasks WHERE status='confirmed' ORDER BY title"
-        ).fetchall()
+        ct_json = _confirmed_tasks_json(conn)
     return templates.TemplateResponse(
         request,
         "workflow_edit.html",
-        {"mode": "new", "workflow": None, "confirmed_tasks": confirmed_tasks, "refs_text": ""},
+        {"mode": "new", "workflow": None,
+         "confirmed_tasks_json": ct_json, "refs_text_json": json.dumps("")},
     )
 
 
@@ -278,6 +291,14 @@ def workflow_view(request: Request, record_id: str, version: int):
                 pending_workflow_version = int(pending["version"])
                 pending_workflow_status = str(pending["status"])
 
+        # Override scar: was this version force-confirmed or force-submitted?
+        force_action = _fetch_force_action(conn, "workflow", record_id, version)
+
+        # Return note (if this version was returned for changes)
+        return_note = None
+        if wf["status"] == "returned":
+            return_note = _fetch_return_note(conn, "workflow", record_id, version)
+
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
@@ -293,6 +314,8 @@ def workflow_view(request: Request, record_id: str, version: int):
             "pending_workflow_version": pending_workflow_version,
             "pending_workflow_status": pending_workflow_status,
             "task_version_changes": task_version_changes,
+            "force_action": force_action,
+            "return_note": return_note,
         },
     )
 
@@ -326,9 +349,7 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
             """,
             (record_id, version),
         ).fetchall()
-        confirmed_tasks = conn.execute(
-            "SELECT record_id, version, title FROM tasks WHERE status='confirmed' ORDER BY title"
-        ).fetchall()
+        ct_json = _confirmed_tasks_json(conn)
 
     refs_text = "\n".join([f"{r['task_record_id']}@{r['task_version']}" for r in refs])
     return templates.TemplateResponse(
@@ -337,8 +358,8 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
         {
             "mode": "revise",
             "workflow": dict(wf),
-            "confirmed_tasks": confirmed_tasks,
-            "refs_text": refs_text,
+            "confirmed_tasks_json": ct_json,
+            "refs_text_json": json.dumps(refs_text),
         },
     )
 
@@ -520,8 +541,9 @@ def workflow_confirm(request: Request, record_id: str, version: int):
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
 
-    audit("workflow", record_id, version, "confirm", actor)
-    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+    new_badges = audit("workflow", record_id, version, "confirm", actor)
+    badge_qs = f"?badges={','.join(new_badges)}" if new_badges else ""
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}{badge_qs}", status_code=303)
 
 
 @router.post("/workflows/{record_id}/{version}/force-confirm")
@@ -564,4 +586,51 @@ def workflow_force_confirm(request: Request, record_id: str, version: int):
         )
 
     audit("workflow", record_id, version, "force_confirm", actor, note="admin forced confirmation")
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@router.post("/workflows/{record_id}/{version}/return")
+def workflow_return_for_changes(
+    request: Request,
+    record_id: str,
+    version: int,
+    note: str = Form(""),
+    severity: str = Form("warning"),
+):
+    require(request.state.role, "workflow:confirm")
+    actor = request.state.user
+    msg = (note or "").strip()
+    if not msg:
+        raise HTTPException(status_code=400, detail="Return note is required")
+
+    sev = (severity or "warning").strip().lower()
+    if sev not in ("info", "warning", "critical"):
+        sev = "warning"
+    full_note = f"[{sev}] {msg}"
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
+            (record_id, version),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(status_code=409, detail="Only submitted workflows can be returned")
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        doms = _workflow_domains(conn, [(r["task_record_id"], int(r["task_version"])) for r in refs])
+        missing = [d for d in doms if not _user_has_domain(conn, actor, d)]
+        if missing:
+            raise HTTPException(status_code=403, detail=f"Forbidden: not authorized for domain(s): {', '.join(missing)}")
+
+        conn.execute(
+            "UPDATE workflows SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+
+    audit("workflow", record_id, version, "return_for_changes", actor, note=full_note)
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)

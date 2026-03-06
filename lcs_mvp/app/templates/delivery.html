@@ -3,7 +3,7 @@
 <div class="page-header">
   <div>
     <h1>Delivery</h1>
-    <p class="muted">Export confirmed workflows into delivery formats (ILT-friendly). SCORM/xAPI/cmi5 are currently stubs.</p>
+    <p class="muted">Export confirmed workflows as DOCX, Markdown, or HTML. HTML exports are print-ready for browser PDF.</p>
   </div>
 </div>
 
@@ -55,22 +55,13 @@
     </div>
 
     <div>
-      <label>Output modality</label>
+      <label>Output format</label>
       <select name="modality" required>
-        <option value="docx">Word (DOCX)</option>
-        <option value="pptx">PowerPoint (PPTX) — DEV (not operational)</option>
-        <option value="md">Markdown</option>
-        <option value="html">HTML — DEV (not operational)</option>
-        <option value="pdf">PDF — DEV (not operational)</option>
-        <option value="scorm">SCORM — DEV (stub)</option>
-        <option value="xapi">xAPI — DEV (stub)</option>
-        <option value="cmi5">cmi5 — DEV (stub)</option>
+        <option value="docx">Word (DOCX) — ILT-ready handout</option>
+        <option value="md">Markdown — plain text, version-control friendly</option>
+        <option value="html">HTML — browser view, print to PDF via Ctrl+P</option>
       </select>
-    </div>
-
-    <div class="callout warn">
-      <b>Note</b>
-      <div class="muted" style="margin-top:6px">DEV modalities are visible for roadmap clarity, but return an error if selected.</div>
+      <div class="muted" style="margin-top:6px">To generate a PDF: choose HTML, then use your browser's print function (Ctrl+P → Save as PDF).</div>
     </div>
 
     <div class="actions-bar" style="margin-top:4px">

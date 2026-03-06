@@ -13,12 +13,13 @@ from ..config import (
 )
 from ..auth import SESSION_COOKIE
 from ..database import (
-    db, utc_now_iso,
+    db, utc_now_iso, session_expires_iso,
     _active_domains, _available_db_keys, _db_profile_label, _list_custom_db_keys,
     _normalize_db_key, _user_id, _user_domains,
-    _verify_password, _new_session_token,
+    _verify_password, _hash_password, _new_session_token,
 )
 from ..audit import audit
+from ..achievements import get_user_achievements
 
 router = APIRouter()
 
@@ -73,8 +74,8 @@ def login_run(request: Request, username: str = Form(""), password: str = Form("
 
         token = _new_session_token()
         conn.execute(
-            "INSERT INTO sessions(token, user_id, created_at) VALUES (?,?,?)",
-            (token, int(u["id"]), utc_now_iso()),
+            "INSERT INTO sessions(token, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+            (token, int(u["id"]), utc_now_iso(), session_expires_iso()),
         )
 
     resp = RedirectResponse(url="/", status_code=303)
@@ -124,11 +125,12 @@ def profile_view(request: Request, msg: str | None = None):
         uid = _user_id(conn, actor)
         selected_rows = conn.execute("SELECT domain FROM user_domains WHERE user_id=?", (uid,)).fetchall() if uid else []
         selected = {str(r["domain"]) for r in selected_rows}
+        user_badges = get_user_achievements(conn, actor)
 
     return templates.TemplateResponse(
         request,
         "profile.html",
-        {"user": dict(u), "domains": domains, "selected": selected, "msg": msg, "role": request.state.role},
+        {"user": dict(u), "domains": domains, "selected": selected, "msg": msg, "role": request.state.role, "badges": user_badges},
     )
 
 
@@ -246,3 +248,65 @@ def profile_domains_save(request: Request, domain: list[str] = Form([])):
         status_code=403,
         detail="Domain entitlements are admin-managed. Use the admin users page.",
     )
+
+
+@router.post("/profile/password")
+def profile_password_change(
+    request: Request,
+    current_password: str = Form(""),
+    new_password: str = Form(""),
+    confirm_password: str = Form(""),
+):
+    import secrets as _secrets
+    actor = request.state.user
+    new_pw = (new_password or "").strip()
+    confirm_pw = (confirm_password or "").strip()
+
+    if new_pw != confirm_pw:
+        return RedirectResponse(url="/profile?msg=pw_mismatch", status_code=303)
+    if len(new_pw) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    with db() as conn:
+        u = conn.execute(
+            "SELECT id, password_salt_hex, password_hash_hex FROM users WHERE username=? AND disabled_at IS NULL",
+            (actor,),
+        ).fetchone()
+        if not u:
+            raise HTTPException(404)
+        if not _verify_password(current_password or "", str(u["password_salt_hex"]), str(u["password_hash_hex"])):
+            return RedirectResponse(url="/profile?msg=pw_wrong", status_code=303)
+
+        new_salt = _secrets.token_bytes(16).hex()
+        new_hash = _hash_password(new_pw, new_salt)
+        conn.execute(
+            "UPDATE users SET password_salt_hex=?, password_hash_hex=?, demo_password=NULL WHERE id=?",
+            (new_salt, new_hash, int(u["id"])),
+        )
+        # Revoke all other sessions so the old password can't be used via cached cookies
+        current_token = (request.cookies.get("lcs_session") or "").strip()
+        conn.execute(
+            "UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL AND token != ?",
+            (utc_now_iso(), int(u["id"]), current_token),
+        )
+        audit("user", actor, 1, "password_change", actor, note="password changed by user", conn=conn)
+
+    return RedirectResponse(url="/profile?msg=pw_saved", status_code=303)
+
+
+@router.get("/profile/badges-meta")
+def badges_meta(codes: str = ""):
+    """Return badge catalog metadata for a comma-separated list of codes.
+
+    Used by the achievement toast JS. Auth required via middleware.
+    """
+    code_list = [c.strip() for c in (codes or "").split(",") if c.strip()]
+    if not code_list:
+        return []
+    qmarks = ",".join(["?"] * len(code_list))
+    with db() as conn:
+        rows = conn.execute(
+            f"SELECT code, name, description, icon FROM achievements WHERE code IN ({qmarks}) AND enabled=1",
+            code_list,
+        ).fetchall()
+    return [{"code": r["code"], "name": r["name"], "description": r["description"], "icon": r["icon"]} for r in rows]

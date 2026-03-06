@@ -165,6 +165,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         FROM sessions s
                         JOIN users u ON u.id = s.user_id
                         WHERE s.token=? AND s.revoked_at IS NULL
+                          AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
                         """,
                         (token,),
                     ).fetchone()

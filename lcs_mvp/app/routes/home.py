@@ -252,11 +252,12 @@ def pulse(request: Request):
         # Reviewer-scoped counts (domain entitlements)
         reviewer_pending = None
         reviewer_domains: list[str] = []
+        role_scoped_submitted: dict[str, int] | None = None  # per entity type, scoped to role
+
         if role in ("reviewer", "admin"):
             reviewer_domains = _user_domains(conn, user)
 
             if role == "admin":
-                # admin sees everything
                 reviewer_pending = int(
                     conn.execute(
                         "SELECT ("
@@ -269,6 +270,7 @@ def pulse(request: Request):
             else:
                 if reviewer_domains:
                     qmarks = ",".join(["?"] * len(reviewer_domains))
+                    rdset = {d.strip().lower() for d in reviewer_domains if d}
 
                     t = int(
                         conn.execute(
@@ -276,30 +278,40 @@ def pulse(request: Request):
                             reviewer_domains,
                         ).fetchone()["c"]
                     )
-                    # Workflows: domain match is derived via domains_json; filter in Python for portability.
                     w_rows = conn.execute(
                         "SELECT domains_json FROM workflows WHERE status='submitted'"
                     ).fetchall()
-                    w = 0
-                    rdset = {d.strip().lower() for d in reviewer_domains if d}
-                    for wr in w_rows:
-                        doms = _normalize_domains(wr["domains_json"])
-                        if rdset.intersection(doms):
-                            w += 1
+                    w = sum(1 for wr in w_rows if rdset.intersection(_normalize_domains(wr["domains_json"])))
 
-                    # Assessments: same.
                     a_rows = conn.execute(
                         "SELECT domains_json FROM assessment_items WHERE status='submitted'"
                     ).fetchall()
-                    a = 0
-                    for ar in a_rows:
-                        doms = _normalize_domains(ar["domains_json"])
-                        if rdset.intersection(doms):
-                            a += 1
+                    a = sum(1 for ar in a_rows if rdset.intersection(_normalize_domains(ar["domains_json"])))
 
                     reviewer_pending = t + w + a
+                    role_scoped_submitted = {"tasks": t, "workflows": w, "assessments": a}
                 else:
                     reviewer_pending = 0
+                    role_scoped_submitted = {"tasks": 0, "workflows": 0, "assessments": 0}
+
+        elif role == "author":
+            # Authors see their own created items in draft/returned states.
+            t_mine = conn.execute(
+                "SELECT status, COUNT(*) AS c FROM tasks WHERE created_by=? GROUP BY status", (user,)
+            ).fetchall()
+            w_mine = conn.execute(
+                "SELECT status, COUNT(*) AS c FROM workflows WHERE created_by=? GROUP BY status", (user,)
+            ).fetchall()
+            t_map = {r["status"]: int(r["c"]) for r in t_mine}
+            w_map = {r["status"]: int(r["c"]) for r in w_mine}
+            role_scoped_submitted = {
+                "tasks_draft": t_map.get("draft", 0),
+                "tasks_returned": t_map.get("returned", 0),
+                "tasks_submitted": t_map.get("submitted", 0),
+                "workflows_draft": w_map.get("draft", 0),
+                "workflows_returned": w_map.get("returned", 0),
+                "workflows_submitted": w_map.get("submitted", 0),
+            }
 
         # Workflow counts
         wf_counts = {
@@ -335,6 +347,8 @@ def pulse(request: Request):
             "pending": reviewer_pending,
             "domains": reviewer_domains,
         },
+        "role_scoped": role_scoped_submitted,
+        "role": role,
         "audit": {
             "last": dict(last_audit) if last_audit else None,
         },

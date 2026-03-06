@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..config import templates
 from ..database import db, utc_now_iso, _active_domains, _user_has_domain
-from ..audit import audit, _fetch_return_note, get_latest_version
+from ..audit import audit, _fetch_return_note, _fetch_force_action, get_latest_version
 from ..linting import lint_steps, _normalize_steps, _zip_steps, _validate_steps_required
 from ..auth import require
 from ..utils import _json_dump, _json_load, parse_lines, parse_meta
@@ -257,6 +257,11 @@ def task_view(request: Request, record_id: str, version: int):
         with db() as conn:
             return_note = _fetch_return_note(conn, "task", record_id, version)
 
+    # Override scar: did an admin force-confirm or force-submit this version?
+    force_action = None
+    with db() as conn:
+        force_action = _fetch_force_action(conn, "task", record_id, version)
+
     return templates.TemplateResponse(
         request,
         "task_view.html",
@@ -265,6 +270,7 @@ def task_view(request: Request, record_id: str, version: int):
             "warnings": warnings,
             "return_note": return_note,
             "workflows_using": workflows_using,
+            "force_action": force_action,
         },
     )
 
@@ -538,12 +544,22 @@ def task_force_submit(request: Request, record_id: str, version: int):
 
 
 @router.post("/tasks/{record_id}/{version}/return")
-def task_return_for_changes(request: Request, record_id: str, version: int, note: str = Form("")):
+def task_return_for_changes(
+    request: Request,
+    record_id: str,
+    version: int,
+    note: str = Form(""),
+    severity: str = Form("warning"),
+):
     require(request.state.role, "task:confirm")
     actor = request.state.user
     msg = (note or "").strip()
     if not msg:
         raise HTTPException(status_code=400, detail="Return note is required")
+    sev = (severity or "warning").strip().lower()
+    if sev not in ("info", "warning", "critical"):
+        sev = "warning"
+    msg = f"[{sev}] {msg}"
 
     with db() as conn:
         row = conn.execute(
@@ -612,8 +628,9 @@ def task_confirm(request: Request, record_id: str, version: int):
         except Exception:
             conn.execute("ROLLBACK TO before_cascade")
 
-    audit("task", record_id, version, "confirm", actor)
-    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+    new_badges = audit("task", record_id, version, "confirm", actor)
+    badge_qs = f"?badges={','.join(new_badges)}" if new_badges else ""
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}{badge_qs}", status_code=303)
 
 
 @router.post("/tasks/{record_id}/{version}/force-confirm")

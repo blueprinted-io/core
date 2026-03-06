@@ -245,6 +245,7 @@ html[data-theme="dark"] .badge{background:rgba(255,255,255,.06)}
 .badge-returned{background:#fef3c7;border-color:#fde68a;color:#92400e}
 .badge-deprecated{background:#f3f4f6;border-color:#e5e7eb;color:#6b7280}
 .badge-warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.badge-danger{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 
 html[data-theme="dark"] .badge-returned{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:rgba(245,158,11,.95)}
 
@@ -1269,6 +1270,42 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
   body.spa-v1 .detail-layout{grid-template-columns:1fr}
   body.spa-v1 .detail-actions{position:relative;top:auto}
 }
+
+/* ---- Task Picker ---- */
+.task-picker{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.task-picker-left,.task-picker-right{background:var(--panel);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.task-picker-search-row{padding:10px;border-bottom:1px solid var(--border)}
+.task-picker-search-row input{width:100%;margin:0}
+.task-picker-list{flex:1;overflow-y:auto;max-height:320px}
+.task-picker-right-header{padding:10px 14px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+.task-picker-selected{flex:1;overflow-y:auto;max-height:320px;padding:8px}
+.task-picker-item{padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:2px;transition:background .1s ease}
+.task-picker-item:last-child{border-bottom:none}
+.task-picker-item:hover{background:color-mix(in oklab,var(--accent) 8%,var(--panel))}
+.task-picker-item.is-selected{background:color-mix(in oklab,var(--accent) 12%,var(--panel));border-left:3px solid var(--accent)}
+.task-picker-item-title{font-size:14px;font-weight:500}
+.task-picker-item-meta{font-size:12px;color:var(--muted)}
+.task-picker-selected-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg)}
+.task-picker-selected-order{font-size:13px;font-weight:700;color:var(--muted);min-width:20px;text-align:center;flex-shrink:0}
+.task-picker-selected-text{flex:1;display:flex;flex-direction:column;gap:1px;min-width:0;overflow:hidden}
+.task-picker-selected-text .task-picker-item-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-picker-selected-text .task-picker-item-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-picker-selected-actions{display:flex;gap:4px;flex-shrink:0}
+.btn-xs{padding:3px 7px;font-size:11px;border-radius:7px;min-width:26px;line-height:1.4}
+.task-picker-empty-msg{padding:12px;color:var(--muted);font-size:14px}
+@media (max-width:980px){.task-picker{grid-template-columns:1fr}}
+
+/* Achievement toasts */
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.toast{display:flex;align-items:flex-start;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:0 4px 24px rgba(0,0,0,.15);min-width:260px;max-width:340px;opacity:0;transform:translateY(16px);transition:opacity .3s,transform .3s;pointer-events:all}
+.toast.toast-in{opacity:1;transform:translateY(0)}
+.toast.toast-out{opacity:0;transform:translateY(16px)}
+.toast-icon{font-size:1.8em;line-height:1;flex-shrink:0}
+.toast-body{flex:1;min-width:0}
+.toast-title{font-size:0.75em;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+.toast-name{font-weight:700;font-size:0.95em}
+.toast-desc{font-size:0.82em;color:var(--muted);margin-top:2px}
+.toast-close{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 0 0 8px;line-height:1;flex-shrink:0;align-self:flex-start}
 
 @media (max-width: 980px){
   body.spa-v1 .spa-layout{display:block}

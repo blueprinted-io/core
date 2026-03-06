@@ -16,7 +16,7 @@ from .config import (
     UPLOADS_DIR, EXPORTS_DIR,
     DB_KEY_COOKIE, DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK,
     DB_PATH_CTX, DB_KEY_CTX, DB_PROFILE_KEY_RE,
-    PHASE1_OPERATIONAL_DOMAINS,
+    PHASE1_OPERATIONAL_DOMAINS, SESSION_TTL_HOURS,
 )
 from .utils import _json_dump, _json_load
 
@@ -27,6 +27,11 @@ from .utils import _json_dump, _json_load
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def session_expires_iso() -> str:
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)).replace(microsecond=0).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +392,29 @@ def init_db_path(db_path: str) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+
+            -- ---- Gamification ----
+            CREATE TABLE IF NOT EXISTS achievements (
+              code TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT NOT NULL,
+              icon TEXT NOT NULL DEFAULT '',
+              category TEXT NOT NULL DEFAULT 'general',
+              enabled INTEGER NOT NULL DEFAULT 1,
+              rules_json TEXT NOT NULL DEFAULT '{}'
+            );
+
+            CREATE TABLE IF NOT EXISTS user_achievements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL,
+              achievement_code TEXT NOT NULL,
+              awarded_at TEXT NOT NULL,
+              evidence_json TEXT NOT NULL DEFAULT '{}',
+              UNIQUE(username, achievement_code),
+              FOREIGN KEY (achievement_code) REFERENCES achievements(code)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_achievements_username ON user_achievements(username);
             """
         )
 
@@ -410,6 +438,12 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''")
         if not _column_exists(conn, "users", "avatar_path"):
             conn.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+
+        # Session expiry migration
+        rows = conn.execute("PRAGMA table_info(sessions)").fetchall()
+        session_cols = {r["name"] for r in rows}
+        if "expires_at" not in session_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN expires_at TEXT")
 
         _backfill_workflow_domains(conn)
 
@@ -605,6 +639,48 @@ def _seed_demo_entitlements(conn: sqlite3.Connection) -> None:
             )
 
 
+def _seed_achievement_catalog(conn: sqlite3.Connection) -> None:
+    """Upsert the starter achievement catalog. Safe to run on every startup."""
+    catalog = [
+        # ---- Author track: milestones ----
+        ("first_draft",          "First Draft",             "Created your first task draft.",                              "✏️",  "author"),
+        ("first_submit",         "First Submission",        "Submitted your first task for review.",                       "📤",  "author"),
+        ("first_confirmed_task", "First Confirmed Task",    "Had your first task confirmed by a reviewer.",                "✅",  "author"),
+        ("tasks_confirmed_5",    "Five Confirmed",          "Had 5 tasks confirmed.",                                      "🔔",  "author"),
+        ("tasks_confirmed_10",   "Ten Confirmed",           "Had 10 tasks confirmed.",                                     "🥈",  "author"),
+        ("tasks_confirmed_20",   "Twenty Confirmed",        "Had 20 tasks confirmed.",                                     "🥇",  "author"),
+        ("tasks_confirmed_50",   "Fifty Confirmed",         "Had 50 tasks confirmed.",                                     "🏆",  "author"),
+        # ---- Author track: quality ----
+        ("revision_loop",        "Revision Loop",           "A task you authored was returned, revised, and confirmed.",   "🔁",  "author"),
+        ("three_domain",         "Three-Domain Contributor","Had confirmed tasks across 3 distinct domains.",              "🌐",  "author"),
+        ("first_workflow",       "First Workflow",          "Authored your first workflow.",                               "🗂️",  "author"),
+        # ---- Reviewer track: milestones ----
+        ("first_review",         "First Confirmation",      "Confirmed your first record.",                                "🔍",  "reviewer"),
+        ("reviews_5",            "Five Reviews",            "Confirmed 5 records.",                                        "📋",  "reviewer"),
+        ("reviews_10",           "Ten Reviews",             "Confirmed 10 records.",                                       "🥈",  "reviewer"),
+        ("reviews_20",           "Twenty Reviews",          "Confirmed 20 records.",                                       "🥇",  "reviewer"),
+        ("reviews_50",           "Fifty Reviews",           "Confirmed 50 records.",                                       "🏆",  "reviewer"),
+        # ---- Reviewer track: quality ----
+        ("hard_no",              "Hard No",                 "Returned a record for changes with a detailed note.",         "↩️",  "reviewer"),
+        ("version_guardian",     "Version Guardian",        "Confirmed a record that supersedes a prior confirmed version.","🛡️", "reviewer"),
+        ("multi_domain_review",  "Multi-Domain Rigor",      "Confirmed a workflow spanning 3 or more domains.",            "🗺️",  "reviewer"),
+    ]
+    for code, name, desc, icon, category in catalog:
+        conn.execute(
+            """
+            INSERT INTO achievements(code, name, description, icon, category, enabled)
+            VALUES (?,?,?,?,?,1)
+            ON CONFLICT(code) DO UPDATE SET
+              name=excluded.name,
+              description=excluded.description,
+              icon=excluded.icon,
+              category=excluded.category,
+              enabled=1
+            """,
+            (code, name, desc, icon, category),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
@@ -625,6 +701,7 @@ def init_db() -> None:
             _seed_demo_users(conn)
             _seed_demo_domains(conn)
             _seed_demo_entitlements(conn)
+            _seed_achievement_catalog(conn)
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,6 @@
       <input id="lmstudio-base-url" value="{{ lmstudio_base_url }}" placeholder="http://127.0.0.1:1234" />
       <div class="muted" style="margin-top:6px">Model: <code>{{ lmstudio_model }}</code></div>
       <div class="muted">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></div>
-      <div class="muted" style="margin-top:6px">Post-MVP: store this server-side per user.</div>
     </div>
     <div>
       {% if lmstudio_ok %}
@@ -28,10 +27,17 @@
         <span class="badge badge-warn" id="lmstudio-pill">LM Studio: not reachable</span>
       {% endif %}
       <div class="muted" style="margin-top:6px" id="lmstudio-detail">{{ lmstudio_detail }}</div>
-      <button class="btn" type="button" style="margin-top:8px" onclick="recheckLmStudio()">Recheck</button>
+      <button class="btn secondary" type="button" style="margin-top:8px" id="lmstudio-recheck" onclick="recheckLmStudio()">Recheck</button>
     </div>
   </div>
 </div>
+
+{% if not lmstudio_ok %}
+<div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel))" id="lmstudio-gate-msg">
+  <b>LM Studio not reachable</b>
+  <div class="muted" style="margin-top:6px">The ingestion pipeline requires a running LM Studio instance. Start LM Studio, load a model, then click <b>Recheck</b> above.</div>
+</div>
+{% endif %}
 
 <script>
 function getLmStudioBaseUrl(){
@@ -48,30 +54,43 @@ function loadLmStudioBaseUrl(){
     if(el && saved){ el.value = saved; }
   }catch(e){}
 }
-async function recheckLmStudio(){
+function setLmStudioOk(ok){
   const pill = document.getElementById('lmstudio-pill');
+  const gateMsg = document.getElementById('lmstudio-gate-msg');
+  const submitBtn = document.getElementById('lmstudio-submit-btn');
+  if(pill){
+    pill.className = ok ? 'badge badge-confirmed' : 'badge badge-warn';
+    pill.textContent = ok ? 'LM Studio: reachable' : 'LM Studio: not reachable';
+  }
+  if(gateMsg) gateMsg.style.display = ok ? 'none' : '';
+  if(submitBtn) submitBtn.disabled = !ok;
+}
+async function recheckLmStudio(){
   const detail = document.getElementById('lmstudio-detail');
+  const btn = document.getElementById('lmstudio-recheck');
   const baseUrl = encodeURIComponent(getLmStudioBaseUrl());
   persistLmStudioBaseUrl();
+  if(btn){ btn.textContent = 'Checking…'; btn.disabled = true; }
   try{
     const r = await fetch('/_lmstudio/status?base_url=' + baseUrl, {headers:{'Accept':'application/json'}});
     const d = await r.json();
-    if(d.ok){
-      pill.className = 'badge badge-confirmed';
-      pill.textContent = 'LM Studio: reachable';
-    } else {
-      pill.className = 'badge badge-warn';
-      pill.textContent = 'LM Studio: not reachable';
-    }
-    detail.textContent = d.detail || '';
+    setLmStudioOk(!!d.ok);
+    if(detail) detail.textContent = d.detail || '';
   } catch(e){
-    pill.className = 'badge badge-warn';
-    pill.textContent = 'LM Studio: not reachable';
+    setLmStudioOk(false);
     if(detail) detail.textContent = String(e);
+  } finally {
+    if(btn){ btn.textContent = 'Recheck'; btn.disabled = false; }
   }
 }
 
 loadLmStudioBaseUrl();
+// Disable submit button on load if LM Studio was not reachable server-side
+(function(){
+  const ok = {{ 'true' if lmstudio_ok else 'false' }};
+  const btn = document.getElementById('lmstudio-submit-btn');
+  if(btn && !ok) btn.disabled = true;
+})();
 </script>
 
 {% if ingestions %}
@@ -110,7 +129,7 @@ loadLmStudioBaseUrl();
   <label>Import note</label>
   <input name="actor_note" value="Imported from PDF" />
 
-  <button class="btn" type="submit">Generate candidates</button>
+  <button class="btn" type="submit" id="lmstudio-submit-btn">Generate candidates</button>
 </form>
 
 <p class="muted">MVP notes: author/admin only. Import creates a candidate list first; nothing is written until you select items.</p>

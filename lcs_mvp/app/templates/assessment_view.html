@@ -20,7 +20,11 @@
 
 {% if return_note %}
   <div class="callout warn">
-    <b>Returned for changes</b>
+    <b>Returned for changes
+      {% if return_note.severity == 'critical' %}<span class="badge badge-danger" style="margin-left:6px">critical</span>
+      {% elif return_note.severity == 'info' %}<span class="badge" style="margin-left:6px">info</span>
+      {% else %}<span class="badge badge-warn" style="margin-left:6px">warning</span>{% endif %}
+    </b>
     <div class="muted">by {{ return_note.actor }} at {{ return_note.at }}</div>
     <div style="margin-top:8px">{{ return_note.note }}</div>
   </div>
@@ -99,7 +103,13 @@
 
   <form method="post" action="/assessments/{{ item.record_id }}/{{ item.version }}/return" class="card" style="padding:10px;margin:0;min-width:360px">
     <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
-    <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required></textarea>
+    <label>Severity</label>
+    <select name="severity">
+      <option value="info">Info — minor suggestion</option>
+      <option value="warning" selected>Warning — must address before confirmation</option>
+      <option value="critical">Critical — significant issue, blocks confirmation</option>
+    </select>
+    <textarea name="note" rows="2" placeholder="What must change before this can be confirmed?" required style="margin-top:8px"></textarea>
     <div style="margin-top:8px">
       <button class="btn" type="submit">Return</button>
     </div>

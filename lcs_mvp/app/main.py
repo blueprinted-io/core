@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -31,7 +32,13 @@ from .config import (  # noqa: F401
 )
 from .database import init_db as _init_db_alias  # noqa: F401 (init_db already imported above)
 
-app = FastAPI(title="Learning Content System MVP")
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Learning Content System MVP", lifespan=_lifespan)
 
 
 def _import_error_response(request: Request, detail: str, status_code: int):
@@ -88,6 +95,3 @@ for _r in (
     app.include_router(_r.router)
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Profile</h1>
-<p class="muted">MVP demo profile. Edit your display name, bio, and avatar.</p>
+<p class="muted">Edit your display name, bio, avatar, and password.</p>
 
 {% if msg %}
   <div class="callout" style="border-left:4px solid #14532d">
@@ -54,6 +54,48 @@
       <button class="btn" type="submit">Save profile</button>
     </div>
   </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Change password</h2>
+  {% if msg == 'pw_saved' %}
+    <div class="callout" style="border-left:4px solid #14532d;margin-bottom:12px"><b>Password updated.</b></div>
+  {% elif msg == 'pw_wrong' %}
+    <div class="callout warn" style="margin-bottom:12px"><b>Current password is incorrect.</b></div>
+  {% elif msg == 'pw_mismatch' %}
+    <div class="callout warn" style="margin-bottom:12px"><b>New passwords do not match.</b></div>
+  {% endif %}
+  <form method="post" action="/profile/password">
+    <label>Current password</label>
+    <input type="password" name="current_password" required autocomplete="current-password" />
+    <label>New password</label>
+    <input type="password" name="new_password" required autocomplete="new-password" minlength="8" />
+    <label>Confirm new password</label>
+    <input type="password" name="confirm_password" required autocomplete="new-password" minlength="8" />
+    <div style="margin-top:12px">
+      <button class="btn" type="submit">Update password</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Achievements</h2>
+  {% if badges %}
+    <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 4px">
+      {% for b in badges %}
+        <div class="card" style="padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
+          <span style="font-size:1.6em;line-height:1;flex-shrink:0">{{ b.icon }}</span>
+          <div>
+            <div style="font-weight:600;font-size:0.95em">{{ b.name }}</div>
+            <div class="muted" style="font-size:0.82em;margin-top:2px">{{ b.description }}</div>
+            <div class="muted" style="font-size:0.78em;margin-top:4px;opacity:.6">{{ b.awarded_at[:10] }}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No achievements yet — create tasks, submit for review, and confirm records to earn badges.</p>
+  {% endif %}
 </div>
 
 <div class="card">

@@ -447,6 +447,8 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
         return RedirectResponse(url=f"/workflows/{rid}/{ver}/export.docx", status_code=303)
     if mod == "md":
         return RedirectResponse(url=f"/workflows/{rid}/{ver}/export.md", status_code=303)
+    if mod == "html":
+        return RedirectResponse(url=f"/workflows/{rid}/{ver}/export.html", status_code=303)
 
     raise HTTPException(status_code=409, detail=f"Modality '{mod}' is not operational yet")
 
@@ -853,12 +855,22 @@ def assessment_submit(request: Request, record_id: str, version: int):
 
 
 @router.post("/assessments/{record_id}/{version}/return")
-def assessment_return_for_changes(request: Request, record_id: str, version: int, note: str = Form("")):
+def assessment_return_for_changes(
+    request: Request,
+    record_id: str,
+    version: int,
+    note: str = Form(""),
+    severity: str = Form("warning"),
+):
     require(request.state.role, "assessment:confirm")
     actor = request.state.user
     msg = (note or "").strip()
     if not msg:
         raise HTTPException(status_code=400, detail="Return note is required")
+    sev = (severity or "warning").strip().lower()
+    if sev not in ("info", "warning", "critical"):
+        sev = "warning"
+    msg = f"[{sev}] {msg}"
 
     with db() as conn:
         row = conn.execute(
@@ -902,6 +914,7 @@ def assessment_confirm(request: Request, record_id: str, version: int):
             "UPDATE assessment_items SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=? WHERE record_id=? AND version=?",
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
         )
-        audit("assessment", record_id, version, "confirm", actor, conn=conn)
+        new_badges = audit("assessment", record_id, version, "confirm", actor, conn=conn)
 
-    return RedirectResponse(url=f"/assessments/{record_id}/{version}", status_code=303)
+    badge_qs = f"?badges={','.join(new_badges)}" if new_badges else ""
+    return RedirectResponse(url=f"/assessments/{record_id}/{version}{badge_qs}", status_code=303)
