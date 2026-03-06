@@ -154,7 +154,7 @@
         function applyRail(state){
           body.classList.toggle('rail-collapsed', state === 'collapsed');
           if(railToggle){
-            railToggle.textContent = state === 'collapsed' ? '»' : '«';
+            railToggle.textContent = state === 'collapsed' ? '»' : '✕';
             railToggle.setAttribute('aria-label', state === 'collapsed' ? 'Expand navigation rail' : 'Collapse navigation rail');
             railToggle.setAttribute('title', state === 'collapsed' ? 'Expand navigation rail' : 'Collapse navigation rail');
           }
@@ -311,11 +311,8 @@
         <a href="/" class="sidebar-logo">
           <img src="/static/logo-dark.svg" alt="blueprinted.io" />
         </a>
+        <button class="btn secondary rail-toggle" type="button" id="rail-toggle" aria-label="Collapse navigation rail" title="Collapse navigation rail">✕</button>
         <button class="btn secondary rail-close-mobile" type="button" id="rail-close-mobile" aria-label="Close navigation" title="Close navigation">✕</button>
-      </div>
-
-      <div class="sidebar-shell-controls">
-        <button class="btn secondary rail-toggle" type="button" id="rail-toggle" aria-label="Collapse navigation rail" title="Collapse navigation rail">«</button>
       </div>
 
       <section class="rail-profile" aria-label="Current user">

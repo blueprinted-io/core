@@ -475,11 +475,6 @@ body.spa-v1 .navlink.active{
 }
 body.spa-v1 .navlink.active .navicon{color:#dbe7ff}
 
-body.spa-v1 .sidebar-shell-controls{
-  display:flex;
-  justify-content:space-between;
-  margin-bottom:8px;
-}
 body.spa-v1 .rail-toggle,
 body.spa-v1 .rail-close-mobile{
   width:34px;
@@ -546,7 +541,6 @@ body.spa-v1 .sidebar-header::after{
 
 body.spa-v1.rail-collapsed .sidebar{width:78px;padding:14px 10px}
 body.spa-v1.rail-collapsed .spa-main{margin-left:78px;width:calc(100% - 78px)}
-body.spa-v1.rail-collapsed .sidebar-shell-controls{justify-content:center}
 body.spa-v1.rail-collapsed .rail-profile,
 body.spa-v1.rail-collapsed .sidebar-title,
 body.spa-v1.rail-collapsed .sidebar-foot,
