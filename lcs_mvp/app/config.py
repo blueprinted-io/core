@@ -73,7 +73,7 @@ LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-inst
 
 STALENESS_DAYS = 90   # confirmed content not reviewed within this threshold is considered stale
 SESSION_TTL_HOURS = int(os.environ.get("LCS_SESSION_TTL_HOURS", "24"))
-STATIC_ASSET_VERSION = "67"   # bump on each deploy to bust cached JS/CSS
+STATIC_ASSET_VERSION = "68"   # bump on each deploy to bust cached JS/CSS
 
 # ---------------------------------------------------------------------------
 # Jinja2 templates singleton (shared across all route modules)
