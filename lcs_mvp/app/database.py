@@ -438,6 +438,22 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''")
         if not _column_exists(conn, "users", "avatar_path"):
             conn.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT ''")
+        if not _column_exists(conn, "users", "demo_password"):
+            conn.execute("ALTER TABLE users ADD COLUMN demo_password TEXT")
+        if not _column_exists(conn, "users", "disabled_at"):
+            conn.execute("ALTER TABLE users ADD COLUMN disabled_at TEXT")
+        if not _column_exists(conn, "tasks", "needs_review_flag"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN needs_review_flag INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "tasks", "needs_review_note"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN needs_review_note TEXT")
+        if not _column_exists(conn, "workflows", "needs_review_flag"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN needs_review_flag INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "workflows", "needs_review_note"):
+            conn.execute("ALTER TABLE workflows ADD COLUMN needs_review_note TEXT")
+        if not _column_exists(conn, "assessment_items", "needs_review_flag"):
+            conn.execute("ALTER TABLE assessment_items ADD COLUMN needs_review_flag INTEGER NOT NULL DEFAULT 0")
+        if not _column_exists(conn, "assessment_items", "needs_review_note"):
+            conn.execute("ALTER TABLE assessment_items ADD COLUMN needs_review_note TEXT")
 
         # Session expiry migration
         rows = conn.execute("PRAGMA table_info(sessions)").fetchall()
@@ -701,6 +717,14 @@ def init_db() -> None:
             _seed_demo_users(conn)
             _seed_demo_domains(conn)
             _seed_demo_entitlements(conn)
+            _seed_achievement_catalog(conn)
+
+    # Migrate any existing custom databases so schema changes propagate to them too.
+    for key in _list_custom_db_keys():
+        custom_path = os.path.join(DATA_DIR, f"lcs_{key}.db")
+        init_db_path(custom_path)
+        DB_PATH_CTX.set(custom_path)
+        with db() as conn:
             _seed_achievement_catalog(conn)
 
 
