@@ -13,83 +13,64 @@
 </div>
 
 <div class="card">
-  <div class="row">
+  <div class="row" style="align-items:center; gap:16px">
     <div style="flex:1">
-      <label style="margin-top:0">LM Studio base URL (browser-local)</label>
-      <input id="lmstudio-base-url" value="{{ lmstudio_base_url }}" placeholder="http://127.0.0.1:1234" />
-      <div class="muted" style="margin-top:6px">Model: <code>{{ lmstudio_model }}</code></div>
-      <div class="muted">Override via env vars: <code>LCS_LMSTUDIO_BASE_URL</code>, <code>LCS_LMSTUDIO_MODEL</code></div>
+      <b>LLM provider</b>
+      <div class="muted" style="margin-top:4px" id="llm-detail">Checking…</div>
     </div>
     <div>
-      {% if lmstudio_ok %}
-        <span class="badge badge-confirmed" id="lmstudio-pill">LM Studio: reachable</span>
+      <span class="badge" id="llm-pill" style="opacity:0.5">…</span>
+    </div>
+    {% if request.state.role == 'admin' %}
+    <div>
+      <a class="btn secondary" href="/admin/llm">Configure</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="llm-gate-msg" style="display:none">
+  <div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel))">
+    <b>LLM not reachable</b>
+    <div class="muted" style="margin-top:6px">
+      The ingestion pipeline requires a configured and reachable LLM provider.
+      {% if request.state.role == 'admin' %}
+        <a href="/admin/llm">Configure LLM provider</a>.
       {% else %}
-        <span class="badge badge-warn" id="lmstudio-pill">LM Studio: not reachable</span>
+        Contact an admin to set up the LLM provider.
       {% endif %}
-      <div class="muted" style="margin-top:6px" id="lmstudio-detail">{{ lmstudio_detail }}</div>
-      <button class="btn secondary" type="button" style="margin-top:8px" id="lmstudio-recheck" onclick="recheckLmStudio()">Recheck</button>
     </div>
   </div>
 </div>
 
-{% if not lmstudio_ok %}
-<div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel))" id="lmstudio-gate-msg">
-  <b>LM Studio not reachable</b>
-  <div class="muted" style="margin-top:6px">The ingestion pipeline requires a running LM Studio instance. Start LM Studio, load a model, then click <b>Recheck</b> above.</div>
-</div>
-{% endif %}
-
 <script>
-function getLmStudioBaseUrl(){
-  const el = document.getElementById('lmstudio-base-url');
-  return (el && el.value ? el.value : '').trim();
-}
-function persistLmStudioBaseUrl(){
-  try{ localStorage.setItem('lmstudio_base_url', getLmStudioBaseUrl()); }catch(e){}
-}
-function loadLmStudioBaseUrl(){
-  try{
-    const saved = localStorage.getItem('lmstudio_base_url');
-    const el = document.getElementById('lmstudio-base-url');
-    if(el && saved){ el.value = saved; }
-  }catch(e){}
-}
-function setLmStudioOk(ok){
-  const pill = document.getElementById('lmstudio-pill');
-  const gateMsg = document.getElementById('lmstudio-gate-msg');
-  const submitBtn = document.getElementById('lmstudio-submit-btn');
-  if(pill){
-    pill.className = ok ? 'badge badge-confirmed' : 'badge badge-warn';
-    pill.textContent = ok ? 'LM Studio: reachable' : 'LM Studio: not reachable';
-  }
-  if(gateMsg) gateMsg.style.display = ok ? 'none' : '';
-  if(submitBtn) submitBtn.disabled = !ok;
-}
-async function recheckLmStudio(){
-  const detail = document.getElementById('lmstudio-detail');
-  const btn = document.getElementById('lmstudio-recheck');
-  const baseUrl = encodeURIComponent(getLmStudioBaseUrl());
-  persistLmStudioBaseUrl();
-  if(btn){ btn.textContent = 'Checking…'; btn.disabled = true; }
-  try{
-    const r = await fetch('/_lmstudio/status?base_url=' + baseUrl, {headers:{'Accept':'application/json'}});
-    const d = await r.json();
-    setLmStudioOk(!!d.ok);
-    if(detail) detail.textContent = d.detail || '';
-  } catch(e){
-    setLmStudioOk(false);
-    if(detail) detail.textContent = String(e);
-  } finally {
-    if(btn){ btn.textContent = 'Recheck'; btn.disabled = false; }
-  }
-}
-
-loadLmStudioBaseUrl();
-// Disable submit button on load if LM Studio was not reachable server-side
 (function(){
-  const ok = {{ 'true' if lmstudio_ok else 'false' }};
-  const btn = document.getElementById('lmstudio-submit-btn');
-  if(btn && !ok) btn.disabled = true;
+  function setLlmOk(ok, detail, model){
+    const pill = document.getElementById('llm-pill');
+    const detailEl = document.getElementById('llm-detail');
+    const gateMsg = document.getElementById('llm-gate-msg');
+    const submitBtn = document.getElementById('llm-submit-btn');
+    if(pill){
+      pill.style.opacity = '1';
+      if(ok){
+        pill.className = 'badge badge-confirmed';
+        pill.textContent = 'LLM: reachable';
+      } else {
+        pill.className = 'badge badge-warn';
+        pill.textContent = 'LLM: not reachable';
+      }
+    }
+    if(detailEl){
+      detailEl.textContent = model ? 'Model: ' + model : (detail || '');
+    }
+    if(gateMsg) gateMsg.style.display = ok ? 'none' : '';
+    if(submitBtn) submitBtn.disabled = !ok;
+  }
+
+  fetch('/_llm/status', {headers:{'Accept':'application/json'}})
+    .then(r => r.json())
+    .then(d => setLlmOk(!!d.ok, d.detail || '', d.model || ''))
+    .catch(e => setLlmOk(false, String(e), ''));
 })();
 </script>
 
@@ -114,22 +95,14 @@ loadLmStudioBaseUrl();
 </div>
 {% endif %}
 
-<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card" onsubmit="persistLmStudioBaseUrl(); document.getElementById('lmstudio-base-url-hidden').value=getLmStudioBaseUrl();">
-  <input type="hidden" name="lmstudio_base_url" id="lmstudio-base-url-hidden" value="" />
-
+<form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card">
   <label>PDF file</label>
   <input type="file" name="pdf" accept="application/pdf" required />
-
-  <label>Max tasks to propose (per run)</label>
-  <input type="number" name="max_tasks" value="10" min="1" max="10" />
-
-  <label>Max chunks to process (per run)</label>
-  <input type="number" name="max_chunks" value="8" min="1" max="20" />
 
   <label>Import note</label>
   <input name="actor_note" value="Imported from PDF" />
 
-  <button class="btn" type="submit" id="lmstudio-submit-btn">Generate candidates</button>
+  <button class="btn" type="submit" id="llm-submit-btn" disabled>Generate candidates</button>
 </form>
 
 <p class="muted">MVP notes: author/admin only. Import creates a candidate list first; nothing is written until you select items.</p>

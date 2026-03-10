@@ -424,6 +424,13 @@ def init_db_path(db_path: str) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_ingestions_sha ON ingestions(source_sha256);
 
+            CREATE TABLE IF NOT EXISTS system_settings (
+              key        TEXT PRIMARY KEY,
+              value      TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
 
@@ -495,8 +502,49 @@ def init_db_path(db_path: str) -> None:
         if "expires_at" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN expires_at TEXT")
 
+        # ingestion_chunks: section_title for structure-aware chunking
+        rows = conn.execute("PRAGMA table_info(ingestion_chunks)").fetchall()
+        chunk_cols = {r["name"] for r in rows}
+        if "section_title" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN section_title TEXT")
+
         _backfill_workflow_domains(conn)
         _relink_avatars(conn)
+
+
+# ---------------------------------------------------------------------------
+# System settings / LLM config helpers
+# ---------------------------------------------------------------------------
+
+def _get_system_setting(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
+    row = conn.execute("SELECT value FROM system_settings WHERE key=?", (key,)).fetchone()
+    return str(row["value"]) if row else default
+
+
+def _set_system_setting(conn: sqlite3.Connection, key: str, value: str, updated_by: str) -> None:
+    now = utc_now_iso()
+    conn.execute(
+        "INSERT INTO system_settings(key, value, updated_at, updated_by) VALUES(?,?,?,?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+        (key, value, now, updated_by),
+    )
+
+
+def _get_llm_config(conn: sqlite3.Connection) -> dict:
+    """Return LLM provider config as a typed dict with safe defaults."""
+    def _s(k: str, default: str = "") -> str:
+        return _get_system_setting(conn, k, default) or default
+
+    return {
+        "llm_base_url":          _s("llm_base_url"),
+        "llm_api_key":           _s("llm_api_key"),
+        "llm_model":             _s("llm_model", ""),
+        "llm_max_tokens":        int(_s("llm_max_tokens", "2000")),
+        "llm_temperature":       float(_s("llm_temperature", "0.2")),
+        "llm_timeout_seconds":   int(_s("llm_timeout_seconds", "120")),
+        "llm_max_tasks_per_chunk": int(_s("llm_max_tasks_per_chunk", "5")),
+        "llm_max_chunks_per_run": int(_s("llm_max_chunks_per_run", "8")),
+    }
 
 
 # ---------------------------------------------------------------------------

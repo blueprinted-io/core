@@ -9,25 +9,29 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..config import templates, LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, UPLOADS_DIR
-from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules
+from ..config import templates, UPLOADS_DIR
+from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config
 from ..linting import _normalize_steps, _validate_steps_required
 from ..audit import audit
 from ..auth import require
 from ..ingestion import (
-    _lmstudio_probe, _lmstudio_chat,
+    _llm_probe, _llm_chat,
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
+    _pdf_extract_pages, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
 )
 from ..utils import _json_dump, _json_load
 
 router = APIRouter()
 
 
-@router.get("/_lmstudio/status")
-def lmstudio_status(request: Request, base_url: str | None = None):
+@router.get("/_llm/status")
+def llm_status(request: Request):
     require(request.state.role, "import:pdf")
-    probe = _lmstudio_probe(base_url)
-    return {"ok": bool(probe.get("ok")), "base_url": str(probe.get("base_url")), "detail": str(probe.get("detail"))}
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
+    model = cfg.get("llm_model") or ""
+    return {"ok": bool(probe.get("ok")), "detail": str(probe.get("detail")), "model": model}
 
 
 @router.get("/import/pdf", response_class=HTMLResponse)
@@ -41,17 +45,18 @@ def import_pdf_form(request: Request):
             (actor,),
         ).fetchall()
 
-    # Base URL is client-overridable (browser-local). Server default shown as fallback.
-    probe = _lmstudio_probe()
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
 
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
         {
-            "lmstudio_base_url": str(probe.get("base_url")) or LMSTUDIO_BASE_URL,
-            "lmstudio_model": LMSTUDIO_MODEL,
-            "lmstudio_ok": bool(probe.get("ok")),
-            "lmstudio_detail": str(probe.get("detail")),
+            "llm_ok": bool(probe.get("ok")),
+            "llm_detail": str(probe.get("detail")),
+            "llm_model": cfg.get("llm_model") or "",
+            "llm_configured": bool(cfg.get("llm_base_url")),
             "ingestions": [dict(r) for r in rows],
         },
     )
@@ -61,19 +66,19 @@ def import_pdf_form(request: Request):
 def import_pdf_prepare(
     request: Request,
     pdf: UploadFile = File(...),
-    max_tasks: int = Form(10),
-    max_chunks: int = Form(8),
     actor_note: str = Form("Imported from PDF"),
-    lmstudio_base_url: str = Form(""),
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    from ..ingestion import _pdf_extract_pages, _chunk_text
+    with db() as conn:
+        cfg = _get_llm_config(conn)
 
-    probe = _lmstudio_probe(lmstudio_base_url)
+    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
     if not probe.get("ok"):
-        raise HTTPException(status_code=502, detail=f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})")
+        raise HTTPException(status_code=502, detail=f"LLM is not reachable: {probe.get('detail')}. Ask an admin to configure the LLM provider at /admin/llm.")
+
+    max_tasks = cfg["llm_max_tasks_per_chunk"]
 
     # Save upload + compute hash identity
     os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -85,9 +90,6 @@ def import_pdf_prepare(
         f.write(file_bytes)
 
     sha = _sha256_bytes(file_bytes)
-
-    max_tasks = max(1, min(int(max_tasks), 50))
-    max_chunks = max(1, min(int(max_chunks), 50))
 
     with db() as conn:
         existing = conn.execute(
@@ -112,41 +114,47 @@ def import_pdf_prepare(
 
         if not cached:
             pages = _pdf_extract_pages(out_path)
-            chunks = _chunk_text(pages, max_chars=12000)
+            outline = _pdf_extract_outline(out_path)
+            if outline:
+                chunks = _chunk_by_structure(pages, outline)
+            else:
+                chunks = _chunk_text(pages, max_chars=12000)
             if not chunks:
                 raise HTTPException(status_code=400, detail="No extractable text found in PDF")
             now = utc_now_iso()
             for idx, ch in enumerate(chunks):
                 conn.execute(
-                    "INSERT OR REPLACE INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at) VALUES (?,?,?,?,?,?)",
-                    (ingestion_id, idx, _json_dump(ch.get("pages", [])), ch.get("text", ""), None, now),
+                    "INSERT OR REPLACE INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title) VALUES (?,?,?,?,?,?,?)",
+                    (ingestion_id, idx, _json_dump(ch.get("pages", [])), ch.get("text", ""), None, now, ch.get("section_title") or None),
                 )
 
-    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}&max_tasks={max_tasks}&max_chunks={max_chunks}&lmstudio_base_url={probe.get('base_url')}", status_code=303)
+    return RedirectResponse(url=f"/import/pdf/run?ingestion_id={ingestion_id}", status_code=303)
 
 
 @router.get("/import/pdf/run", response_class=HTMLResponse)
-def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max_chunks: int = 8, lmstudio_base_url: str = ""):
+def import_pdf_run(request: Request, ingestion_id: str):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
-    probe = _lmstudio_probe(lmstudio_base_url)
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+
+    probe = _llm_probe(cfg["llm_base_url"], cfg["llm_api_key"])
     if not probe.get("ok"):
-        # Render a friendly error page (instead of raw 502)
         return templates.TemplateResponse(
             request,
             "import_pdf_preview.html",
             {
-                "ingestion": {"id": ingestion_id, "cursor_chunk": "?", "filename": "(unknown)", "lmstudio_base_url": str(probe.get("base_url"))},
+                "ingestion": {"id": ingestion_id, "cursor_chunk": "?", "filename": "(unknown)"},
                 "candidates": [],
                 "workflows": [],
-                "error": f"LM Studio is not reachable at {probe.get('base_url')} ({probe.get('detail')})",
+                "error": f"LLM is not reachable: {probe.get('detail')}. Ask an admin to configure it at /admin/llm.",
                 "done": False,
             },
         )
 
-    max_tasks = max(1, min(int(max_tasks), 10))
-    max_chunks = max(1, min(int(max_chunks), 20))
+    max_tasks = cfg["llm_max_tasks_per_chunk"]
+    max_chunks = cfg["llm_max_chunks_per_run"]
 
     with db() as conn:
         ing = conn.execute(
@@ -158,7 +166,7 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
 
         cursor = int(ing["cursor_chunk"])
         chunk_rows = conn.execute(
-            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
+            "SELECT chunk_index, pages_json, text, llm_result_json, section_title FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
             (ingestion_id, cursor, max_chunks),
         ).fetchall()
 
@@ -214,71 +222,97 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
         "- Provide steps[] where each step has: text, completion, and optional actions[].\n"
         "- Steps and completion MUST be concrete and verifiable.\n"
         "- Do NOT include troubleshooting.\n"
-        "- Return JSON ONLY: {\"tasks\": [ ... ]} (no markdown, no commentary).\n\n"
+        "- Return JSON ONLY: {{\"tasks\": [ ... ]}} (no markdown, no commentary).\n\n"
+        "{section_header}"
         "SOURCE TEXT:\n{source}\n"
     )
 
-    per_chunk = 3
-
     candidates: list[dict[str, Any]] = []
+    skipped_chunks: list[int] = []
+    fatal_error: str | None = None
 
-    # Fail whole run: any chunk failure aborts without advancing cursor.
-    try:
-        for cr in chunk_rows:
-            chunk_index = int(cr["chunk_index"])
-            cached = cr["llm_result_json"]
+    for cr in chunk_rows:
+        chunk_index = int(cr["chunk_index"])
+        cached_raw = (cr["llm_result_json"] or "").strip()
 
-            if cached:
-                try:
-                    data = json.loads(cached)
-                except Exception:
-                    data = None
-            else:
-                user_prompt = user_prompt_tpl.replace("{per_chunk}", str(per_chunk)).replace("{source}", cr["text"])
-                raw = _lmstudio_chat(
+        # Skip previously timed-out chunks
+        if cached_raw == '"timeout"':
+            skipped_chunks.append(chunk_index)
+            continue
+
+        if cached_raw:
+            try:
+                data = json.loads(cached_raw)
+            except Exception:
+                data = None
+        else:
+            section_title = (cr["section_title"] or "").strip()
+            section_header = f"SECTION: {section_title}\n\n" if section_title else ""
+            user_prompt = (
+                user_prompt_tpl
+                .replace("{per_chunk}", str(max_tasks))
+                .replace("{section_header}", section_header)
+                .replace("{source}", cr["text"])
+            )
+            try:
+                raw = _llm_chat(
                     [system, {"role": "user", "content": user_prompt}],
-                    temperature=0.2,
-                    max_tokens=2000,
-                    base_url=str(probe.get("base_url")),
+                    cfg,
                 )
                 try:
                     data = json.loads(raw)
                 except Exception:
-                    raise ValueError(f"Model returned non-JSON for chunk {chunk_index}")
+                    fatal_error = f"Model returned non-JSON for chunk {chunk_index}"
+                    break
 
                 with db() as conn:
                     conn.execute(
                         "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
                         (_json_dump(data), ingestion_id, chunk_index),
                     )
-
-            tasks = data.get("tasks") if isinstance(data, dict) else None
-            if not isinstance(tasks, list):
-                raise ValueError(f"Model returned invalid schema for chunk {chunk_index}")
-
-            for t in tasks:
-                if not isinstance(t, dict):
+            except HTTPException as e:
+                if e.status_code == 504:
+                    # Timeout: mark chunk as skipped and continue
+                    skipped_chunks.append(chunk_index)
+                    with db() as conn:
+                        conn.execute(
+                            "UPDATE ingestion_chunks SET llm_result_json=? WHERE ingestion_id=? AND chunk_index=?",
+                            ('"timeout"', ingestion_id, chunk_index),
+                        )
                     continue
-                title = str(t.get("title", "")).strip()
-                if not title:
-                    continue
-                # Keep candidates light for UI: store only what we need now.
-                cand = {
-                    "chunk_index": chunk_index,
-                    "pages": _json_load(cr["pages_json"]) or [],
-                    "task": t,
-                }
-                candidates.append(cand)
-    except Exception as e:
-        # Render friendly error; do not advance cursor.
+                fatal_error = str(e.detail)
+                break
+            except Exception as e:
+                fatal_error = str(e)
+                break
+
+        if data is None:
+            continue
+        tasks = data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(tasks, list):
+            continue
+
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            title = str(t.get("title", "")).strip()
+            if not title:
+                continue
+            candidates.append({
+                "chunk_index": chunk_index,
+                "pages": _json_load(cr["pages_json"]) or [],
+                "task": t,
+            })
+
+    if fatal_error:
         return templates.TemplateResponse(
             request,
             "import_pdf_preview.html",
             {
-                "ingestion": {"id": ingestion_id, "cursor_chunk": cursor, "filename": ing["filename"], "lmstudio_base_url": str(probe.get("base_url"))},
+                "ingestion": {"id": ingestion_id, "cursor_chunk": cursor, "filename": ing["filename"]},
                 "candidates": [],
                 "workflows": [],
-                "error": str(e),
+                "error": fatal_error,
                 "done": False,
             },
         )
@@ -322,7 +356,7 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
             }
         )
 
-    # Propose workflows from candidate titles (optional)
+    # Propose workflows from candidate titles (optional, best-effort)
     wf_candidates: list[dict[str, Any]] = []
     if flagged:
         titles = [x["title"] for x in flagged]
@@ -333,35 +367,39 @@ def import_pdf_run(request: Request, ingestion_id: str, max_tasks: int = 10, max
             "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
             + _json_dump({"task_titles": titles})
         )
-        raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=800, base_url=str(probe.get("base_url")))
-        data = json.loads(raw)
-        wfs = data.get("workflows") if isinstance(data, dict) else None
-        if isinstance(wfs, list):
-            for wf in wfs[:3]:
-                if not isinstance(wf, dict):
-                    continue
-                wt = str(wf.get("title", "")).strip()
-                obj = str(wf.get("objective", "")).strip()
-                tts = wf.get("task_titles") or []
-                if not wt or not obj or not isinstance(tts, list):
-                    continue
-                wf_candidates.append(
-                    {
+        try:
+            raw = _llm_chat([wf_system, {"role": "user", "content": wf_user}], cfg)
+            wf_data = json.loads(raw)
+            wfs = wf_data.get("workflows") if isinstance(wf_data, dict) else None
+            if isinstance(wfs, list):
+                for wf in wfs[:3]:
+                    if not isinstance(wf, dict):
+                        continue
+                    wt = str(wf.get("title", "")).strip()
+                    obj = str(wf.get("objective", "")).strip()
+                    tts = wf.get("task_titles") or []
+                    if not wt or not obj or not isinstance(tts, list):
+                        continue
+                    wf_candidates.append({
                         "id": _sha256_bytes((wt + obj).encode("utf-8"))[:16],
                         "title": wt,
                         "objective": obj,
                         "task_titles": [str(x) for x in tts if str(x).strip() in titles],
-                    }
-                )
+                    })
+        except Exception:
+            pass  # Workflow suggestions are optional; don't fail the whole run
+
+    skipped_note = f" ({len(skipped_chunks)} chunk(s) timed out and were skipped)" if skipped_chunks else ""
 
     return templates.TemplateResponse(
         request,
         "import_pdf_preview.html",
         {
-            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"], "lmstudio_base_url": str(probe.get("base_url"))},
+            "ingestion": {"id": ingestion_id, "cursor_chunk": int(ing["cursor_chunk"]), "filename": ing["filename"]},
             "candidates": flagged,
             "workflows": wf_candidates,
             "error": None,
+            "skipped_note": skipped_note,
             "done": False,
         },
     )
@@ -384,7 +422,8 @@ def import_pdf_commit(
             raise HTTPException(404)
 
         cursor = int(ing["cursor_chunk"])
-        max_chunks = 8
+        cfg = _get_llm_config(conn)
+        max_chunks = cfg["llm_max_chunks_per_run"]
         chunk_rows = conn.execute(
             "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks WHERE ingestion_id=? AND chunk_index>=? ORDER BY chunk_index ASC LIMIT ?",
             (ingestion_id, cursor, max_chunks),
@@ -488,7 +527,8 @@ def import_pdf_commit(
                 "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
                 + _json_dump({"task_titles": titles})
             )
-            raw = _lmstudio_chat([wf_system, {"role": "user", "content": wf_user}], temperature=0.2, max_tokens=900, base_url=None)
+            cfg = _get_llm_config(conn)
+            raw = _llm_chat([wf_system, {"role": "user", "content": wf_user}], cfg)
             data = json.loads(raw)
             wfs = data.get("workflows") if isinstance(data, dict) else None
             if isinstance(wfs, list):

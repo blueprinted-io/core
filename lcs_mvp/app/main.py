@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
-    LMSTUDIO_BASE_URL, LMSTUDIO_MODEL, STATIC_ASSET_VERSION, templates,
+    STATIC_ASSET_VERSION, templates,
 )
 from .database import init_db
 from .auth import can, AuthMiddleware
@@ -92,7 +92,7 @@ def _import_error_response(request: Request, detail: str, status_code: int):
         ctx: dict[str, Any] = {"error": detail}
     else:
         template = "import_pdf.html"
-        ctx = {"error": detail, "lmstudio_base_url": LMSTUDIO_BASE_URL, "lmstudio_model": LMSTUDIO_MODEL}
+        ctx = {"error": detail}
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)
 
 

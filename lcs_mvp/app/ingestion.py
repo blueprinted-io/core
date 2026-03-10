@@ -9,7 +9,6 @@ import httpx
 from pypdf import PdfReader
 from fastapi import HTTPException
 
-from .config import LMSTUDIO_BASE_URL, LMSTUDIO_MODEL
 from .linting import _normalize_steps
 
 
@@ -26,7 +25,7 @@ def _pdf_extract_pages(pdf_path: str) -> list[dict[str, Any]]:
     return pages
 
 
-def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000) -> list[dict[str, Any]]:
+def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000, section_title: str = "") -> list[dict[str, Any]]:
     """Chunk by character count, preserving page numbers."""
     chunks: list[dict[str, Any]] = []
     buf: list[str] = []
@@ -37,7 +36,7 @@ def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000) -> list[dic
         nonlocal buf, buf_pages, size
         if not buf:
             return
-        chunks.append({"pages": sorted(set(buf_pages)), "text": "\n\n".join(buf).strip()})
+        chunks.append({"pages": sorted(set(buf_pages)), "text": "\n\n".join(buf).strip(), "section_title": section_title})
         buf, buf_pages, size = [], [], 0
 
     for p in pages:
@@ -56,108 +55,164 @@ def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000) -> list[dic
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# LM Studio integration
-# ---------------------------------------------------------------------------
+def _pdf_extract_outline(pdf_path: str) -> list[dict[str, Any]]:
+    """Extract PDF bookmark outline as a flat list of {title, page} sorted by page.
 
-def _lmstudio_probe(base_url: str | None = None) -> dict[str, Any]:
-    """Fast health probe for LM Studio.
-
-    Returns {ok: bool, detail: str, base_url: str}.
+    Returns [] if the PDF has no outline or extraction fails.
     """
-    bu = (base_url or LMSTUDIO_BASE_URL).rstrip("/")
     try:
-        with httpx.Client(timeout=httpx.Timeout(2.0, connect=1.0)) as client:
-            # Prefer OpenAI-compatible endpoint; HEAD is not always supported, so use GET.
-            r = client.get(f"{bu}/v1/models")
-            if r.status_code < 400:
-                return {"ok": True, "detail": "ok", "base_url": bu}
-            # Fallback probe
-            r2 = client.get(f"{bu}/api/v1/models")
-            if r2.status_code < 400:
-                return {"ok": True, "detail": "ok", "base_url": bu}
-            return {"ok": False, "detail": f"HTTP {r.status_code}", "base_url": bu}
-    except Exception as e:
-        return {"ok": False, "detail": str(e), "base_url": bu}
+        reader = PdfReader(pdf_path)
+        raw = reader.outline
+        if not raw:
+            return []
+
+        result: list[dict[str, Any]] = []
+
+        def _walk(items: list) -> None:
+            for item in items:
+                if isinstance(item, list):
+                    _walk(item)
+                else:
+                    try:
+                        page_num = reader.get_destination_page_number(item) + 1  # 1-based
+                        title = (getattr(item, "title", None) or "").strip()
+                        if title:
+                            result.append({"title": title, "page": page_num})
+                    except Exception:
+                        pass
+
+        _walk(raw)
+        result.sort(key=lambda x: x["page"])
+        return result
+    except Exception:
+        return []
 
 
-def _lmstudio_chat(messages: list[dict[str, str]], temperature: float = 0.2, max_tokens: int = 2000, base_url: str | None = None) -> str:
-    """Call LM Studio local server.
+def _chunk_by_structure(
+    pages: list[dict[str, Any]],
+    outline: list[dict[str, Any]],
+    max_chars: int = 15000,
+) -> list[dict[str, Any]]:
+    """Chunk pages by chapter/section boundaries from the PDF outline.
 
-    NOTE: Some LM Studio model prompt templates only support `user` + `assistant` roles.
-    We normalize away `system` by prepending it to the first user message.
-
-    Supports both:
-      - OpenAI-compatible: POST /v1/chat/completions
-      - LM Studio API: POST /api/v1/chat
-
-    Returns the assistant content.
+    Each outline entry defines where a section starts. Pages between two consecutive
+    entries belong to the earlier section. Sections that exceed max_chars are further
+    split using _chunk_text() at subsection granularity.
     """
+    if not outline or not pages:
+        return _chunk_text(pages, max_chars)
 
-    # Normalize roles: merge system content into first user message.
-    sys_parts: list[str] = []
-    norm: list[dict[str, str]] = []
-    for m in messages:
-        role = (m.get("role") or "").strip()
-        content = m.get("content") or ""
-        if role == "system":
-            if content.strip():
-                sys_parts.append(content.strip())
-            continue
-        if role not in ("user", "assistant"):
-            # drop unknown roles in MVP
-            continue
-        norm.append({"role": role, "content": content})
+    # Build a lookup: page_number -> section title (take the last entry for that page)
+    page_to_section: dict[int, str] = {}
+    for entry in outline:
+        page_to_section[entry["page"]] = entry["title"]
 
-    if sys_parts:
-        sys_blob = "\n\n".join(sys_parts)
-        if norm and norm[0]["role"] == "user":
-            norm[0]["content"] = f"SYSTEM INSTRUCTIONS:\n{sys_blob}\n\n" + (norm[0]["content"] or "")
-        else:
-            norm.insert(0, {"role": "user", "content": f"SYSTEM INSTRUCTIONS:\n{sys_blob}"})
+    # Assign each page to a section via the outline boundaries
+    section_page_lists: list[tuple[str, list[dict[str, Any]]]] = []
+    current_title = ""
+    current_pages: list[dict[str, Any]] = []
 
-    payload = {
-        "model": LMSTUDIO_MODEL,
-        "messages": norm,
+    for p in pages:
+        pnum = int(p["page"])
+        if pnum in page_to_section:
+            # Flush previous section
+            if current_pages:
+                section_page_lists.append((current_title, current_pages))
+            current_title = page_to_section[pnum]
+            current_pages = []
+        current_pages.append(p)
+
+    if current_pages:
+        section_page_lists.append((current_title, current_pages))
+
+    # For each section, produce one or more chunks (splitting if too large)
+    chunks: list[dict[str, Any]] = []
+    for title, sec_pages in section_page_lists:
+        sub = _chunk_text(sec_pages, max_chars, section_title=title)
+        chunks.extend(sub)
+
+    return chunks
+
+
+# ---------------------------------------------------------------------------
+# Generic LLM provider (OpenAI-compatible)
+# ---------------------------------------------------------------------------
+
+def _llm_probe(base_url: str, api_key: str = "") -> dict[str, Any]:
+    """Health probe for any OpenAI-compatible endpoint.
+
+    Returns {"ok": bool, "detail": str}.
+    """
+    bu = (base_url or "").rstrip("/")
+    if not bu:
+        return {"ok": False, "detail": "No LLM base URL configured."}
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0)) as client:
+            r = client.get(f"{bu}/v1/models", headers=headers)
+            if r.status_code < 400:
+                return {"ok": True, "detail": "ok"}
+            # Fallback: some local servers use /api/v1/models
+            r2 = client.get(f"{bu}/api/v1/models", headers=headers)
+            if r2.status_code < 400:
+                return {"ok": True, "detail": "ok"}
+            return {"ok": False, "detail": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
+def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
+    """Call any OpenAI-compatible chat completions endpoint.
+
+    cfg is the dict returned by database._get_llm_config().
+    Raises HTTPException(504) on timeout, HTTPException(502) on other errors.
+    """
+    bu = (cfg.get("llm_base_url") or "").rstrip("/")
+    if not bu:
+        raise HTTPException(status_code=503, detail="LLM not configured. Ask an admin to set up the LLM provider.")
+
+    api_key = cfg.get("llm_api_key") or ""
+    model = cfg.get("llm_model") or ""
+    timeout_s = float(cfg.get("llm_timeout_seconds") or 120)
+    max_tokens = int(cfg.get("llm_max_tokens") or 2000)
+    temperature = float(cfg.get("llm_temperature") or 0.2)
+
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload: dict[str, Any] = {
+        "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-
-    bu = (base_url or LMSTUDIO_BASE_URL).rstrip("/")
+    if model:
+        payload["model"] = model
 
     try:
-        with httpx.Client(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
-            r = client.post(f"{bu}/v1/chat/completions", json=payload)
+        with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0)) as client:
+            r = client.post(f"{bu}/v1/chat/completions", json=payload, headers=headers)
             if r.status_code == 404:
-                # Fallback to LM Studio API (only when OpenAI-compatible endpoint is absent)
-                r2 = client.post(f"{bu}/api/v1/chat", json=payload)
+                # Fallback: some local servers (LM Studio legacy) use /api/v1/chat
+                r2 = client.post(f"{bu}/api/v1/chat", json=payload, headers=headers)
                 if r2.status_code >= 400:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"LM Studio API error {r2.status_code}: {r2.text[:500]}",
-                    )
+                    raise HTTPException(status_code=502, detail=f"LLM API error {r2.status_code}: {r2.text[:500]}")
                 data2 = r2.json()
                 if isinstance(data2, dict) and "choices" in data2:
                     return data2["choices"][0]["message"]["content"]
                 if isinstance(data2, dict) and "message" in data2 and isinstance(data2["message"], dict):
                     return data2["message"].get("content", "")
                 return json.dumps(data2)
-
             if r.status_code >= 400:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"LM Studio OpenAI-compatible error {r.status_code}: {r.text[:500]}",
-                )
-
+                raise HTTPException(status_code=502, detail=f"LLM API error {r.status_code}: {r.text[:500]}")
             data = r.json()
             return data["choices"][0]["message"]["content"]
     except httpx.ReadTimeout as e:
-        raise HTTPException(status_code=504, detail=f"LM Studio timed out: {e}")
+        raise HTTPException(status_code=504, detail=f"LLM request timed out after {timeout_s}s: {e}")
     except httpx.ConnectError as e:
-        raise HTTPException(status_code=502, detail=f"LM Studio connection error: {e}")
+        raise HTTPException(status_code=502, detail=f"LLM connection error: {e}")
     except httpx.HTTPError as e:
-        # Catch-all for other httpx failures
-        raise HTTPException(status_code=502, detail=f"LM Studio HTTP error: {e}")
+        raise HTTPException(status_code=502, detail=f"LLM HTTP error: {e}")
 
 
 # ---------------------------------------------------------------------------

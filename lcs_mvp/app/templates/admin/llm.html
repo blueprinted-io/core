@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>LLM Provider</h1>
+<p class="muted">Configure the AI provider used for document ingestion. Any OpenAI-compatible endpoint works — local (LM Studio, Ollama) or cloud (OpenAI, etc.).</p>
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Connection status</h2>
+  <div id="probe-result" class="muted">—</div>
+  <button class="btn secondary" type="button" style="margin-top:12px" onclick="testConnection()">Test connection</button>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Provider settings</h2>
+  <form method="post" action="/admin/llm/save" class="grid" style="grid-template-columns: 1fr; gap:14px; max-width:520px" id="llm-form">
+
+    <div>
+      <label>Base URL</label>
+      <input id="llm-base-url" name="llm_base_url" value="{{ cfg.llm_base_url }}" placeholder="http://127.0.0.1:1234" style="width:100%" />
+      <div class="muted" style="font-size:0.8em; margin-top:4px">Root URL of an OpenAI-compatible server. No trailing slash.</div>
+    </div>
+
+    <div>
+      <label>API key {% if api_key_set %}<span class="badge" style="font-size:0.75em">set</span>{% endif %}</label>
+      <input id="llm-api-key" type="password" name="llm_api_key" placeholder="{% if api_key_set %}Leave blank to keep current key{% else %}sk-… or leave blank if not required{% endif %}" style="width:100%" autocomplete="new-password" />
+      <div class="muted" style="font-size:0.8em; margin-top:4px">Leave blank to keep the existing key. Never shown after saving.</div>
+    </div>
+
+    <div>
+      <div class="row" style="align-items:center; gap:8px; margin-bottom:4px">
+        <label style="margin:0; flex:1">Model name</label>
+        <button class="btn secondary" type="button" id="fetch-models-btn" onclick="fetchModels()" style="font-size:0.8em; padding:4px 10px">Fetch models</button>
+        <span id="fetch-models-status" class="muted" style="font-size:0.8em"></span>
+      </div>
+      <datalist id="llm-model-list"></datalist>
+      <input id="llm-model" list="llm-model-list" name="llm_model" value="{{ cfg.llm_model }}" placeholder="gpt-4o or mistralai/mistral-7b-instruct" style="width:100%" />
+      <div class="muted" style="font-size:0.8em; margin-top:4px">Passed as the <code>model</code> field in chat completions. Leave blank to use the server default.</div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr 1fr; gap:12px">
+      <div>
+        <label>Timeout (seconds)</label>
+        <input type="number" name="llm_timeout_seconds" value="{{ cfg.llm_timeout_seconds }}" min="10" max="600" style="width:100%" />
+        <div class="muted" style="font-size:0.8em; margin-top:4px">Per-chunk request timeout.</div>
+      </div>
+      <div>
+        <label>Max tasks per chunk</label>
+        <input type="number" name="llm_max_tasks_per_chunk" value="{{ cfg.llm_max_tasks_per_chunk }}" min="1" max="20" style="width:100%" />
+        <div class="muted" style="font-size:0.8em; margin-top:4px">Tasks requested per LLM call.</div>
+      </div>
+      <div>
+        <label>Chunks per run</label>
+        <input type="number" name="llm_max_chunks_per_run" value="{{ cfg.llm_max_chunks_per_run }}" min="1" max="50" style="width:100%" />
+        <div class="muted" style="font-size:0.8em; margin-top:4px">Chunks processed per ingestion run.</div>
+      </div>
+    </div>
+
+    <div>
+      <button class="btn" type="submit">Save</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function testConnection() {
+  const el = document.getElementById('probe-result');
+  const baseUrl = (document.getElementById('llm-base-url').value || '').trim();
+  const apiKey  = (document.getElementById('llm-api-key').value || '').trim();
+  el.textContent = 'Testing…';
+  const params = new URLSearchParams();
+  if (baseUrl) params.set('base_url', baseUrl);
+  if (apiKey)  params.set('api_key', apiKey);
+  fetch('/admin/llm/probe?' + params.toString())
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        el.innerHTML = '<span style="color:var(--green,#16a34a)">&#10003; Connected</span>';
+      } else {
+        el.innerHTML = '<span style="color:var(--red,#b91c1c)">&#10007; ' + (d.detail || 'Failed') + '</span>';
+      }
+    })
+    .catch(e => {
+      el.innerHTML = '<span style="color:var(--red,#b91c1c)">&#10007; ' + e + '</span>';
+    });
+}
+
+async function fetchModels() {
+  const btn = document.getElementById('fetch-models-btn');
+  const status = document.getElementById('fetch-models-status');
+  const dl = document.getElementById('llm-model-list');
+  const baseUrl = (document.getElementById('llm-base-url').value || '').trim();
+  const apiKey = (document.getElementById('llm-api-key').value || '').trim();
+
+  btn.disabled = true;
+  status.textContent = 'Fetching…';
+
+  try {
+    const params = new URLSearchParams();
+    if (baseUrl) params.set('base_url', baseUrl);
+    if (apiKey)  params.set('api_key', apiKey);
+
+    const r = await fetch('/admin/llm/models?' + params.toString());
+    const d = await r.json();
+
+    if (d.ok && d.models && d.models.length > 0) {
+      dl.innerHTML = '';
+      d.models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        dl.appendChild(opt);
+      });
+      status.innerHTML = '<span style="color:var(--green,#16a34a)">' + d.models.length + ' model(s) available</span>';
+    } else {
+      status.innerHTML = '<span style="color:var(--red,#b91c1c)">' + (d.detail || 'No models returned') + '</span>';
+    }
+  } catch(e) {
+    status.innerHTML = '<span style="color:var(--red,#b91c1c)">' + e + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Auto-probe and fetch models on load if a URL is already configured
+(function() {
+  const url = (document.getElementById('llm-base-url').value || '').trim();
+  if (url) {
+    testConnection();
+    fetchModels();
+  }
+})();
+</script>
+{% endblock %}

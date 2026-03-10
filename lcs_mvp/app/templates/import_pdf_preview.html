@@ -5,10 +5,11 @@
 <div class="card">
   <div class="muted">Source: <b>{{ ingestion.filename }}</b></div>
   <div class="muted">Cursor: chunk <b>{{ ingestion.cursor_chunk }}</b></div>
-  {% if ingestion.lmstudio_base_url %}
-    <div class="muted">LM Studio: <code>{{ ingestion.lmstudio_base_url }}</code></div>
-  {% endif %}
 </div>
+
+{% if skipped_note %}
+  <div class="callout warn">{{ skipped_note }}</div>
+{% endif %}
 
 {% if error %}
   <div class="callout danger">

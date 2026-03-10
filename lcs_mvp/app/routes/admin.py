@@ -13,7 +13,9 @@ from ..database import (
     _active_domains, _available_db_keys, _create_custom_db_profile,
     _db_profile_label, _hash_password, _list_custom_db_keys,
     _normalize_db_key, _user_id,
+    _get_llm_config, _set_system_setting,
 )
+from ..ingestion import _llm_probe
 from ..audit import audit
 from ..auth import ROLE_ORDER, require, require_admin
 
@@ -322,3 +324,93 @@ def admin_domains_delete(request: Request, name: str = Form("")):
         audit("domain", name_norm, 1, "delete", request.state.user, conn=conn)
 
     return RedirectResponse(url="/admin/domains", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# LLM provider config
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/llm", response_class=HTMLResponse)
+def admin_llm(request: Request):
+    require_admin(request)
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+    api_key_set = bool((cfg.get("llm_api_key") or "").strip())
+    return templates.TemplateResponse(request, "admin/llm.html", {"cfg": cfg, "api_key_set": api_key_set})
+
+
+@router.post("/admin/llm/save")
+def admin_llm_save(
+    request: Request,
+    llm_base_url: str = Form(""),
+    llm_api_key: str = Form(""),
+    llm_model: str = Form(""),
+    llm_timeout_seconds: str = Form("120"),
+    llm_max_tasks_per_chunk: str = Form("5"),
+    llm_max_chunks_per_run: str = Form("8"),
+):
+    require_admin(request)
+    actor = request.state.user
+    with db() as conn:
+        _set_system_setting(conn, "llm_base_url", llm_base_url.strip(), actor)
+        _set_system_setting(conn, "llm_model", llm_model.strip(), actor)
+        _set_system_setting(conn, "llm_timeout_seconds", llm_timeout_seconds.strip() or "120", actor)
+        _set_system_setting(conn, "llm_max_tasks_per_chunk", llm_max_tasks_per_chunk.strip() or "5", actor)
+        _set_system_setting(conn, "llm_max_chunks_per_run", llm_max_chunks_per_run.strip() or "8", actor)
+        if llm_api_key.strip():
+            _set_system_setting(conn, "llm_api_key", llm_api_key.strip(), actor)
+    return RedirectResponse(url="/admin/llm", status_code=303)
+
+
+@router.get("/admin/llm/probe")
+def admin_llm_probe(request: Request, base_url: str = "", api_key: str = ""):
+    """Probe the LLM endpoint. Accepts optional base_url/api_key query params
+    so the admin can test values before saving. Falls back to saved config."""
+    from fastapi.responses import JSONResponse
+    require_admin(request)
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+    bu = base_url.strip() or cfg["llm_base_url"]
+    key = api_key.strip() or cfg["llm_api_key"]
+    result = _llm_probe(bu, key)
+    return JSONResponse(result)
+
+
+@router.get("/admin/llm/models")
+def admin_llm_models(request: Request, base_url: str = "", api_key: str = ""):
+    """Fetch available model IDs from the configured LLM endpoint.
+
+    base_url and api_key can be passed as query params (pre-save preview).
+    If api_key is blank, falls back to the saved key so the admin doesn't
+    have to re-enter a key they've already stored.
+    """
+    from fastapi.responses import JSONResponse
+    import httpx as _httpx
+    require_admin(request)
+    with db() as conn:
+        cfg = _get_llm_config(conn)
+
+    bu = (base_url.strip() or cfg["llm_base_url"]).rstrip("/")
+    key = api_key.strip() or cfg["llm_api_key"]
+    if not bu:
+        return JSONResponse({"ok": False, "models": [], "detail": "No base URL provided."})
+
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        with _httpx.Client(timeout=_httpx.Timeout(6.0, connect=3.0)) as client:
+            r = client.get(f"{bu}/v1/models", headers=headers)
+            if r.status_code >= 400:
+                # Fallback for non-standard local servers
+                r2 = client.get(f"{bu}/api/v1/models", headers=headers)
+                if r2.status_code < 400:
+                    r = r2
+                else:
+                    return JSONResponse({"ok": False, "models": [], "detail": f"HTTP {r.status_code}"})
+            data = r.json()
+            models = sorted(
+                m["id"] for m in (data.get("data") or [])
+                if isinstance(m, dict) and m.get("id")
+            )
+            return JSONResponse({"ok": True, "models": models})
+    except Exception as e:
+        return JSONResponse({"ok": False, "models": [], "detail": str(e)})

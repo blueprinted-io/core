@@ -61,13 +61,6 @@ PHASE1_OPERATIONAL_DOMAINS = [
 ]
 
 # ---------------------------------------------------------------------------
-# LM Studio integration
-# ---------------------------------------------------------------------------
-
-LMSTUDIO_BASE_URL = os.environ.get("LCS_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234").rstrip("/")
-LMSTUDIO_MODEL = os.environ.get("LCS_LMSTUDIO_MODEL", "mistralai/mistral-7b-instruct-v0.3")
-
-# ---------------------------------------------------------------------------
 # Operational constants
 # ---------------------------------------------------------------------------
 
