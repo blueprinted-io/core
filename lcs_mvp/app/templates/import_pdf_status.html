@@ -45,8 +45,9 @@
   </div>
 </div>
 
-<div id="done-actions" style="display:none; margin-top:16px">
-  <a class="btn" id="review-link" href="/import/pdf/review/{{ ingestion_id }}">Review results →</a>
+<div id="done-actions" style="display:none; margin-top:16px; gap:12px; align-items:center" class="row">
+  <a class="btn" href="/import/pdf/review/{{ ingestion_id }}">Review results →</a>
+  <span id="done-note" class="muted" style="font-size:0.85em"></span>
 </div>
 
 <div id="failed-notice" style="display:none; margin-top:16px">
@@ -161,6 +162,18 @@ function poll() {
       trackChunkChanges(d.chunks || []);
       renderChunks(d.chunks || []);
 
+      // Show review button as soon as any section is done
+      if (done > 0) {
+        const actionsEl = document.getElementById('done-actions');
+        actionsEl.style.display = 'flex';
+        const noteEl = document.getElementById('done-note');
+        if (d.job_status === 'complete' || d.job_status === 'partial') {
+          noteEl.textContent = done + ' of ' + total + ' section' + (total === 1 ? '' : 's') + ' processed.';
+        } else {
+          noteEl.textContent = done + ' of ' + total + ' done — still processing, you can review early results.';
+        }
+      }
+
       if (d.job_status === 'complete' || d.job_status === 'partial') {
         clearInterval(pollHandle);
         document.getElementById('progress-bar').style.background = 'var(--green,#16a34a)';
@@ -168,7 +181,6 @@ function poll() {
         document.getElementById('status-label').textContent = 'Complete';
         document.getElementById('status-detail').textContent = done + ' section' + (done === 1 ? '' : 's') + ' processed';
         document.getElementById('status-pill').innerHTML = '<span class="badge badge-confirmed">done</span>';
-        document.getElementById('done-actions').style.display = '';
         appendLog('Job complete — ' + done + ' / ' + total + ' sections processed.', 'ok');
       } else if (d.job_status === 'failed') {
         clearInterval(pollHandle);
