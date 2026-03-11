@@ -52,10 +52,24 @@ def import_pdf_form(request: Request):
             (actor,),
         ).fetchall()
 
+        ingestions = []
+        done_statuses = ("'done'", "'error'", "'timeout'", "'skipped'")
+        for r in rows:
+            ing = dict(r)
+            counts = conn.execute(
+                f"SELECT COUNT(*) AS total, "
+                f"SUM(CASE WHEN chunk_status IN ({','.join(done_statuses)}) THEN 1 ELSE 0 END) AS done "
+                f"FROM ingestion_chunks WHERE ingestion_id=?",
+                (r["id"],),
+            ).fetchone()
+            ing["total_chunks"] = counts["total"] or 0
+            ing["done_chunks"] = counts["done"] or 0
+            ingestions.append(ing)
+
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
-        {"ingestions": [dict(r) for r in rows]},
+        {"ingestions": ingestions},
     )
 
 
@@ -65,8 +79,10 @@ def import_pdf_form(request: Request):
 
 def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> None:
     """Background task: parse PDF, scanned check, chunk, store results."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         pages = _pdf_extract_pages(out_path)
 
@@ -85,8 +101,8 @@ def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> 
         for idx, ch in enumerate(chunks):
             conn.execute(
                 "INSERT OR REPLACE INTO ingestion_chunks"
-                "(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title, selected, chunk_status) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "(ingestion_id, chunk_index, pages_json, text, llm_result_json, created_at, section_title, selected, chunk_status, section_level) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     ingestion_id, idx,
                     json.dumps(ch.get("pages", [])),
@@ -94,8 +110,10 @@ def _run_chunking_background(ingestion_id: str, out_path: str, db_path: str) -> 
                     None, now,
                     ch.get("section_title") or None,
                     0, "pending",
+                    int(ch.get("section_level", 0)),
                 ),
             )
+            conn.commit()  # commit per-chunk so write lock isn't held across the whole parse
         conn.execute(
             "UPDATE ingestions SET job_status='pending' WHERE id=?",
             (ingestion_id,),
@@ -159,9 +177,9 @@ def import_pdf_prepare(
         else:
             ingestion_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO ingestions(id, source_type, source_sha256, filename, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note, job_status) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (ingestion_id, "pdf", sha, safe_name, actor, utc_now_iso(), "draft", 0, 5, actor_note.strip() or "Imported from PDF", "chunking"),
+                "INSERT INTO ingestions(id, source_type, source_sha256, filename, file_path, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note, job_status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (ingestion_id, "pdf", sha, safe_name, out_path, actor, utc_now_iso(), "draft", 0, 5, actor_note.strip() or "Imported from PDF", "chunking"),
             )
 
         conn.execute(
@@ -197,7 +215,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
 
         chunks = conn.execute(
-            "SELECT chunk_index, pages_json, text, section_title, selected, chunk_status "
+            "SELECT chunk_index, pages_json, text, section_title, selected, chunk_status, section_level "
             "FROM ingestion_chunks WHERE ingestion_id=? ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
@@ -226,7 +244,17 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             "preview": preview,
             "sparse": word_count < 40,
             "selected": bool(r["selected"]),
+            "level": int(r["section_level"] or 0),
+            "chunk_status": r["chunk_status"] or "pending",
         })
+
+    # Mark which rows are groups (have children in the TOC hierarchy)
+    for i, s in enumerate(sections):
+        next_level = sections[i + 1]["level"] if i + 1 < len(sections) else -1
+        s["is_group"] = next_level > s["level"]
+
+    # Max depth — tells template how deep the tree goes
+    max_level = max((s["level"] for s in sections), default=0)
 
     return templates.TemplateResponse(
         request,
@@ -235,6 +263,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             "ing": dict(ing),
             "sections": sections,
             "has_toc": has_toc,
+            "max_level": max_level,
             "ingestion_id": ingestion_id,
             "job_status": job_status,
         },
@@ -247,8 +276,10 @@ def import_pdf_sections(request: Request, ingestion_id: str):
 
 def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) -> None:
     """Background task: LLM-processes all queued chunks for an ingestion job."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
 
     # System instructions are merged into the user turn for compatibility with
     # local LLM servers (e.g. LM Studio) that reject the 'system' role.
@@ -335,9 +366,16 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                 )
             conn.commit()
 
-        conn.execute(
-            "UPDATE ingestions SET job_status='complete', status='done' WHERE id=?",
+        # Only 'complete' when every chunk in the document has been processed;
+        # otherwise 'partial' so the user can return and process more sections.
+        unprocessed = conn.execute(
+            "SELECT COUNT(*) AS n FROM ingestion_chunks WHERE ingestion_id=? AND chunk_status='pending'",
             (ingestion_id,),
+        ).fetchone()["n"]
+        final_status = "complete" if unprocessed == 0 else "partial"
+        conn.execute(
+            "UPDATE ingestions SET job_status=?, status='done' WHERE id=?",
+            (final_status, ingestion_id),
         )
         conn.commit()
         _notify_ingestion_complete(ingestion_id, username, db_path)
@@ -459,6 +497,38 @@ def import_pdf_status_json(request: Request, ingestion_id: str):
             for c in chunks
         ],
     })
+
+
+# ---------------------------------------------------------------------------
+# PDF import — delete ingestion + uploaded file
+# ---------------------------------------------------------------------------
+
+@router.post("/import/pdf/delete/{ingestion_id}")
+def import_pdf_delete(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT file_path, job_status FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+        if ing["job_status"] == "running":
+            raise HTTPException(status_code=409, detail="Cannot delete while processing is in progress.")
+
+        file_path = ing["file_path"] or ""
+        # chunks are deleted via ON DELETE CASCADE from ingestion_chunks FK
+        conn.execute("DELETE FROM ingestions WHERE id=?", (ingestion_id,))
+
+    if file_path and os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass  # best-effort; record is already gone
+
+    return RedirectResponse(url="/import/pdf", status_code=303)
 
 
 # ---------------------------------------------------------------------------
