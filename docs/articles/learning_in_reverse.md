@@ -69,7 +69,7 @@ The taxonomy divides cleanly across that line:
 
 ---
 
-![Bloom’s Taxonomy Reframed]([/assets/bloom.png](https://raw.githubusercontent.com/blueprinted-io/core/main/assets/bloom.png))
+![Bloom](https://raw.githubusercontent.com/blueprinted-io/core/main/assets/bloom.png "Bloom graphic")
 
 ---
 
