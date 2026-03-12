@@ -11,7 +11,7 @@ This one looks at the deeper patterns, ideas that keep resurfacing with new lang
 
 ## Why Learning Theory Has Effectively Stalled
 
-One of the most important realities behind the surface of modern L&D trends is this: **learning theory as a field has effectively stalled**.  
+One of the most important realities behind the surface of modern L&D trends is this: **learning theory as a field has effectively stalled** (although some interesting work exists in cognitive complexity). 
 
 Most significant advances in understanding learning now come from neuroscience and cognitive science, which explore brain function, memory, and cognition at a biological level. The broader field of learning theory as a "soft" science, the study of how people learn in classrooms, workplaces, or informal settings, has seen very few breakthroughs since the late 20th century.
 
