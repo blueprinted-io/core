@@ -20,7 +20,7 @@ Learning is still built like waterfall software: big launches, slow review cycle
 - ship updates continuously
 - keep everything auditable
 
-(Full article: [docs/LearningOps.md](docs/LearningOps.md))
+(Full article: [docs/articles/learningops.md](docs/articles/learningops.md))
 
 ## Live Demo
 
@@ -64,12 +64,13 @@ Cookie-based role switching (not real auth):
 
 ## Docs
 
+- [Documentation Index](docs/INDEX.md)
 - [Statement of Intent](docs/Statement_of_Intent.md)
-- [LearningOps](docs/LearningOps.md)
-- [System Design](docs/Learning_Content_System_Design.md)
-- [Governance](docs/Learning_Content_Governance.md)
-- [Standards context: SCORM, xAPI, cmi5](docs/Standards_SCORM_xAPI_cmi5.md)
-- [Auth + Domains (draft)](docs/Auth_and_Domains_Draft.md)
+- [LearningOps](docs/articles/learningops.md)
+- [System Design](docs/governance_and_design/Learning_Content_System_Design.md)
+- [Governance](docs/governance_and_design/Learning_Content_Governance.md)
+- [SCORM, xAPI, and cmi5](docs/articles/what_is_a_tincan.md)
+- [Auth + Domains (draft)](docs/operational_documentation/Auth_and_Domains_Draft.md)
 
 ## Repository
 

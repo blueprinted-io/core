@@ -13,8 +13,8 @@ The answer is yes, provided the system is understood for what it is and what it 
 This is not a general theory of learning.  
 It is a justification for a **bounded, execution-focused learning system** designed to support real-world performance in technical and systems-based domains.
 
-For the system data model and schema, see [Learning Content System Design](docs/Learning_Content_System_Design.md).  
-For standards, governance, and review rules, see [Learning Content Governance](docs/Learning_Content_Governance.md).
+For the system data model and schema, see [Learning Content System Design](docs/governance_and_design/Learning_Content_System_Design.md).  
+For standards, governance, and review rules, see [Learning Content Governance](docs/governance_and_design/Learning_Content_Governance.md).
 
 ---
 
@@ -139,7 +139,7 @@ This reflects well-established cognitive findings:
 
 The system requires all three, without claiming this produces mastery.
 
-The precise field definitions and storage rules for Facts, Concepts, Procedure, and Dependencies are specified in [Learning Content System Design](docs/Learning_Content_System_Design.md), with usage standards in [Learning Content Governance](docs/Learning_Content_Governance.md).
+The precise field definitions and storage rules for Facts, Concepts, Procedure, and Dependencies are specified in [Learning Content System Design](docs/governance_and_design/Learning_Content_System_Design.md), with usage standards in [Learning Content Governance](docs/governance_and_design/Learning_Content_Governance.md).
 
 ---
 
@@ -169,7 +169,7 @@ Learning sequence, pacing, and instructional strategy vary by context and audien
 
 This system treats sequencing as a delivery concern, not a content truth.
 
-The canonical workflow rules and governance constraints are defined in [Learning Content Governance](docs/Learning_Content_Governance.md), with structural constraints and schema detail in [Learning Content System Design](docs/Learning_Content_System_Design.md).
+The canonical workflow rules and governance constraints are defined in [Learning Content Governance](docs/governance_and_design/Learning_Content_Governance.md), with structural constraints and schema detail in [Learning Content System Design](docs/governance_and_design/Learning_Content_System_Design.md).
 
 ---
 
