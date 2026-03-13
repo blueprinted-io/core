@@ -502,7 +502,7 @@ def init_db_path(db_path: str) -> None:
         if "expires_at" not in session_cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN expires_at TEXT")
 
-        # ingestion_chunks: section_title, selection flag, per-chunk processing status
+        # ingestion_chunks: section_title, selection flag, per-chunk processing status, depth level
         rows = conn.execute("PRAGMA table_info(ingestion_chunks)").fetchall()
         chunk_cols = {r["name"] for r in rows}
         if "section_title" not in chunk_cols:
@@ -511,12 +511,16 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN selected INTEGER NOT NULL DEFAULT 0")
         if "chunk_status" not in chunk_cols:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN chunk_status TEXT NOT NULL DEFAULT 'pending'")
+        if "section_level" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN section_level INTEGER NOT NULL DEFAULT 0")
 
-        # ingestions: overall async job state
+        # ingestions: overall async job state + stored file path for deletion
         rows = conn.execute("PRAGMA table_info(ingestions)").fetchall()
         ingestion_cols = {r["name"] for r in rows}
         if "job_status" not in ingestion_cols:
             conn.execute("ALTER TABLE ingestions ADD COLUMN job_status TEXT NOT NULL DEFAULT 'pending'")
+        if "file_path" not in ingestion_cols:
+            conn.execute("ALTER TABLE ingestions ADD COLUMN file_path TEXT")
 
         _backfill_workflow_domains(conn)
         _relink_avatars(conn)

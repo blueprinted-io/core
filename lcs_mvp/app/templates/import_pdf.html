@@ -18,7 +18,7 @@
   <h2 style="margin-top:0">Previous imports</h2>
   <p class="muted">Re-uploading the same file will resume from where you left off — progress is keyed by document hash, not filename.</p>
   <table class="table">
-    <thead><tr><th>File</th><th>Started</th><th>State</th><th></th></tr></thead>
+    <thead><tr><th>File</th><th>Started</th><th>State</th><th>Chunks</th><th></th></tr></thead>
     <tbody>
       {% for i in ingestions %}
       <tr>
@@ -27,6 +27,8 @@
         <td>
           {% if i.job_status == 'complete' %}
             <span class="badge badge-confirmed">complete</span>
+          {% elif i.job_status == 'partial' %}
+            <span class="badge badge-submitted">partial</span>
           {% elif i.job_status == 'running' %}
             <span class="badge badge-submitted">processing…</span>
           {% elif i.job_status == 'failed' %}
@@ -35,13 +37,23 @@
             <span class="badge">{{ i.job_status or 'pending' }}</span>
           {% endif %}
         </td>
-        <td>
+        <td class="muted" style="font-size:0.85em; white-space:nowrap">
+          {{ i.done_chunks }}/{{ i.total_chunks }}
+        </td>
+        <td style="display:flex; gap:6px; align-items:center">
           {% if i.job_status == 'complete' %}
             <a class="btn secondary" href="/import/pdf/review/{{ i.id }}">Review</a>
           {% elif i.job_status == 'running' %}
             <a class="btn secondary" href="/import/pdf/status/{{ i.id }}">View progress</a>
           {% else %}
             <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}">Continue</a>
+          {% endif %}
+          {% if i.job_status not in ('running', 'chunking') %}
+          <form method="post" action="/import/pdf/delete/{{ i.id }}"
+                onsubmit="return confirm('Delete this import and its uploaded file? This cannot be undone.')">
+            <button class="btn secondary" type="submit"
+                    style="color:var(--danger,#dc2626); border-color:var(--danger,#dc2626)">Delete</button>
+          </form>
           {% endif %}
         </td>
       </tr>

@@ -529,7 +529,7 @@ def import_pdf_delete(request: Request, ingestion_id: str):
         ).fetchone()
         if not ing:
             raise HTTPException(404)
-        if ing["job_status"] == "running":
+        if ing["job_status"] in ("running", "chunking"):
             raise HTTPException(status_code=409, detail="Cannot delete while processing is in progress.")
 
         file_path = ing["file_path"] or ""

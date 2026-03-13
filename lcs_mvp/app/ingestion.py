@@ -68,8 +68,9 @@ def _chunk_text(pages: list[dict[str, Any]], max_chars: int = 12000, section_tit
 
 
 def _pdf_extract_outline(pdf_path: str) -> list[dict[str, Any]]:
-    """Extract PDF bookmark outline as a flat list of {title, page} sorted by page.
+    """Extract PDF bookmark outline as a flat list of {title, page, level} sorted by page.
 
+    level=0 is top-level (chapter), level=1 is section, etc.
     Returns [] if the PDF has no outline or extraction fails.
     """
     try:
@@ -80,16 +81,16 @@ def _pdf_extract_outline(pdf_path: str) -> list[dict[str, Any]]:
 
         result: list[dict[str, Any]] = []
 
-        def _walk(items: list) -> None:
+        def _walk(items: list, depth: int = 0) -> None:
             for item in items:
                 if isinstance(item, list):
-                    _walk(item)
+                    _walk(item, depth + 1)
                 else:
                     try:
                         page_num = reader.get_destination_page_number(item) + 1  # 1-based
                         title = (getattr(item, "title", None) or "").strip()
                         if title:
-                            result.append({"title": title, "page": page_num})
+                            result.append({"title": title, "page": page_num, "level": depth})
                     except Exception:
                         pass
 
@@ -110,18 +111,21 @@ def _chunk_by_structure(
     Each outline entry defines where a section starts. Pages between two consecutive
     entries belong to the earlier section. Sections that exceed max_chars are further
     split using _chunk_text() at subsection granularity.
+
+    Each chunk carries section_level (0=chapter, 1=section, 2=subsection, …).
     """
     if not outline or not pages:
         return _chunk_text(pages, max_chars)
 
-    # Build a lookup: page_number -> section title (take the last entry for that page)
-    page_to_section: dict[int, str] = {}
+    # Build a lookup: page_number -> (title, level) — last entry wins per page
+    page_to_section: dict[int, tuple[str, int]] = {}
     for entry in outline:
-        page_to_section[entry["page"]] = entry["title"]
+        page_to_section[entry["page"]] = (entry["title"], entry.get("level", 0))
 
     # Assign each page to a section via the outline boundaries
-    section_page_lists: list[tuple[str, list[dict[str, Any]]]] = []
+    section_page_lists: list[tuple[str, int, list[dict[str, Any]]]] = []
     current_title = ""
+    current_level = 0
     current_pages: list[dict[str, Any]] = []
 
     for p in pages:
@@ -129,18 +133,20 @@ def _chunk_by_structure(
         if pnum in page_to_section:
             # Flush previous section
             if current_pages:
-                section_page_lists.append((current_title, current_pages))
-            current_title = page_to_section[pnum]
+                section_page_lists.append((current_title, current_level, current_pages))
+            current_title, current_level = page_to_section[pnum]
             current_pages = []
         current_pages.append(p)
 
     if current_pages:
-        section_page_lists.append((current_title, current_pages))
+        section_page_lists.append((current_title, current_level, current_pages))
 
     # For each section, produce one or more chunks (splitting if too large)
     chunks: list[dict[str, Any]] = []
-    for title, sec_pages in section_page_lists:
+    for title, level, sec_pages in section_page_lists:
         sub = _chunk_text(sec_pages, max_chars, section_title=title)
+        for ch in sub:
+            ch["section_level"] = level
         chunks.extend(sub)
 
     return chunks
