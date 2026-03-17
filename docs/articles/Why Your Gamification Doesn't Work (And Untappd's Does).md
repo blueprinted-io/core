@@ -30,7 +30,9 @@ The clearest way to understand what gamification should be doing is to look at e
 
 The elegance is not accidental, and it is not purely principled. Untappd sells behavioural data to breweries. Curious, engaged users who explore widely, log consistently, and interact genuinely are commercially valuable in a way that passive users are not. The incentive system had to drive deep interaction with the platform, not just sign-up completion or session frequency, because shallow engagement produces shallow data. Good incentive design and genuine user value aligned because the business needed curiosity, not compliance.
 
-<img src="https://github.com/blueprinted-io/core/blob/main/assets/untappd.png?raw=true" width="600" alt="Untappd badge examples">
+<p align="center">
+  <img src="https://github.com/blueprinted-io/core/blob/main/assets/untappd.png?raw=true" width="400" alt="Untappd badge examples">
+</p>
 
 The result is a system where the reward and the behaviour are the same activity. You are not doing a separate thing to earn a badge. You are drinking interesting beer, paying attention, logging honestly, and the system notices what that says about you. The badges have personality and specificity. Not "you drank ten beers" but "you drank ten sour beers in winter." That is an identity signal. It tells you something about the kind of person you are.
 
