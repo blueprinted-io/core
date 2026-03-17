@@ -1,10 +1,15 @@
 # Why Your Gamification Doesn't Work (And Untappd's Does)
+### What a beer app understands about motivation that your LMS doesn't
+
+<p align="center">
+  <img src="https://github.com/blueprinted-io/core/blob/main/assets/untappd.png?raw=true" width="400" alt="Untappd badge examples">
+</p>
 
 Before diagnosing why corporate gamification fails so consistently, it's worth asking a question that almost nobody asks first: what is gamification actually for?
 
 The answer most organisations are working from, implicitly or explicitly, is that gamification is an incentive to complete an activity. Finish the module, get the badge. Hit the target, unlock the reward. Hit enough targets, fill enough progress bars, and the system declares you done.
 
-That answer is wrong. And it's wrong in a way that makes everything built on top of it wrong too.
+That answer is wrong, and wrong in a way that makes everything built on top of it wrong too.
 
 Gamification's actual function is to incentivise interaction with a system. Not completion of a task. Interaction with a system. It is a tool to drive curiosity, to pull people deeper into something, to reward the kind of engagement that produces genuine familiarity over time. The moment you repurpose it as a mechanism to push people through a checklist, you have already failed, regardless of how well the badges are designed or how enthusiastically the rollout is announced.
 
@@ -29,10 +34,6 @@ The clearest way to understand what gamification should be doing is to look at e
 **Untappd** is the commercial example that the learning and development world has almost entirely ignored, which is a significant oversight. Untappd is a social platform for logging and rating beer. Its badge system is widely regarded as one of the most effective implementations of gamification in any consumer product.
 
 The elegance is not accidental, and it is not purely principled. Untappd sells behavioural data to breweries. Curious, engaged users who explore widely, log consistently, and interact genuinely are commercially valuable in a way that passive users are not. The incentive system had to drive deep interaction with the platform, not just sign-up completion or session frequency, because shallow engagement produces shallow data. Good incentive design and genuine user value aligned because the business needed curiosity, not compliance.
-
-<p align="center">
-  <img src="https://github.com/blueprinted-io/core/blob/main/assets/untappd.png?raw=true" width="400" alt="Untappd badge examples">
-</p>
 
 The result is a system where the reward and the behaviour are the same activity. You are not doing a separate thing to earn a badge. You are drinking interesting beer, paying attention, logging honestly, and the system notices what that says about you. The badges have personality and specificity. Not "you drank ten beers" but "you drank ten sour beers in winter." That is an identity signal. It tells you something about the kind of person you are.
 
@@ -64,7 +65,11 @@ For anyone designing incentive systems in learning or knowledge work, the prior 
 
 You cannot directly reward quality of engagement because you cannot easily measure it. What you can do is watch for patterns of genuine interaction and name them when they appear. This is the hidden achievement as a design principle. Not a progress bar reaching a threshold. Not a counter hitting a number. The system noticing something true about how a person is working and surfacing it as recognition.
 
-"You have reviewed content across three different domain areas." That is not a completion metric. That is a signal about the kind of contributor someone is. "Ten consecutive pieces of content approved first time." That tells an author something about the quality and clarity of their work. These are identity signals. They are worth displaying because they say something real.
+"Polymath." Awarded to someone who has reviewed content across three different domain areas. Not announced in advance. Not on a checklist. It appears because the system noticed something true about how that person works.
+
+"Untouchable." Awarded to an author with ten consecutive pieces of content approved first time. Not a progress bar they were watching fill up. A recognition that arrives and tells them something about the quality of their work they might not have articulated themselves.
+
+These names are not decoration. The name is the mechanism. "You have reviewed content across three domain areas" is a statistic. "Polymath" is a statement about who you are. The number is the trigger. The name is the reward. Strip the name back to the metric and you are back where you started.
 
 The distinction sounds simple. In practice it requires a significant shift in how the problem is framed from the start. Most organisations commission gamification to drive completion rates. The question they should be asking is what behaviour, sustained over time, makes this system genuinely valuable, and how do we recognise the people who are producing it.
 
@@ -74,8 +79,16 @@ The distinction sounds simple. In practice it requires a significant shift in ho
 
 The only gamification that works is the kind where the reward is indistinguishable from genuine engagement with the thing itself. The system does not manufacture motivation. It notices something real and names it.
 
-And before any of that is possible, you have to be honest about why you are doing it at all. Are you trying to get people to interact with a system, or complete an activity? That question, answered honestly, will tell you more about your design than anything else.
+Before any of that is possible, you have to be honest about why you are doing it at all. Are you trying to get people to interact with a system, or complete an activity? That question, answered honestly, will tell you more about your design than anything else.
 
 Most organisations, if they answer honestly, will realise they do not need gamification. They need compliance.
 
-That is fine. But it is not the same thing, and pretending otherwise is how you end up with a leaderboard nobody looks at and a badge for pressing start.
+That is fine. It is not the same thing, and pretending otherwise is how you end up with a leaderboard nobody looks at and a badge for pressing start.
+
+There is one final thing worth naming honestly. Gamification done correctly makes people want to spend more time interacting with a system. That is the entire point. A well designed incentive system drives curiosity, rewards depth, and pulls people back in.
+
+Most business leaders want their staff spending as little time as possible in training.
+
+Those two things cannot both be true. Looking at most corporate implementations with that tension in mind, the design starts to make a different kind of sense. The completion badge, the progress bar, the minimum viable reward for minimum viable engagement. It is not bad gamification. It is a precise reflection of what the organisation actually wants.
+
+The more useful question is not why your gamification doesn't work. It is whether it is working exactly as intended.
