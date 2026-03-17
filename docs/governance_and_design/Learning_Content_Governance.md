@@ -51,6 +51,8 @@ you:
 
 - how it will be delivered
 
+---
+
 ## Scope
 
 This document covers procedural execution: how to configure, operate,
@@ -58,12 +60,16 @@ and complete technical tasks and workflows. It does not cover
 diagnostics, troubleshooting, strategic decision-making, or tool and
 architecture selection.
 
+---
+
 ## Plain-Language Standard
 
 This document must stay readable for non-specialists. Use short
 sentences, simple words, and active voice. Avoid jargon unless it is
 defined in the glossary. Aim for a reading level around grade 9 or
 lower, and favor clarity over formal or academic wording.
+
+---
 
 # What Is Learning
 
@@ -100,6 +106,8 @@ intent, to defined objectives, to structured content, to measurable
 outcomes. When we treat learning as the tool that enables change, every
 piece of content we create has a clear purpose and measurable impact.
 
+---
+
 ## A Note on Learning Objectives
 
 Before any content development or standardization activities begin,
@@ -134,6 +142,8 @@ structure.
 | **Task** | a procedure of steps producing one outcome |  |
 | **Workflow** | a sequence of tasks producing a larger objective |  |
 
+---
+
 ## Hierarchical Diagram:
 
 <img src="https://github.com/blueprinted-io/core/blob/main/assets/triangle.png?raw=true" style="width:6in;height:4in"
@@ -142,6 +152,8 @@ alt="A pyramid of steps with text AI-generated content may be incorrect." />
 ## Functional Diagram:
 
 <img src="https://github.com/blueprinted-io/core/blob/main/assets/functionaldiagram.png?raw=true" style="width:6.09544in;height:4.06362in" />
+
+---
 
 ## Working Example 1: Brushing Your Teeth (Simple Demonstration Only)
 
@@ -308,6 +320,8 @@ Its purpose is to show how:
 
 - tasks form a workflow
 
+---
+
 ## Working Example 2: Enabling Immutability on a Backup Repository (Technical Demonstration)
 
 *This example demonstrates how the learning components apply to a real
@@ -410,6 +424,8 @@ altered or deleted during the defined lock period.
 This example shows how the learning hierarchy applies to real technical
 domains, mirroring the structure of Example 1 while demonstrating a
 workflow relevant to engineers and SMEs.
+
+---
 
 # Workflow Standards
 
