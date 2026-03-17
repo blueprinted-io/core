@@ -12,7 +12,7 @@ scalable structure.
 
 System design details live in [Learning Content System Design](Learning_Content_System_Design.md).
 
-These governance rules exist to enable safe downstream publishing and AI-assisted delivery without hallucinated procedure. See: [Output & Delivery (Vision)](../operational_documentation/Output_and_Delivery_Vision.md).
+These governance rules exist to enable safe downstream publishing and AI-assisted delivery without hallucinated procedure. 
 
 It is written for:
 
