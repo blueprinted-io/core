@@ -136,7 +136,7 @@ structure.
 
 ## Hierarchical Diagram:
 
-<img src="../../assets/triangle.png" style="width:6in;height:4in"
+<img src="https://github.com/blueprinted-io/core/blob/main/assets/triangle.png" style="width:6in;height:4in"
 alt="A pyramid of steps with text AI-generated content may be incorrect." />
 
 ## Functional Diagram:
