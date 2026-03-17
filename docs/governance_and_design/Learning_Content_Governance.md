@@ -136,12 +136,12 @@ structure.
 
 ## Hierarchical Diagram:
 
-<img src="https://github.com/blueprinted-io/core/blob/main/assets/triangle.png" style="width:6in;height:4in"
+<img src="https://github.com/blueprinted-io/core/blob/main/assets/triangle.png?raw=true" style="width:6in;height:4in"
 alt="A pyramid of steps with text AI-generated content may be incorrect." />
 
 ## Functional Diagram:
 
-<img src="https://github.com/blueprinted-io/core/blob/main/assets/functionaldiagram.png" style="width:6.09544in;height:4.06362in" />
+<img src="https://github.com/blueprinted-io/core/blob/main/assets/functionaldiagram.png?raw=true" style="width:6.09544in;height:4.06362in" />
 
 ## Working Example 1: Brushing Your Teeth (Simple Demonstration Only)
 
