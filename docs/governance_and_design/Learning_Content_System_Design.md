@@ -7,7 +7,7 @@ and review rules.
 
 The application exists to maintain a governed, versioned, and structurally validated corpus of procedural performance units that can be safely reused, reviewed, and aligned to organizational objectives.
 
-These constraints exist to support safe, hallucination-resistant generation of learning outputs (guides/courses/SOPs) from confirmed records. See: [Output & Delivery (Vision)](../operational_documentation/Output_and_Delivery_Vision.md).
+These constraints exist to support safe, hallucination-resistant generation of learning outputs (guides/courses/SOPs) from confirmed records. 
 
 ## MVP Scope (System Design)
 
