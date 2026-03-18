@@ -13,6 +13,28 @@ That answer is wrong, and wrong in a way that makes everything built on top of i
 
 Gamification's actual function is to incentivise interaction with a system. Not completion of a task. Interaction with a system. It is a tool to drive curiosity, to pull people deeper into something, to reward the kind of engagement that produces genuine familiarity over time. The moment you repurpose it as a mechanism to push people through a checklist, you have already failed, regardless of how well the badges are designed or how enthusiastically the rollout is announced.
 
+---
+
+## It Isn't Even One Thing
+
+There is a prior problem worth naming before anything else. Gamification, as the term is commonly understood, is not one thing. It is two distinct things that have been travelling under the same name long enough that most design conversations start from a position of confusion.
+
+The first is the use of badges, rewards and recognition systems to answer identity questions and drive engagement with a system. The second is the design of learning experiences that trigger the same intrinsic reward responses one gets from playing games: challenge calibrated to skill, meaningful consequence, the satisfaction of mastery.
+
+These are separate disciplines with separate design principles, separate failure modes, and separate measures of success. Conflating them has produced a field where a compliance badge and a well-designed simulation exercise are treated as variations of the same thing. They are not. This article is primarily about the first. The second deserves its own conversation.
+
+---
+
+## The Human Need Underneath It
+
+We don't name it often, but one of the stranger side effects of living in data-saturated organisations is that humans have developed an increasingly loud need to ask: who am I?
+
+It sounds like a philosophical question. In practice it's a design opportunity that the most successful consumer products have understood for years. Buzzfeed built a media empire on it. Myers Briggs has survived decades of being thoroughly debunked because no amount of scientific criticism touches the reason people actually use it. Spotify Wrapped became a cultural moment and spawned a generation of imitators not because people wanted to know how many minutes of music they consumed, but because it handed them a story about themselves they could share.
+
+The mechanism underneath all of these is the same. An external system reflecting something back at you that feels true. That is the precise psychological drive that gamification, at its best, is reaching for. The badge isn't meant to be a receipt. It's meant to be a mirror.
+
+Corporate gamification fails the identity test completely. "Module Completion Certificate, Q3 Compliance Training 2024" tells you nothing about who you are. It tells you that you were present long enough for a system to register you. Nobody shares that. Nobody feels seen by it. The drive it was supposed to harness walks straight past it.
+
 This matters because it forces a prior question. Before designing a single reward, before commissioning a single trophy graphic, you need to answer honestly: are you trying to get people to interact with a system, or are you trying to evidence that people completed an activity? If the answer is the latter, gamification is not the right tool. What you need is a compliance mechanism. Those are different problems with different solutions, and conflating them is where most corporate implementations go wrong before the first design conversation has finished.
 
 ---
