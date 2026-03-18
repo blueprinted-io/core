@@ -100,6 +100,32 @@ Nobody made that choice. It's just what happened.
 
 ---
 
+# Some Intellectual Honesty
+
+I should say something directly here, because it's relevant.
+
+Blueprinted.io, the platform I've been building alongside this thinking, was made with significant AI support. I have nearly twenty years in learning design. I do not have twenty years in software engineering. The codebase exists because the shortcut worked well enough to produce something real, something I can point at and say: this, build this properly.
+
+It's open source for a few reasons, and the main one is on the website: protecting the ruleset, preventing the kind of SaaS capture that would undermine what the project is actually for. But there's another reason I'm less public about. I'm genuinely uncomfortable commercialising something that isn't a product of my own technical understanding. I know what it should do. I understand the systems logic underneath it. I do not fully understand the code that expresses it. That gap matters to me, which is why I'm actively looking for people who are specialists in the systems side to contribute, people for whom the code is not a shortcut but a foundation.
+
+What AI did for Blueprinted is something the original article didn't quite articulate. For a domain expert, it doesn't replace technical expertise. It lets you build a communicable artefact of your intent. Without the shortcut, Blueprinted would still be a document, or a diagram, or eighteen months of trying to explain L&D architecture to an engineer who doesn't understand the problem domain. Instead it's a working thing. That's not nothing. But knowing what it is and knowing what it isn't are both important.
+
+---
+
+# What The Shortcut Taught Me About Myself
+
+There's one more thing the shortcut did that I didn't expect.
+
+Working through Blueprinted, pushing into systems I didn't fully understand, I discovered something I didn't know to look for. It turns out I'm reasonably good at systems level thinking. Data flow, architecture, the shape of how information moves through a process. I can reason about those things without being able to express them in code directly.
+
+That's not a skill I knew I had. It's not a skill that twenty years of L&D gave me any obvious reason to discover. The syntax barrier wasn't protecting that skill. It was just sitting in front of a context where the skill could finally become visible.
+
+Which complicates the toll road argument in an interesting way. For some people the gatekeeping isn't protecting the deeper skill at all. The deeper skill is already there, developed through completely different experience, waiting for an environment that makes it legible. The AI didn't teach me systems thinking. It handed me a situation where I could finally see I already had it.
+
+I don't know how common that is. But it's worth naming, because the operates/works model I described earlier assumes a fairly linear relationship between foundation and capability. The reality, at least in this case, was messier and more surprising than that.
+
+---
+
 # What This Means
 
 I don't have a clean answer to this. I'm not sure one exists yet.
