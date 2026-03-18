@@ -1,6 +1,6 @@
 # About this article
 
-I published Learning in Reverse nearly a yesr ago. The thesis was simple: you can start with output, work backwards through understanding, and learn more effectively than the traditional staircase model suggests. I still believe that. For the most part.
+I published Learning in Reverse nearly a year ago. The thesis was simple: you can start with output, work backwards through understanding, and learn more effectively than the traditional staircase model suggests. I still believe that. For the most part.
 
 But things have moved fast enough that it's worth revisiting. Not to retract the argument, but to examine what's happened to it since.
 
@@ -16,6 +16,8 @@ The friction was doing the work.
 
 Every time I copied code from a chat window into an editor, I had to read it well enough to know where it went. Every time something broke, I had to understand the complaint before I could fix it. Every time I ran a version that almost worked, I was building a map of the territory without knowing I was doing it. The learning wasn't in the AI. It was in the gap between the AI's output and a working result. That gap was the curriculum.
 
+On reflection I already knew this. I've said to specialists many times while working on learning content together: "The day you learned the most was the day when everything was profoundly broken." In a weird way, AI allowed me to build many broken states.
+
 Then the tools closed the gap.
 
 Cursor. GitHub Copilot. Claude Code. Agentic pipelines that read your codebase and modify it directly. The code no longer needs to travel through your understanding to get from the AI to the editor. The friction is gone. And with it, so is the mechanism.
@@ -26,7 +28,9 @@ The shortcut in coding is no longer a shortcut. It's a bypass. You don't learn i
 
 # Coding Is Not A Special Case
 
-My first instinct was to treat this as a coding-specific problem. The tooling around software development has always moved in this direction: IDEs, frameworks, Stack Overflow, package managers. AI just completed a journey that was already underway. Coding is different, I told myself.
+My first instinct was to treat this as a coding-specific problem. The tooling around software development has always moved in this direction: IDEs, frameworks, Stack Overflow, package managers. I think back to a conversation I had with my uncle years ago who was complaining that the art of coding was lost because programmers didn't need to write elegant, efficient code anymore to fit everything into 16KB. I suppose that pipeline is just reaching another conclusion. You don't need creative elegance anymore. Maybe you don't need to write code anymore.
+
+AI seems to have just completed a journey that was already underway. Coding is different, I told myself.
 
 I don't believe that anymore.
 
@@ -34,13 +38,15 @@ Coding is a preview. The mechanism that broke the shortcut there isn't specific 
 
 That gap is closing in every domain AI is touching. Coding just got there first because it's the domain AI was built by, and for, and in. Other domains will follow, at different speeds, in different shapes. The question isn't whether coding is a special case. It's which domain is next, and whether anyone will notice in time.
 
+There is a fascinating philosophical conversation here that sits outside the bounds of this article. When you, a human, write anything, you think about what you're going to write, you mentally structure what needs to come first, then next, you form the narrative as a series of ideas swirling around your brain. You probably had a few key words or phrases and you start to write it out. LLMs operate differently. The output of a single word is a probabilistic function of the last word, and given how modern LLMs work, every word that came before it. LLMs therefore represent a true collapse of intent and output. That phrase carries real meaning in this context.
+
 ---
 
 # The Toll Road Nobody Told You About
 
 Here's something I've been sitting with for a few months.
 
-Coding isn't one skill. It's at least three. There's syntax, the mechanical expression of logic in a language a compiler accepts. There's data flow, understanding how information moves, transforms and persists through a system. And there's system design, the higher-order reasoning about architecture, tradeoffs and consequence.
+Coding isn't one skill. It's at least three. There's syntax, the mechanical expression of logic in a language a compiler accepts. When learners think "I'm going to learn to code," this is the skill they think of. What is rarely discussed is that on top of that there's data flow, understanding how information moves, transforms and persists through a system, and there is system design, the higher-order reasoning about architecture, tradeoffs and consequence.
 
 For decades, syntax was the gatekeeper. You couldn't get near data flow or system design without paying the toll. And the toll was years. Years of wrestling with semicolons and scope and type errors and segfaults and all the other small ways a system tells you that you haven't understood it yet.
 
@@ -104,11 +110,13 @@ Nobody made that choice. It's just what happened.
 
 I should say something directly here, because it's relevant.
 
-Blueprinted.io, the platform I've been building alongside this thinking, was made with significant AI support. I have nearly twenty years in learning design. I do not have twenty years in software engineering. The codebase exists because the shortcut worked well enough to produce something real, something I can point at and say: this, build this properly.
+Blueprinted.io, the platform I've been building alongside this thinking, was made with significant AI support. I have nearly twenty years in learning design. I do not have twenty years in software engineering. The codebase exists because the shortcut worked well enough to produce something real, something I can point at and say to someone with deep specialism: build this properly.
 
-It's open source for a few reasons, and the main one is on the website: protecting the ruleset, preventing the kind of SaaS capture that would undermine what the project is actually for. But there's another reason I'm less public about. I'm genuinely uncomfortable commercialising something that isn't a product of my own technical understanding. I know what it should do. I understand the systems logic underneath it. I do not fully understand the code that expresses it. That gap matters to me, which is why I'm actively looking for people who are specialists in the systems side to contribute, people for whom the code is not a shortcut but a foundation.
+It's open source for a few reasons, and the main one is on the website: protecting the ruleset, preventing the kind of SaaS capture that would undermine what the project is actually for. But there's another reason I'm less public about. I'm genuinely uncomfortable attempting to commercialise something that isn't a product of my own technical understanding. I know what it should do. I understand the systems logic underneath it. I do not fully understand the code that expresses it. That gap matters to me, which is why I'm actively looking for people who are specialists in the systems side to contribute, people for whom the code is not a shortcut but a foundation.
 
 What AI did for Blueprinted is something the original article didn't quite articulate. For a domain expert, it doesn't replace technical expertise. It lets you build a communicable artefact of your intent. Without the shortcut, Blueprinted would still be a document, or a diagram, or eighteen months of trying to explain L&D architecture to an engineer who doesn't understand the problem domain. Instead it's a working thing. That's not nothing. But knowing what it is and knowing what it isn't are both important.
+
+For learning specialists this dichotomy is extremely well understood. Every single LMS on the market can be placed into one of two categories: built by engineers who didn't understand learning well enough, or built by learning specialists who didn't understand the engineering well enough. Balancing those two has been the holy grail of LMS design and I've never seen anyone crack it.
 
 ---
 
@@ -120,7 +128,7 @@ Working through Blueprinted, pushing into systems I didn't fully understand, I d
 
 That's not a skill I knew I had. It's not a skill that twenty years of L&D gave me any obvious reason to discover. The syntax barrier wasn't protecting that skill. It was just sitting in front of a context where the skill could finally become visible.
 
-Which complicates the toll road argument in an interesting way. For some people the gatekeeping isn't protecting the deeper skill at all. The deeper skill is already there, developed through completely different experience, waiting for an environment that makes it legible. The AI didn't teach me systems thinking. It handed me a situation where I could finally see I already had it.
+Which complicates the toll road argument in an interesting way. For some people the gatekeeping isn't protecting the deeper skill at all. The deeper skill is already there, developed through completely different experience, waiting for an environment that makes it legible. The AI didn't teach me systems thinking. It handed me a situation where I could finally see I already had it, or if not, the skill was certainly motivated to continue by flexing that muscle.
 
 I don't know how common that is. But it's worth naming, because the operates/works model I described earlier assumes a fairly linear relationship between foundation and capability. The reality, at least in this case, was messier and more surprising than that.
 
@@ -136,7 +144,7 @@ The domains that matter most, the ones involving ambiguity, judgment, consequenc
 
 If you're responsible for building capability at scale, the question worth sitting with isn't how to make learning more efficient. It's whether the efficiency you're optimising for is consuming the thing you actually need.
 
-The shortcut is real. It still works. We just have to want to use it.
+Nobody made that choice. It's just what happened.
 
 > *The expertise isn't disappearing because we can't build it anymore.  
 > It's disappearing because we keep choosing not to.  
