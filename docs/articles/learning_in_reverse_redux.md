@@ -1,6 +1,6 @@
 # About this article
 
-I published Learning in Reverse nearly a year ago. The thesis was simple: you can start with output, work backwards through understanding, and learn more effectively than the traditional staircase model suggests. I still believe that. For the most part.
+I published [Learning in Reverse](learning_in_reverse.md) nearly a year ago. The thesis was simple: you can start with output, work backwards through understanding, and learn more effectively than the traditional staircase model suggests. I still believe that. For the most part.
 
 But things have moved fast enough that it's worth revisiting. Not to retract the argument, but to examine what's happened to it since.
 
