@@ -37,6 +37,12 @@ Corporate gamification fails the identity test completely. "Module Completion Ce
 
 This matters because it forces a prior question. Before designing a single reward, before commissioning a single trophy graphic, you need to answer honestly: are you trying to get people to interact with a system, or are you trying to evidence that people completed an activity? If the answer is the latter, gamification is not the right tool. What you need is a compliance mechanism. Those are different problems with different solutions, and conflating them is where most corporate implementations go wrong before the first design conversation has finished.
 
+There is a personal tension I should name here. My further education ended with a degree in Commercial Music from the University of Paisley in 2006. I concluded long ago that I'd abandoned that line of enquiry and moved into the learning space. Two largely unrelated chapters.
+
+Writing the Spotify Wrapped section I'm not so sure. Theodore Adorno's critique of the culture industry, that mass cultural products manufacture the illusion of individuality while delivering standardisation, is essentially a description of Spotify Wrapped before Spotify existed. Simon Frith sits on the other side of that argument: that music is fundamentally about identity formation, that we use it to answer who we are and where we belong.
+
+The tension between those two positions is exactly what's at play in the gamification question. I apparently studied it twenty years before I needed it.
+
 ---
 
 ## What Failure Looks Like in Practice
