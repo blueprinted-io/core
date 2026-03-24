@@ -24,7 +24,7 @@ Learning is still built like waterfall software: big launches, slow review cycle
 
 ## Live Demo
 
-https://blueprinted-io-mvp.blueprinted.io/login
+https://app.blueprinted.io
 
 ## Quickstart (Run Locally)
 
