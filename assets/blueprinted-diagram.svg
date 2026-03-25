@@ -1,0 +1,264 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" fill="none" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a0f"/>
+      <stop offset="100%" stop-color="#111118"/>
+    </linearGradient>
+    <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16161f"/>
+      <stop offset="100%" stop-color="#111118"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="workflowGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e1e2e"/>
+      <stop offset="100%" stop-color="#16161f"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softglow">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="620" fill="url(#bgGrad)"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.04" stroke="#ffffff" stroke-width="0.5">
+    <line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="400" x2="1200" y2="400"/>
+    <line x1="0" y1="500" x2="1200" y2="500"/>
+    <line x1="100" y1="0" x2="100" y2="620"/>
+    <line x1="200" y1="0" x2="200" y2="620"/>
+    <line x1="300" y1="0" x2="300" y2="620"/>
+    <line x1="400" y1="0" x2="400" y2="620"/>
+    <line x1="500" y1="0" x2="500" y2="620"/>
+    <line x1="600" y1="0" x2="600" y2="620"/>
+    <line x1="700" y1="0" x2="700" y2="620"/>
+    <line x1="800" y1="0" x2="800" y2="620"/>
+    <line x1="900" y1="0" x2="900" y2="620"/>
+    <line x1="1000" y1="0" x2="1000" y2="620"/>
+    <line x1="1100" y1="0" x2="1100" y2="620"/>
+  </g>
+
+  <!-- Amber accent top bar -->
+  <rect x="0" y="0" width="1200" height="3" fill="#f59e0b" opacity="0.8"/>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- LOGO / HEADER — centred, scaled down -->
+  <!-- Mark width: ~48px, gap: 14px, wordmark ~220px @ 28px font = total ~282px, start at 600-141=459 -->
+  <!-- ═══════════════════════════════════════ -->
+  <g transform="translate(459, 32)">
+    <!-- Mark (scaled: x positions 8,22,36,50,64 → tighter, height 8–54) -->
+    <g stroke="#ffffff" stroke-width="2.5" stroke-linecap="square">
+      <line x1="8" y1="6" x2="8" y2="11"/>
+      <line x1="8" y1="22" x2="8" y2="28"/>
+      <line x1="8" y1="44" x2="8" y2="50"/>
+      <line x1="20" y1="6" x2="20" y2="16"/>
+      <line x1="20" y1="24" x2="20" y2="36"/>
+      <line x1="20" y1="42" x2="20" y2="54"/>
+      <line x1="32" y1="6" x2="32" y2="28"/>
+      <line x1="32" y1="36" x2="32" y2="54"/>
+      <line x1="44" y1="6" x2="44" y2="34"/>
+      <line x1="44" y1="41" x2="44" y2="54"/>
+    </g>
+    <line x1="56" y1="6" x2="56" y2="54" stroke="#f59e0b" stroke-width="2.5" stroke-linecap="square" filter="url(#glow)"/>
+    <!-- Wordmark at 28px -->
+    <text x="72" y="42" font-size="28" fill="#ffffff">
+      <tspan font-weight="700">blueprinted</tspan><tspan font-weight="300">.io</tspan>
+    </text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- COLUMN HEADERS -->
+  <!-- ═══════════════════════════════════════ -->
+
+  <!-- Left header -->
+  <text x="200" y="160" text-anchor="middle" font-size="13" fill="#ffffff" opacity="0.5" letter-spacing="2" font-weight="500">AI DOCUMENTATION INPUT</text>
+  <line x1="80" y1="170" x2="320" y2="170" stroke="#ffffff" stroke-width="0.5" opacity="0.15"/>
+
+  <!-- Center header -->
+  <text x="600" y="160" text-anchor="middle" font-size="13" fill="#f59e0b" opacity="0.9" letter-spacing="2" font-weight="600" filter="url(#glow)">HUMAN-IN-THE-LOOP</text>
+  <line x1="420" y1="170" x2="780" y2="170" stroke="#f59e0b" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Right header -->
+  <text x="1000" y="160" text-anchor="middle" font-size="13" fill="#ffffff" opacity="0.5" letter-spacing="2" font-weight="500">AI DELIVERY OUTPUT</text>
+  <line x1="880" y1="170" x2="1120" y2="170" stroke="#ffffff" stroke-width="0.5" opacity="0.15"/>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- LEFT PANEL — AI Documentation Input -->
+  <!-- ═══════════════════════════════════════ -->
+  <rect x="60" y="185" width="280" height="330" rx="4" fill="url(#panelGrad)" stroke="#ffffff" stroke-width="0.5" opacity="1"/>
+  <rect x="60" y="185" width="280" height="330" rx="4" fill="none" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.1"/>
+  <!-- Left accent bar -->
+  <rect x="60" y="185" width="3" height="330" rx="2" fill="#ffffff" opacity="0.15"/>
+
+  <!-- Item 1: Technical Documentation -->
+  <g transform="translate(90, 245)">
+    <!-- Icon: document lines -->
+    <rect x="0" y="-18" width="28" height="34" rx="3" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <line x1="5" y1="-6" x2="23" y2="-6" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <line x1="5" y1="0" x2="23" y2="0" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <line x1="5" y1="6" x2="17" y2="6" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <text x="44" y="-5" font-size="14" fill="#ffffff" font-weight="500">Technical</text>
+    <text x="44" y="13" font-size="14" fill="#ffffff" font-weight="500">Documentation</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="90" y1="305" x2="320" y2="305" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.08"/>
+
+  <!-- Item 2: Learning Content -->
+  <g transform="translate(90, 340)">
+    <!-- Icon: graduation cap -->
+    <polygon points="14,-12 28,0 14,6 0,0" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <line x1="28" y1="0" x2="28" y2="12" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <path d="M6,4 Q6,16 14,16 Q22,16 22,4" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <text x="44" y="-2" font-size="14" fill="#ffffff" font-weight="500">Learning</text>
+    <text x="44" y="16" font-size="14" fill="#ffffff" font-weight="500">Content</text>
+  </g>
+
+  <!-- Divider -->
+  <line x1="90" y1="400" x2="320" y2="400" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.08"/>
+
+  <!-- Item 3: KB Articles -->
+  <g transform="translate(90, 435)">
+    <!-- Icon: stacked layers -->
+    <rect x="0" y="-14" width="28" height="7" rx="1" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <rect x="2" y="-5" width="24" height="7" rx="1" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <rect x="4" y="4" width="20" height="7" rx="1" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-opacity="0.4"/>
+    <text x="44" y="2" font-size="14" fill="#ffffff" font-weight="500">KB Articles</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ARROW LEFT → CENTER -->
+  <!-- ═══════════════════════════════════════ -->
+  <line x1="345" y1="350" x2="415" y2="350" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.6" marker-end="url(#arrowhead)"/>
+  <!-- Arrow label -->
+  <text x="380" y="342" text-anchor="middle" font-size="9" fill="#f59e0b" opacity="0.5" letter-spacing="1">INGEST</text>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- CENTER PANEL — Human In The Loop -->
+  <!-- ═══════════════════════════════════════ -->
+  <rect x="420" y="185" width="360" height="330" rx="4" fill="url(#panelGrad)" stroke="#f59e0b" stroke-width="0.5" stroke-opacity="0.3"/>
+  <!-- Amber top accent -->
+  <rect x="420" y="185" width="360" height="3" rx="2" fill="#f59e0b" opacity="0.6"/>
+
+  <!-- Workflow A -->
+  <rect x="445" y="210" width="140" height="42" rx="3" fill="url(#workflowGrad)" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.2"/>
+  <text x="515" y="236" text-anchor="middle" font-size="13" fill="#ffffff" font-weight="500" letter-spacing="0.5">Workflow A</text>
+
+  <!-- Workflow B -->
+  <rect x="445" y="266" width="140" height="42" rx="3" fill="url(#workflowGrad)" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.2"/>
+  <text x="515" y="292" text-anchor="middle" font-size="13" fill="#ffffff" font-weight="500" letter-spacing="0.5">Workflow B</text>
+
+  <!-- Workflow C -->
+  <rect x="445" y="322" width="140" height="42" rx="3" fill="url(#workflowGrad)" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.2"/>
+  <text x="515" y="348" text-anchor="middle" font-size="13" fill="#ffffff" font-weight="500" letter-spacing="0.5">Workflow C</text>
+
+  <!-- Arrow from workflows to task panel -->
+  <line x1="590" y1="322" x2="616" y2="322" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.5" marker-end="url(#arrowhead)"/>
+
+  <!-- Task sub-panel -->
+  <rect x="620" y="195" width="140" height="320" rx="3" fill="#0d0d14" stroke="#f59e0b" stroke-width="0.5" stroke-opacity="0.4"/>
+  <rect x="620" y="195" width="140" height="3" rx="1" fill="#f59e0b" opacity="0.4"/>
+
+  <!-- Task header -->
+  <text x="690" y="222" text-anchor="middle" font-size="11" fill="#f59e0b" font-weight="600" letter-spacing="2" opacity="0.8">TASK</text>
+  <line x1="630" y1="232" x2="750" y2="232" stroke="#f59e0b" stroke-width="0.5" stroke-opacity="0.2"/>
+
+  <!-- Task items — equal weight, clean -->
+  <!-- Outcome -->
+  <rect x="632" y="242" width="116" height="36" rx="2" fill="#16161f" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.12"/>
+  <text x="690" y="265" text-anchor="middle" font-size="12" fill="#ffffff" font-weight="400" opacity="0.8">Outcome</text>
+
+  <!-- Facts -->
+  <rect x="632" y="284" width="116" height="36" rx="2" fill="#16161f" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.12"/>
+  <text x="690" y="307" text-anchor="middle" font-size="12" fill="#ffffff" font-weight="400" opacity="0.8">Facts</text>
+
+  <!-- Concepts -->
+  <rect x="632" y="326" width="116" height="36" rx="2" fill="#16161f" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.12"/>
+  <text x="690" y="349" text-anchor="middle" font-size="12" fill="#ffffff" font-weight="400" opacity="0.8">Concepts</text>
+
+  <!-- Procedure -->
+  <rect x="632" y="368" width="116" height="36" rx="2" fill="#16161f" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.12"/>
+  <text x="690" y="391" text-anchor="middle" font-size="12" fill="#ffffff" font-weight="400" opacity="0.8">Procedure</text>
+
+  <!-- Dependencies -->
+  <rect x="632" y="410" width="116" height="36" rx="2" fill="#16161f" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.12"/>
+  <text x="690" y="433" text-anchor="middle" font-size="12" fill="#ffffff" font-weight="400" opacity="0.8">Dependencies</text>
+
+  <!-- Amber accent line on task panel bottom -->
+  <line x1="632" y1="453" x2="748" y2="453" stroke="#f59e0b" stroke-width="0.5" stroke-opacity="0.2"/>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- ARROW CENTER → RIGHT -->
+  <!-- ═══════════════════════════════════════ -->
+  <line x1="785" y1="350" x2="860" y2="350" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.6" marker-end="url(#arrowhead)"/>
+  <text x="822" y="342" text-anchor="middle" font-size="9" fill="#f59e0b" opacity="0.5" letter-spacing="1">PUBLISH</text>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- RIGHT PANEL — AI Delivery Output -->
+  <!-- ═══════════════════════════════════════ -->
+  <rect x="860" y="185" width="280" height="330" rx="4" fill="url(#panelGrad)" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.1"/>
+  <!-- Right accent bar -->
+  <rect x="1137" y="185" width="3" height="330" rx="2" fill="#f59e0b" opacity="0.3"/>
+
+  <!-- Item 1: Learning Courseware -->
+  <g transform="translate(890, 245)">
+    <!-- Icon: graduation cap -->
+    <polygon points="14,-12 28,0 14,6 0,0" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <line x1="28" y1="0" x2="28" y2="12" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <path d="M6,4 Q6,16 14,16 Q22,16 22,4" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <text x="44" y="-2" font-size="14" fill="#ffffff" font-weight="500">Learning</text>
+    <text x="44" y="16" font-size="14" fill="#ffffff" font-weight="500">Courseware</text>
+  </g>
+
+  <line x1="890" y1="305" x2="1120" y2="305" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.08"/>
+
+  <!-- Item 2: Assessments -->
+  <g transform="translate(890, 350)">
+    <!-- Icon: checklist -->
+    <rect x="0" y="-14" width="26" height="30" rx="2" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <polyline points="4,-4 8,0 16,-8" fill="none" stroke="#f59e0b" stroke-width="1.4" stroke-opacity="0.6"/>
+    <line x1="4" y1="8" x2="20" y2="8" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.4"/>
+    <text x="44" y="2" font-size="14" fill="#ffffff" font-weight="500">Assessments</text>
+  </g>
+
+  <line x1="890" y1="400" x2="1120" y2="400" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.08"/>
+
+  <!-- Item 3: LMS Audits -->
+  <g transform="translate(890, 440)">
+    <!-- Icon: bar chart with magnifier -->
+    <rect x="2" y="4" width="6" height="8" rx="1" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <rect x="11" y="-2" width="6" height="14" rx="1" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <rect x="20" y="-8" width="6" height="20" rx="1" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.6"/>
+    <text x="44" y="4" font-size="14" fill="#ffffff" font-weight="500">LMS Audits</text>
+  </g>
+
+  <!-- ═══════════════════════════════════════ -->
+  <!-- FOOTER -->
+  <!-- ═══════════════════════════════════════ -->
+  <line x1="60" y1="545" x2="1140" y2="545" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.08"/>
+  <text x="600" y="570" text-anchor="middle" font-size="11" fill="#ffffff" opacity="0.2" letter-spacing="1">blueprinted.io — AI-Native LearningOps</text>
+
+  <!-- Amber dot accent bottom right -->
+  <rect x="1130" y="542" width="10" height="3" fill="#f59e0b" opacity="0.5"/>
+
+</svg>
