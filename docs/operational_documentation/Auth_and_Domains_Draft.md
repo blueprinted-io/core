@@ -129,3 +129,57 @@ Notes:
 - Multi-party workflow confirmations.
 
 This is a first pass, meant to be read, challenged, and refined before implementation.
+
+---
+
+## JSON API auth pattern (agent/programmatic access)
+
+The `/api/*` routes expose a JSON REST layer over the same governance model. They use
+the **same session cookie** as the browser UI — no separate API key or token system exists.
+
+### Flow
+
+1. **Log in** — POST to the existing `/login` endpoint with form-encoded credentials:
+
+   ```
+   POST /login
+   Content-Type: application/x-www-form-urlencoded
+
+   username=agent-user&password=secret&db_key=debian
+   ```
+
+   On success the server sets a `lcs_session` cookie (HTTP-only). The response is a
+   redirect (303); follow it or simply retain the cookie.
+
+2. **Call API endpoints** — include the `lcs_session` cookie on all subsequent requests:
+
+   ```
+   GET /api/tasks?status=confirmed
+   Cookie: lcs_session=<token>
+   ```
+
+3. **All RBAC rules apply** — the role attached to the session determines what actions
+   are permitted (same matrix as the HTML routes). A `403` response means the session
+   role lacks the required permission; a `401` means the session is missing or expired.
+
+### Error format
+
+All `/api/*` error responses are JSON:
+
+```json
+{ "detail": "<human-readable message>" }
+```
+
+HTTP status codes follow standard semantics: 400 bad request, 401 unauthenticated,
+403 forbidden, 404 not found, 409 state conflict.
+
+### Notes
+
+- Sessions are scoped to a database profile (set via the `db_key` form field at login,
+  or the `lcs_db` cookie). Agents operating on a specific database should log in with
+  the matching `db_key`.
+- The `/api/db/state` endpoint provides a full state snapshot in one call — useful for
+  an agent to orient itself before issuing writes.
+- Domain entitlement checks on submit/confirm/return are identical to those enforced
+  by the HTML routes. An agent user must hold the relevant domain to act on records in
+  that domain.
