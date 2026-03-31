@@ -89,12 +89,17 @@ This kind of change does not start with tools. It starts with intent and process
 
 ## Summary
 
-Modern tools have made delivery faster and more scalable.  
-Modern language has made learning sound more exciting.  
-But without redesigning the foundations, most learning strategies remain rooted in old assumptions.
+This is not a story about bad actors or cynical vendors. It is a story about rational ones.
 
-The challenge, and the opportunity, is not in adopting new technology.  
-It is in using it to support a more flexible, meaningful, and evidence-aligned approach to learning itself.
+If you are building learning technology, you face a straightforward choice. You can build something that sits alongside what organisations already do, asks nothing of them and is easy to sell. Or you can build something that would genuinely change outcomes but requires the organisation to rethink how it approaches learning entirely.
+
+The market has consistently rewarded the first option. The table above is the result.
+
+That's not a criticism of vendors. It is a description of what the market has asked for. Procurement cycles, risk aversion, and the path of least internal resistance have shaped the tools available just as much as any design decision.
+
+The question worth sitting with is not why the industry keeps producing wrappers. That part makes sense.
+
+The question is what you are actually trying to achieve, and whether the next tool you evaluate is genuinely built for that, or just easier to buy.
 
 ---
 
