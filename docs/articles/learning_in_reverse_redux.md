@@ -6,7 +6,7 @@ Things have moved fast enough that it's worth revisiting. Not to retract the arg
 
 ---
 
-# The Shortcut Still Works. We Just Stopped Using It.
+## The Shortcut Still Works. We Just Stopped Using It.
 
 When I wrote Learning in Reverse, I was working through something personal. I'd spent years convinced I couldn't code. Then I approached it differently, using AI to generate working output, breaking it, fixing it, learning backwards through the wreckage. In a few days I had something real. The mechanism worked.
 
@@ -26,7 +26,7 @@ The shortcut in coding is no longer a shortcut. It's a bypass. You don't learn i
 
 ---
 
-# Coding Is Not A Special Case
+## Coding Is Not A Special Case
 
 My first instinct was to treat this as a coding-specific problem. The tooling around software development has always moved in this direction: IDEs, frameworks, Stack Overflow, package managers. I think back to a conversation I had with my uncle years ago who was complaining that the art of coding was lost because programmers didn't need to write elegant, efficient code anymore to fit everything into 16KB. I suppose that pipeline is just reaching another conclusion. You don't need creative elegance anymore. Maybe you don't need to write code anymore.
 
@@ -42,7 +42,7 @@ There is a fascinating philosophical conversation here that sits outside the bou
 
 ---
 
-# The Toll Road Nobody Told You About
+## The Toll Road Nobody Told You About
 
 Here's something I've been sitting with for a few months.
 
@@ -58,7 +58,7 @@ Every complex domain probably has this structure: a visible, frustrating gatekee
 
 ---
 
-# Operates vs. Works
+## Operates vs. Works
 
 This is where the original Lab/Production split still holds, but something underneath it has shifted.
 
@@ -74,7 +74,7 @@ The problem isn't that people can't reach works anymore. It's that nothing in th
 
 ---
 
-# The Failure You Won't See Coming
+## The Failure You Won't See Coming
 
 In safety-critical engineering, there's a concept worth borrowing here: latent failure. The system operates normally. All the visible indicators are green. The deficit is structural, hidden, and will only surface when the system encounters a condition that exposes the absence of something that should have been there.
 
@@ -88,7 +88,7 @@ The expertise famine isn't visible yet. The system currently looks fine. That's 
 
 ---
 
-# The Shortcut Is Still There
+## The Shortcut Is Still There
 
 Here's the thing I want to be clear about.
 
@@ -106,7 +106,7 @@ Nobody made that choice. It's just what happened.
 
 ---
 
-# Some Intellectual Honesty
+## Some Intellectual Honesty
 
 I should say something directly here, because it's relevant.
 
@@ -120,7 +120,7 @@ For learning specialists this dichotomy is extremely well understood. Every sing
 
 ---
 
-# What The Shortcut Taught Me About Myself
+## What The Shortcut Taught Me About Myself
 
 There's one more thing the shortcut did that I didn't expect.
 
@@ -134,7 +134,7 @@ I don't know how common that is, but it's worth naming, because the operates/wor
 
 ---
 
-# What This Means
+## What This Means
 
 I don't have a clean answer to this. I'm not sure one exists yet.
 
