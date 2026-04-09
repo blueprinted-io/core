@@ -12,7 +12,7 @@ In this project, I’m the expert in the loop.
 
 ---
 
-# Learning in Reverse
+## Learning in Reverse
 
 This article started from something personal.
 
@@ -32,7 +32,7 @@ If I can build something, make it work and then learn how I built it, does it ma
 
 ---
 
-# Rethinking Bloom’s Taxonomy
+## Rethinking Bloom’s Taxonomy
 
 At the centre of all this is Bloom’s taxonomy, a model I’ve returned to consistently across my time in learning design. And not just Bloom in its original form. I’m fully aware of the refinements made by Krathwohl et al., and the additional dimensional layering developed by the University of St. Louis’ education department. While I don’t agree with all of it, it’s good work. I know the model intimately.
 
@@ -55,7 +55,7 @@ This isn’t a failure of capability. It’s a failure of terminology. And the c
 
 ---
 
-# Lab vs. Production: A More Useful Split
+## Lab vs. Production: A More Useful Split
 
 To make this more practical, I started splitting Bloom’s six stages into two environments: Lab and Production. These aren’t literal places. They’re risk contexts. They represent the line between learning environments and operational ones.
 
@@ -99,7 +99,7 @@ That’s the paradox baked into most corporate curriculum design. Organisations 
 
 ---
 
-# What the Shortcut Actually Enables
+## What the Shortcut Actually Enables
 
 In theory, the shortcut lets you skip to Apply, get something working, then reverse-engineer your way back to understanding. In practice, it’s messier than that.
 
@@ -134,7 +134,7 @@ The day it all fell apart, and you had to figure out why, while your job was pot
 
 ---
 
-# Experts Still Matter, Just in the Right Place
+## Experts Still Matter, Just in the Right Place
 
 In the framework I’m building, the lab level refers to modular learning content: repeatable tasks that sit squarely in Levels 1–3 of Bloom’s taxonomy. It’s structured, AI-supported and low-risk by design. But without a clear framework underneath, even that part of the process falls apart.
 
@@ -146,7 +146,7 @@ I’m not just saying that, I’m living it. This article is the product of that
 
 ---
 
-# The Strategic Ask
+## The Strategic Ask
 
 This isn’t a proposal for the future. It’s a pattern already in play, one I’ve seen work and one I’ve lived through directly.
 
@@ -164,7 +164,7 @@ We won’t be training people for those roles. We’ll be automating them.*
 
 ---
 
-# Postscript: The Theory I Forgot I Knew and other P.S. thoughts.
+## Postscript: The Theory I Forgot I Knew and other P.S. thoughts.
 
 This is me writing as myself now, not endlessly optimised and tweaked by AI. Just me. It’s only after writing this that I realised how much theory I’d already been using and didn’t call out (I’ll be up front, because I didn’t put it together till long after!)
 
@@ -176,13 +176,13 @@ Then there’s cognitive apprenticeship. Except in this case, the “expert” I
 
 ---
 
-# Want to see where I’ve been taking this in my spare time?
+## Want to see where I’ve been taking this in my spare time?
 
 [env0-labs Github](https://github.com/)
 
 ---
 
-# Here is some reference material if you want to know more about the theoretical side of this subject.
+## Here is some reference material if you want to know more about the theoretical side of this subject.
 
 - **Experiential Learning – David Kolb (1984)**  
 The classic model of learning by doing. If you want the roots of “build first, understand later,” this is it.
