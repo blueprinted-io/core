@@ -24,13 +24,13 @@ The decision to eliminate junior roles is therefore not just a talent pipeline d
 
 There is something else being lost that is less visible and more consequential.
 
-A product is a genius idea, scaled. That is the commercial logic that has driven every successful organisation in every industry. The scaling is the machinery. The genius idea is the thing the machinery exists to multiply. A genius idea is not a moment of inspiration. It is the output of a process — people with accumulated judgment, in productive friction with each other, pressure testing logic, finding the edges of what works and why, creatively routing around the problems that emerge. That process requires people who understand the work deeply enough to know when an idea is genuinely new and when it merely looks new, who can tell the difference between a solution and a workaround, and who have enough accumulated experience to know which problems are worth solving and which will recur in a different form.
+A product is a genius idea, scaled. That is the commercial logic that has driven every successful organisation in every industry. The scaling is the machinery. The genius idea is the thing the machinery exists to multiply. A genius idea is not a moment of inspiration. It is the output of a process, people with accumulated judgment, in productive friction with others, pressure testing logic, finding the edges of what works and why, creatively routing around the problems that emerge. That process requires people who understand the work deeply enough to know when an idea is genuinely new and when it merely looks new, who can tell the difference between a solution and a workaround, and who have enough accumulated experience to know which problems are worth solving and which will recur in a different form.
 
-AI can scale the output of that process. It cannot replicate the process itself, and it cannot sustain it. The second genius idea, the third, the refinement that turns a good product into a great one, the pivot that saves the company when the first idea hits its limits — these come from the same crucible. The same people. The same accumulated friction and judgment.
+AI can scale the output of that process. It cannot replicate the process itself, and it cannot sustain it. The second genius idea, the third, the fourth, the additional refinements that turns a good product into a great one, the pivot that saves the company when the first idea hits its limits, these all come from the same crucible. The same people. The same accumulated friction and judgment.
 
 An organisation that eliminates the conditions under which that crucible forms has not gained efficiency. It has lost its capacity to generate the thing it was scaling. It now has extraordinary scaling infrastructure and a diminishing supply of anything original to put through it.
 
-This is why so many AI-native products look identical. The chatbot bolted onto the existing product stack. The same interface, the same capability, the same limitations, deployed across an entire competitive landscape simultaneously. Nobody is generating the genius idea. Everyone is scaling the default output of the same tools. When the differentiator is the tool rather than the people, and every competitor has access to the same tool, differentiation disappears.
+This is why so many AI-native products look identical. The chatbot bolted onto the existing product stack. The same interface, the same capability, the same limitations, deployed across an entire competitive landscape simultaneously. Very few people are generating the genius idea. Everyone is scaling the default output of the same tools. When the differentiator is the tool rather than the people, and every competitor has access to the same tool, differentiation disappears.
 
 The junior role being eliminated in the name of efficiency was not a cost. It was the beginning of the process that produced the thing worth scaling.
 
@@ -38,31 +38,25 @@ The junior role being eliminated in the name of efficiency was not a cost. It wa
 
 ## The Diagnostic
 
-The reason this is so difficult to see in real time is that the deficit is invisible.
-
 There is a meaningful distinction between someone who can operate a system and someone who understands how it works. The operator knows the inputs that produce the outputs they need. They can use the tool effectively within its expected parameters. This is a genuine skill and it is not trivial.
 
 The person who understands how the system works has something different. An internalised model of the mechanism. The ability to reason about failure modes that have not occurred yet. The capacity to recognise when a confident output is structurally wrong. The knowledge of what the system would do in the edge case that has not been documented, because they understand why it does what it does.
 
-AI assisted workflows develop the first naturally. The feedback loop is immediate, the outputs are validating, the path is smooth. The second requires something the current environment does not ask for — the compulsion, or the discipline, to not accept the output until you understand why it is what it is.
+AI assisted workflows develop the first naturally. The feedback loop is immediate, the outputs are validating, the path is smooth. The second requires something the current environment does not ask for, the compulsion, or the discipline, to not accept the output until you understand why it is what it is.
 
 The problem is not that people cannot develop genuine understanding anymore. It is that nothing in the current environment requires them to. Output is the metric. Output is visible. The absence of understanding underneath it is invisible until the moment it is not.
 
-In safety critical engineering this is called latent failure. The system operates normally. All visible indicators are green. The deficit is structural, hidden, and will only surface when the system encounters a condition that exposes the absence of something that should have been there.
-
-The expertise gap forming right now has exactly that shape.
+In safety critical engineering this is called latent failure. The system operates normally. All visible indicators are green. The deficit is structural, hidden, and will only surface when the system encounters a condition that exposes the absence of something that should have been there. The expertise gap forming right now has exactly that shape.
 
 ---
 
 ## It Has Happened Before
 
-This is not a prediction. It is a pattern with a documented history.
-
-COBOL was the dominant programming language of the twentieth century. It still runs the core systems of a significant proportion of the world's banks, insurance companies, and government infrastructure. The volume of COBOL transactions processed daily remains extraordinary by any measure.
+COBOL was the dominant programming language of the twentieth century. It still runs the core systems of a significant proportion of the world's banks, insurance companies, and government infrastructure. According to the Open Mainframe Project, three trillion dollars in commercial transactions are processed by COBOL applications every single day.
 
 It is also a language almost nobody under fifty learned to write. The expertise did not disappear dramatically. There was no decision, no policy, no moment when someone chose to stop transmitting the knowledge. It stopped being taught because newer languages were more interesting, more marketable, more visible. The people who knew COBOL kept knowing it. They retired. And the organisations dependent on systems they could no longer understand found themselves paying extraordinary rates to the shrinking cohort who still could.
 
-There are now LLMs capable of generating COBOL. This is genuinely useful for producing syntactically correct code, but it does not solve the problem. The problem was never the ability to write COBOL. It was the absence of people who understood the systems the COBOL was running — the business logic embedded over decades, the edge cases handled in ways that made sense in 1987 and have never been revisited, the dependencies that exist nowhere in the documentation because the person who built them retired in 2009. An LLM can produce COBOL. It cannot tell you whether the COBOL it produced is doing the right thing in your specific system, or whether the output is structurally sound rather than just syntactically correct. That requires someone who understands the system at depth. The LLM operates the language. Nobody works the system anymore.
+There are now LLMs capable of generating COBOL. This is genuinely useful for producing syntactically correct code, but it does not solve the problem. The problem was never the ability to write COBOL. It was the absence of people who understood the systems the COBOL was running, the business logic embedded over decades, the edge cases handled in ways that made sense in 1987 and have never been revisited, the dependencies that exist nowhere in the documentation because the person who built them retired in 2009. An LLM can produce COBOL. It cannot tell you whether the COBOL it produced is doing the right thing in your specific system, or whether the output is structurally sound rather than just syntactically correct. That requires someone who understands the system at depth. The LLM operates the language. Nobody works the system anymore.
 
 That is not a hypothetical future for AI dependent organisations. It is a recent past for technology dependent ones. The pattern is the same. The timeline is the same. The only difference is the speed at which the dependency is forming.
 
@@ -70,15 +64,9 @@ That is not a hypothetical future for AI dependent organisations. It is a recent
 
 ## The Observation
 
-The trough is coming.
+The current confidence in AI as a replacement for human capability will encounter the limits of what AI can actually do. Those limits are already visible to anyone paying close attention. They will become visible to everyone else when the consequences of relying on them become undeniable. When that happens, the rehiring will begin. Organisations will reach for the capability they eliminated and find the situation has changed in ways that headcount alone cannot fix.
 
-The current confidence in AI as a replacement for human capability will encounter the limits of what AI can actually do. Those limits are already visible to anyone paying close attention. They will become visible to everyone else when the consequences of relying on them become undeniable.
-
-When that happens, the rehiring will begin. Organisations will reach for the capability they eliminated and find the situation has changed in ways that headcount alone cannot fix.
-
-The person made redundant in the name of AI efficiency has moved on. Retrained. Left the industry. Built a life that does not involve returning to an organisation that demonstrated clearly how much their expertise was worth to it.
-
-The junior who would have spent the intervening years developing into something genuinely valuable was never hired. The years of accumulated mistakes, corrections, questions and pattern recognition that would have produced a capable practitioner simply did not happen. That time cannot be recovered by a hiring round.
+The person made redundant in the name of AI efficiency has moved on. Retrained. Left the industry. Built a life that does not involve returning to an organisation that demonstrated clearly how much their expertise was worth to it. The junior who would have spent the intervening years developing into something genuinely valuable was never hired. The years of accumulated mistakes, corrections, questions and pattern recognition that would have produced a capable practitioner simply did not happen. That time cannot be recovered by a hiring round.
 
 The harvest does not fail dramatically. It just does not come. And by the time the absence is undeniable, the people who knew how to plant are gone.
 
@@ -86,12 +74,10 @@ The harvest does not fail dramatically. It just does not come. And by the time t
 
 ## The Seed Corn
 
-Nobody is being forced into this.
-
-The organisations making these decisions are not starving. They are not choosing between eating the seeds and starvation. They are choosing between a harvest they can see and measure now and one that will not arrive for five to ten years, in conditions of abundance, with the full awareness that the choice is being made.
+The organisations making these decisions are not starving. They are not choosing between eating the seeds and starvation. They are choosing between a harvest they can see and measure now and one that will not arrive for two, five, ten years, in conditions of abundance, with the full awareness that the choice is being made.
 
 That is not an accusation. It is an observation.
 
-But it is worth sitting with. Because the famine, when it arrives, will not announce itself as the consequence of choices made in plenty. It will present as a shortage. A skills gap. A talent crisis. A market failure. Something that happened to the industry rather than something the industry chose.
+The famine, when it arrives, will not announce itself as the consequence of choices made in plenty. It will present as a shortage. A skills gap. A talent crisis. A market failure. Something that happened to the industry rather than something the industry chose.
 
-The seed corn does not know it is being eaten rather than planted. The farmer does.
+The seed corn does not know it is being eaten rather than planted but the farmer does.
