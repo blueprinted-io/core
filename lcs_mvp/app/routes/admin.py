@@ -431,16 +431,12 @@ def admin_rules(request: Request):
 @router.post("/admin/rules/save")
 def admin_rules_save(
     request: Request,
-    auth_mode: str = Form("demo"),
     auto_submit_on_import: str = Form("false"),
 ):
     require_admin(request)
-    if auth_mode not in ("demo", "production"):
-        raise HTTPException(status_code=400, detail="Invalid auth_mode value")
     if auto_submit_on_import not in ("true", "false"):
         raise HTTPException(status_code=400, detail="Invalid auto_submit_on_import value")
     actor = request.state.user
     with db() as conn:
-        _set_system_setting(conn, "auth_mode", auth_mode, actor)
         _set_system_setting(conn, "auto_submit_on_import", auto_submit_on_import, actor)
     return RedirectResponse(url="/admin/rules", status_code=303)

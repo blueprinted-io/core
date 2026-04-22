@@ -37,6 +37,8 @@ DB_KEY_DEBIAN = "blueprinted_org"
 DB_KEY_DEBIAN_ALIAS = "debian"   # backward-compatible alias
 DB_KEY_DEMO_ALIAS = "demo"       # backward-compatible alias
 DB_KEY_BLANK = "blank"
+DB_KEY_PRODUCTION = "production"
+DB_PRODUCTION_PATH = os.path.join(DATA_DIR, "lcs_production.db")
 DB_PATH_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_path", default=DB_DEBIAN_PATH)
 DB_KEY_CTX: contextvars.ContextVar[str] = contextvars.ContextVar("lcs_db_key", default=DB_KEY_DEBIAN)
 

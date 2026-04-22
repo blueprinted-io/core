@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo login · blueprinted.io</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_v }}" />
+</head>
+<body>
+  <div class="wrap" style="padding:24px 0">
+    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px">
+      <div style="display:flex; align-items:center; gap:12px">
+        <img class="brand-logo logo-light" src="/static/logo-light.svg" alt="blueprinted.io" style="height:42px; width:auto; display:block" />
+        <img class="brand-logo logo-dark"  src="/static/logo-dark.svg"  alt="blueprinted.io" style="height:42px; width:auto; display:none" />
+        <div>
+          <div style="font-weight:700">blueprinted.io</div>
+          <div class="muted">Demo</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center">
+        <a href="/login" class="btn secondary">← Back</a>
+        <button class="btn secondary" type="button" id="theme-toggle">Theme</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="row" style="align-items:flex-start">
+        <div>
+          <h1 style="margin-top:0">Demo login</h1>
+          <p class="muted">Select a user below to log in instantly.</p>
+        </div>
+        <div class="row-right">
+          <form method="post" action="/db/pick" style="display:flex; gap:8px; align-items:end">
+            <div>
+              <label style="margin-top:0">Database</label>
+              <select name="db_key">
+                {% for p in profiles %}
+                  <option value="{{ p.key }}" {% if db_key==p.key %}selected{% endif %}>{{ p.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button class="btn secondary" type="submit">Switch</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="demo-users-list">
+        {% for u in users %}
+        <button class="demo-user-card js-quick-login" type="button" data-username="{{ u.username }}" data-password="{{ u.demo_password }}">
+          <div class="demo-user-avatar-wrap">
+            <img class="demo-user-avatar" src="/avatar/{{ u.username }}?v={{ asset_v }}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+            <span class="demo-user-avatar-fallback" style="display:none">{{ u.username[:1]|upper }}</span>
+          </div>
+          <div class="demo-user-info">
+            <div class="demo-user-name">{{ u.username }}</div>
+            <div class="demo-user-meta">
+              <span class="demo-user-role">{{ u.role }}</span>
+              {% if u.domains %}
+              <span class="demo-user-domain-count">{{ u.domains|length }} domain{% if u.domains|length > 1 %}s{% endif %}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="demo-user-chevron">›</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <form method="post" action="/login" class="card" id="login-form">
+      <label>Username</label>
+      <input name="username" placeholder="jhendrix" required />
+      <label>Password</label>
+      <input name="password" type="password" placeholder="password1" required />
+      <button class="btn" type="submit">Login</button>
+    </form>
+  </div>
+  <script>
+    (function(){
+      function setTheme(mode){
+        const root = document.documentElement;
+        const ll = document.querySelector('.logo-light');
+        const ld = document.querySelector('.logo-dark');
+        if(mode === 'dark'){
+          root.setAttribute('data-theme','dark');
+          try{ localStorage.setItem('theme','dark'); }catch(e){}
+          if(ll) ll.style.display = 'none';
+          if(ld) ld.style.display = 'block';
+        } else {
+          root.removeAttribute('data-theme');
+          try{ localStorage.setItem('theme','light'); }catch(e){}
+          if(ll) ll.style.display = 'block';
+          if(ld) ld.style.display = 'none';
+        }
+        const btn = document.getElementById('theme-toggle');
+        if(btn) btn.textContent = 'Theme: ' + (root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+      }
+      let saved = 'light';
+      try{ saved = localStorage.getItem('theme') || 'light'; }catch(e){}
+      setTheme(saved === 'dark' ? 'dark' : 'light');
+      const btn = document.getElementById('theme-toggle');
+      if(btn) btn.addEventListener('click', function(){
+        const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        setTheme(cur === 'light' ? 'dark' : 'light');
+      });
+
+      const form = document.getElementById('login-form');
+      if(form){
+        const userEl = form.querySelector('input[name=username]');
+        const passEl = form.querySelector('input[name=password]');
+        document.querySelectorAll('.js-quick-login').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            userEl.value = btn.getAttribute('data-username') || '';
+            passEl.value = btn.getAttribute('data-password') || '';
+            form.requestSubmit();
+          });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

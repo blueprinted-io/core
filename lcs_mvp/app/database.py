@@ -15,6 +15,7 @@ from fastapi import HTTPException, Request
 
 from .config import (
     DATA_DIR, DB_DEBIAN_PATH, DB_DEMO_LEGACY_PATH, DB_OLD_DEBIAN_PATH, DB_BLANK_PATH,
+    DB_PRODUCTION_PATH, DB_KEY_PRODUCTION,
     UPLOADS_DIR, EXPORTS_DIR,
     DB_KEY_COOKIE, DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK,
     DB_PATH_CTX, DB_KEY_CTX, DB_PROFILE_KEY_RE,
@@ -51,6 +52,8 @@ def _selected_db_key(request: Request | None = None) -> str:
     if request is None:
         return _normalize_db_key(DB_KEY_CTX.get())
     k = _normalize_db_key(request.cookies.get(DB_KEY_COOKIE) or DB_KEY_DEBIAN)
+    if k == DB_KEY_PRODUCTION:
+        return DB_KEY_PRODUCTION
     if k not in _available_db_keys():
         return DB_KEY_DEBIAN
     return k
@@ -62,6 +65,8 @@ def _db_path_for_key(key: str) -> str:
         return DB_DEBIAN_PATH
     if key == DB_KEY_BLANK:
         return DB_BLANK_PATH
+    if key == DB_KEY_PRODUCTION:
+        return DB_PRODUCTION_PATH
     return os.path.join(DATA_DIR, f"lcs_{key}.db")
 
 
@@ -89,12 +94,12 @@ def _list_custom_db_keys() -> list[str]:
     for name in os.listdir(DATA_DIR):
         if not name.startswith("lcs_") or not name.endswith(".db"):
             continue
-        if name in (os.path.basename(DB_DEBIAN_PATH), os.path.basename(DB_DEMO_LEGACY_PATH), os.path.basename(DB_BLANK_PATH)):
+        if name in (os.path.basename(DB_DEBIAN_PATH), os.path.basename(DB_DEMO_LEGACY_PATH), os.path.basename(DB_BLANK_PATH), os.path.basename(DB_PRODUCTION_PATH)):
             continue
         key = name[len("lcs_") : -len(".db")].strip().lower()
         if not key:
             continue
-        if key in (DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK):
+        if key in (DB_KEY_DEBIAN, DB_KEY_DEBIAN_ALIAS, DB_KEY_DEMO_ALIAS, DB_KEY_BLANK, DB_KEY_PRODUCTION):
             continue
         if not DB_PROFILE_KEY_RE.match(key):
             continue
@@ -579,7 +584,6 @@ def _get_llm_config(conn: sqlite3.Connection) -> dict:
 def _get_app_settings(conn: sqlite3.Connection) -> dict:
     """Return operational settings dict with safe defaults."""
     return {
-        "auth_mode": _get_system_setting(conn, "auth_mode", "demo") or "demo",
         "auto_submit_on_import": (_get_system_setting(conn, "auto_submit_on_import", "false") or "false") == "true",
     }
 
@@ -821,6 +825,22 @@ def _seed_achievement_catalog(conn: sqlite3.Connection) -> None:
 # Initialisation
 # ---------------------------------------------------------------------------
 
+def _bootstrap_admin(conn: sqlite3.Connection) -> None:
+    """Create a default admin/admin user if the DB has no users yet."""
+    if conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return
+    now = utc_now_iso()
+    salt = secrets.token_bytes(16).hex()
+    pw = "admin"
+    conn.execute(
+        """
+        INSERT INTO users(username, role, password_salt_hex, password_hash_hex, created_at, created_by)
+        VALUES (?,?,?,?,?,?)
+        """,
+        ("admin", "admin", salt, _hash_password(pw, salt), now, "system"),
+    )
+
+
 def init_db() -> None:
     """Ensure the default blueprinted_org and blank DBs exist and are migrated."""
     if not os.path.exists(DB_DEBIAN_PATH) and os.path.exists(DB_OLD_DEBIAN_PATH):
@@ -830,6 +850,11 @@ def init_db() -> None:
 
     init_db_path(DB_DEBIAN_PATH)
     init_db_path(DB_BLANK_PATH)
+    init_db_path(DB_PRODUCTION_PATH)
+
+    DB_PATH_CTX.set(DB_PRODUCTION_PATH)
+    with db() as conn:
+        _bootstrap_admin(conn)
 
     for p in (DB_DEBIAN_PATH, DB_BLANK_PATH):
         DB_PATH_CTX.set(p)

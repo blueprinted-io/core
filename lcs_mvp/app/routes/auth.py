@@ -11,15 +11,14 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from ..config import (
-    DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, UPLOADS_DIR, templates,
+    DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, DB_KEY_PRODUCTION, DB_PATH_CTX, UPLOADS_DIR, templates,
 )
 from ..auth import SESSION_COOKIE
 from ..database import (
     db, utc_now_iso, session_expires_iso,
-    _active_domains, _available_db_keys, _db_profile_label, _list_custom_db_keys,
+    _active_domains, _available_db_keys, _db_profile_label, _db_path_for_key, _list_custom_db_keys,
     _normalize_db_key, _user_id, _user_domains,
     _verify_password, _hash_password, _new_session_token,
-    _get_system_setting,
 )
 from ..audit import audit
 from ..achievements import get_user_achievements
@@ -62,41 +61,52 @@ def _clear_failures(username: str) -> None:
 # ---------------------------------------------------------------------------
 
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request):
+def login_splash(request: Request):
+    return templates.TemplateResponse(request, "login.html", {})
+
+
+@router.get("/login/demo", response_class=HTMLResponse)
+def login_demo(request: Request):
+    # Never serve production data on the demo page.
+    if request.state.db_key == DB_KEY_PRODUCTION:
+        DB_PATH_CTX.set(_db_path_for_key(DB_KEY_DEBIAN))
     with db() as conn:
-        auth_mode = _get_system_setting(conn, "auth_mode", "demo") or "demo"
-        demo_mode = auth_mode == "demo"
-
-        if demo_mode:
-            users = conn.execute(
-                "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
-            ).fetchall()
-            users_with_domains: list[dict] = []
-            for u in users:
-                user_dict = dict(u)
-                if user_dict["role"] == "admin":
-                    user_dict["domains"] = _active_domains(conn)
-                else:
-                    user_dict["domains"] = _user_domains(conn, user_dict["username"])
-                users_with_domains.append(user_dict)
-        else:
-            users_with_domains = []
-
+        users = conn.execute(
+            "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
+        ).fetchall()
+        users_with_domains: list[dict] = []
+        for u in users:
+            user_dict = dict(u)
+            if user_dict["role"] == "admin":
+                user_dict["domains"] = _active_domains(conn)
+            else:
+                user_dict["domains"] = _user_domains(conn, user_dict["username"])
+            users_with_domains.append(user_dict)
     custom = _list_custom_db_keys()
     profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
-        "login.html",
-        {"users": users_with_domains, "profiles": profiles, "db_key": request.state.db_key, "demo_mode": demo_mode},
+        "login_demo.html",
+        {"users": users_with_domains, "profiles": profiles, "db_key": request.state.db_key},
     )
 
 
+@router.get("/login/password", response_class=HTMLResponse)
+def login_password(request: Request):
+    resp = templates.TemplateResponse(request, "login_password.html", {})
+    resp.set_cookie(DB_KEY_COOKIE, DB_KEY_PRODUCTION, httponly=False, samesite="lax")
+    return resp
+
+
 @router.post("/login")
-def login_run(request: Request, username: str = Form(""), password: str = Form("")):
+def login_run(request: Request, username: str = Form(""), password: str = Form(""), target_db: str = Form("")):
     username = (username or "").strip()
     password = password or ""
     if not username:
         raise HTTPException(status_code=400, detail="username is required")
+
+    if target_db == DB_KEY_PRODUCTION:
+        DB_PATH_CTX.set(_db_path_for_key(DB_KEY_PRODUCTION))
 
     _check_rate_limit(username)
 
@@ -137,6 +147,8 @@ def login_run(request: Request, username: str = Form(""), password: str = Form("
 
     resp = RedirectResponse(url="/", status_code=303)
     resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
+    if target_db == DB_KEY_PRODUCTION:
+        resp.set_cookie(DB_KEY_COOKIE, DB_KEY_PRODUCTION, httponly=False, samesite="lax")
     return resp
 
 

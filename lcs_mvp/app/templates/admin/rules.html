@@ -1,31 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Rules</h1>
-<p class="muted">Operational settings that control authentication behaviour and import governance.</p>
+<p class="muted">Operational settings that control import governance.</p>
 
 <form method="post" action="/admin/rules/save">
-
-  <div class="card" style="margin-bottom:16px">
-    <h2 style="margin-top:0">Auth mode</h2>
-    <p class="muted" style="margin-bottom:12px">Controls the login page experience. Changing this takes effect immediately — no restart required.</p>
-
-    <div style="display:flex; flex-direction:column; gap:10px">
-      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
-        <input type="radio" name="auth_mode" value="demo" {% if settings.auth_mode == "demo" %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
-        <span>
-          <strong>Demo</strong>
-          <span class="muted" style="display:block; font-size:0.875em">Login page lists all users with their demo passwords for one-click access. Use this for the public demo at app.blueprinted.io.</span>
-        </span>
-      </label>
-      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
-        <input type="radio" name="auth_mode" value="production" {% if settings.auth_mode == "production" %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
-        <span>
-          <strong>Production</strong>
-          <span class="muted" style="display:block; font-size:0.875em">Login page shows only a username and password form. No user listing or demo hints. Use this for real deployments.</span>
-        </span>
-      </label>
-    </div>
-  </div>
 
   <div class="card" style="margin-bottom:16px">
     <h2 style="margin-top:0">Import behaviour</h2>
