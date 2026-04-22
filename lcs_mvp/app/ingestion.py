@@ -156,6 +156,21 @@ def _chunk_by_structure(
 # Generic LLM provider (OpenAI-compatible)
 # ---------------------------------------------------------------------------
 
+def _llm_candidate_urls(base_url: str, suffix: str) -> list[str]:
+    """Return candidate URLs to try in order for a given path suffix.
+
+    Handles both root base URLs (https://host) and versioned ones
+    (https://host/openai/v1) by trying the suffix directly first,
+    then prepending /v1/ and /api/v1/ as fallbacks.
+    """
+    bu = base_url.rstrip("/")
+    return [
+        f"{bu}/{suffix}",           # base already includes /v1 (e.g. .../openai/v1)
+        f"{bu}/v1/{suffix}",        # standard OpenAI root
+        f"{bu}/api/v1/{suffix}",    # LM Studio / Ollama legacy
+    ]
+
+
 def _llm_probe(base_url: str, api_key: str = "") -> dict[str, Any]:
     """Health probe for any OpenAI-compatible endpoint.
 
@@ -167,14 +182,13 @@ def _llm_probe(base_url: str, api_key: str = "") -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
         with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0), verify=False) as client:
-            r = client.get(f"{bu}/v1/models", headers=headers)
-            if r.status_code < 400:
-                return {"ok": True, "detail": "ok"}
-            # Fallback: some local servers use /api/v1/models
-            r2 = client.get(f"{bu}/api/v1/models", headers=headers)
-            if r2.status_code < 400:
-                return {"ok": True, "detail": "ok"}
-            return {"ok": False, "detail": f"HTTP {r.status_code}"}
+            last_status = None
+            for url in _llm_candidate_urls(bu, "models"):
+                r = client.get(url, headers=headers)
+                if r.status_code < 400:
+                    return {"ok": True, "detail": "ok"}
+                last_status = r.status_code
+            return {"ok": False, "detail": f"HTTP {last_status}"}
     except Exception as e:
         return {"ok": False, "detail": str(e)}
 
@@ -207,24 +221,30 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
     if model:
         payload["model"] = model
 
+    def _extract_content(data: Any) -> str | None:
+        if isinstance(data, dict) and "choices" in data:
+            return data["choices"][0]["message"]["content"]
+        if isinstance(data, dict) and "message" in data and isinstance(data["message"], dict):
+            return data["message"].get("content", "")
+        return None
+
     try:
         with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0), verify=False) as client:
-            r = client.post(f"{bu}/v1/chat/completions", json=payload, headers=headers)
-            if r.status_code == 404:
-                # Fallback: some local servers (LM Studio legacy) use /api/v1/chat
-                r2 = client.post(f"{bu}/api/v1/chat", json=payload, headers=headers)
-                if r2.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"LLM API error {r2.status_code}: {r2.text[:500]}")
-                data2 = r2.json()
-                if isinstance(data2, dict) and "choices" in data2:
-                    return data2["choices"][0]["message"]["content"]
-                if isinstance(data2, dict) and "message" in data2 and isinstance(data2["message"], dict):
-                    return data2["message"].get("content", "")
-                return json.dumps(data2)
-            if r.status_code >= 400:
-                raise HTTPException(status_code=502, detail=f"LLM API error {r.status_code}: {r.text[:500]}")
-            data = r.json()
-            return data["choices"][0]["message"]["content"]
+            last_err: str = ""
+            for url in _llm_candidate_urls(bu, "chat/completions"):
+                r = client.post(url, json=payload, headers=headers)
+                if r.status_code == 404:
+                    last_err = f"HTTP 404 at {url}"
+                    continue
+                if r.status_code >= 400:
+                    raise HTTPException(status_code=502, detail=f"LLM API error {r.status_code}: {r.text[:500]}")
+                content = _extract_content(r.json())
+                if content is not None:
+                    return content
+                return json.dumps(r.json())
+            raise HTTPException(status_code=502, detail=f"No chat/completions endpoint found. Last error: {last_err}")
+    except HTTPException:
+        raise
     except httpx.ReadTimeout as e:
         raise HTTPException(status_code=504, detail=f"LLM request timed out after {timeout_s}s: {e}")
     except httpx.ConnectError as e:

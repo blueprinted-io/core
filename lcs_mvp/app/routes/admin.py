@@ -395,17 +395,18 @@ def admin_llm_models(request: Request, base_url: str = "", api_key: str = ""):
     if not bu:
         return JSONResponse({"ok": False, "models": [], "detail": "No base URL provided."})
 
+    from ..ingestion import _llm_candidate_urls
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         with _httpx.Client(timeout=_httpx.Timeout(6.0, connect=3.0), verify=False) as client:
-            r = client.get(f"{bu}/v1/models", headers=headers)
-            if r.status_code >= 400:
-                # Fallback for non-standard local servers (Ollama, LM Studio legacy)
-                r2 = client.get(f"{bu}/api/v1/models", headers=headers)
-                if r2.status_code < 400:
-                    r = r2
-                else:
-                    return JSONResponse({"ok": False, "models": [], "detail": f"HTTP {r.status_code}"})
+            r = None
+            for url in _llm_candidate_urls(bu, "models"):
+                resp = client.get(url, headers=headers)
+                if resp.status_code < 400:
+                    r = resp
+                    break
+            if r is None:
+                return JSONResponse({"ok": False, "models": [], "detail": f"No models endpoint found at {bu}"})
             data = r.json()
             # Handle multiple response shapes:
             # OpenAI: {"data": [{"id": "..."}, ...]}
