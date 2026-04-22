@@ -166,7 +166,7 @@ def _llm_probe(base_url: str, api_key: str = "") -> dict[str, Any]:
         return {"ok": False, "detail": "No LLM base URL configured."}
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0)) as client:
+        with httpx.Client(timeout=httpx.Timeout(4.0, connect=2.0), verify=False) as client:
             r = client.get(f"{bu}/v1/models", headers=headers)
             if r.status_code < 400:
                 return {"ok": True, "detail": "ok"}
@@ -208,7 +208,7 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
         payload["model"] = model
 
     try:
-        with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0)) as client:
+        with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0), verify=False) as client:
             r = client.post(f"{bu}/v1/chat/completions", json=payload, headers=headers)
             if r.status_code == 404:
                 # Fallback: some local servers (LM Studio legacy) use /api/v1/chat

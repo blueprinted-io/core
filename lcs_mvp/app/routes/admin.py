@@ -397,20 +397,36 @@ def admin_llm_models(request: Request, base_url: str = "", api_key: str = ""):
 
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
-        with _httpx.Client(timeout=_httpx.Timeout(6.0, connect=3.0)) as client:
+        with _httpx.Client(timeout=_httpx.Timeout(6.0, connect=3.0), verify=False) as client:
             r = client.get(f"{bu}/v1/models", headers=headers)
             if r.status_code >= 400:
-                # Fallback for non-standard local servers
+                # Fallback for non-standard local servers (Ollama, LM Studio legacy)
                 r2 = client.get(f"{bu}/api/v1/models", headers=headers)
                 if r2.status_code < 400:
                     r = r2
                 else:
                     return JSONResponse({"ok": False, "models": [], "detail": f"HTTP {r.status_code}"})
             data = r.json()
-            models = sorted(
-                m["id"] for m in (data.get("data") or [])
-                if isinstance(m, dict) and m.get("id")
-            )
+            # Handle multiple response shapes:
+            # OpenAI: {"data": [{"id": "..."}, ...]}
+            # Ollama:  {"models": [{"name": "..."}, ...]}
+            # Plain list: [{"id": "..."}, ...] or ["model-name", ...]
+            model_list: list = []
+            if isinstance(data, dict):
+                if "data" in data:
+                    model_list = data["data"]
+                elif "models" in data:
+                    model_list = data["models"]
+            elif isinstance(data, list):
+                model_list = data
+            models = sorted(set(
+                m.get("id") or m.get("name") or ""
+                if isinstance(m, dict) else str(m)
+                for m in model_list
+                if (isinstance(m, dict) and (m.get("id") or m.get("name"))) or isinstance(m, str)
+            ))
+            if not models:
+                return JSONResponse({"ok": False, "models": [], "detail": "Connected but no models returned"})
             return JSONResponse({"ok": True, "models": models})
     except Exception as e:
         return JSONResponse({"ok": False, "models": [], "detail": str(e)})
