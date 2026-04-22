@@ -192,6 +192,10 @@
       <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-confirm">
         <button class="btn secondary" type="submit">Force confirm</button>
       </form>
+      <form method="post" action="/tasks/{{ task.record_id }}/delete"
+            onsubmit="return confirm('Permanently delete all versions of this task? This cannot be undone.')">
+        <button class="btn secondary" type="submit" style="color:var(--red,#b91c1c)">Delete task</button>
+      </form>
     {% endif %}
   </aside>
 </div>

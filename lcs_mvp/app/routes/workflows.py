@@ -638,3 +638,46 @@ def workflow_return_for_changes(
 
     audit("workflow", record_id, version, "return_for_changes", actor, note=full_note)
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@router.post("/workflows/{record_id}/{version}/retire")
+def workflow_retire(request: Request, record_id: str, version: int, note: str = Form("")):
+    """Retire a workflow version with no replacement."""
+    require(request.state.role, "workflow:confirm")
+    actor = request.state.user
+
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] in ("retired", "deprecated"):
+            raise HTTPException(409, detail="Workflow is already retired/superseded")
+
+        conn.execute(
+            "UPDATE workflows SET status='retired', updated_at=?, updated_by=?, change_note=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, (note or "Retired with no replacement"), record_id, version),
+        )
+
+    audit("workflow", record_id, version, "retire", actor, note=(note or "retired with no replacement"))
+    return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@router.post("/workflows/{record_id}/delete")
+def workflow_delete(request: Request, record_id: str):
+    """Hard-delete all versions of a workflow. Admin only."""
+    from ..auth import require_admin
+    require_admin(request)
+    actor = request.state.user
+
+    with db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM workflows WHERE record_id=? LIMIT 1", (record_id,)
+        ).fetchone()
+        if not exists:
+            raise HTTPException(404)
+        conn.execute("DELETE FROM workflows WHERE record_id=?", (record_id,))
+        audit("workflow", record_id, 0, "delete", actor, note="hard delete by admin", conn=conn)
+
+    return RedirectResponse(url="/workflows", status_code=303)

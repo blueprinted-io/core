@@ -712,6 +712,25 @@ def task_retire(request: Request, record_id: str, version: int, note: str = Form
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
 
 
+@router.post("/tasks/{record_id}/delete")
+def task_delete(request: Request, record_id: str):
+    """Hard-delete all versions of a task. Admin only."""
+    from ..auth import require_admin
+    require_admin(request)
+    actor = request.state.user
+
+    with db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM tasks WHERE record_id=? LIMIT 1", (record_id,)
+        ).fetchone()
+        if not exists:
+            raise HTTPException(404)
+        conn.execute("DELETE FROM tasks WHERE record_id=?", (record_id,))
+        audit("task", record_id, 0, "delete", actor, note="hard delete by admin", conn=conn)
+
+    return RedirectResponse(url="/tasks", status_code=303)
+
+
 def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new_task_version: int, actor: str):
     """When a task is revised, cascade to confirmed workflows referencing older versions.
 
