@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..config import templates, UPLOADS_DIR, DB_PATH_CTX
-from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config, _get_system_setting
+from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config, _get_system_setting, _user_domains, _active_domains, _user_id
 from ..linting import _normalize_steps, _validate_steps_required
 from ..audit import audit
 from ..auth import require
@@ -19,6 +19,7 @@ from ..ingestion import (
     _llm_probe, _llm_chat,
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
     _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
+    _llm_triage_chunk, _llm_extract_task_chunk, _llm_extract_workflow_chunk,
 )
 from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
@@ -220,6 +221,8 @@ def import_pdf_sections(request: Request, ingestion_id: str):
 
         # If already queued/running/complete, redirect to the appropriate page
         job_status = ing["job_status"]
+        if job_status in ("triaging", "triaged"):
+            return RedirectResponse(url=f"/import/pdf/triage/{ingestion_id}", status_code=303)
         if job_status == "running":
             return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
         if job_status in ("complete", "partial"):
@@ -282,48 +285,77 @@ def import_pdf_sections(request: Request, ingestion_id: str):
 
 
 # ---------------------------------------------------------------------------
-# PDF import — step 3: queue selected sections, fire background task
+# PDF import — step 3: triage background task + queue/extraction
 # ---------------------------------------------------------------------------
 
+def _load_llm_cfg_from_conn(conn) -> dict[str, Any]:
+    cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
+    raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
+    return {
+        "llm_base_url": raw_cfg.get("llm_base_url", ""),
+        "llm_api_key": raw_cfg.get("llm_api_key", ""),
+        "llm_model": raw_cfg.get("llm_model", ""),
+        "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
+        "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
+        "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
+        "llm_max_tasks_per_chunk": int(raw_cfg.get("llm_max_tasks_per_chunk", 5)),
+    }
+
+
+def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> None:
+    """Background task: LLM-classifies each selected chunk as task/workflow/ignore."""
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        cfg = _load_llm_cfg_from_conn(conn)
+        conn.execute("UPDATE ingestions SET job_status='triaging' WHERE id=?", (ingestion_id,))
+        conn.commit()
+
+        chunks = conn.execute(
+            "SELECT chunk_index, text, section_title FROM ingestion_chunks "
+            "WHERE ingestion_id=? AND selected=1 ORDER BY chunk_index ASC",
+            (ingestion_id,),
+        ).fetchall()
+
+        for cr in chunks:
+            result = _llm_triage_chunk(
+                cr["text"] or "",
+                (cr["section_title"] or "").strip(),
+                cfg,
+            )
+            conn.execute(
+                "UPDATE ingestion_chunks SET chunk_type=?, triage_confidence=?, triage_reason=? "
+                "WHERE ingestion_id=? AND chunk_index=?",
+                (result["type"], result["confidence"], result["reason"], ingestion_id, int(cr["chunk_index"])),
+            )
+            conn.commit()
+
+        conn.execute("UPDATE ingestions SET job_status='triaged' WHERE id=?", (ingestion_id,))
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.execute(
+                "UPDATE ingestions SET job_status='failed', note=? WHERE id=?",
+                (f"Triage failed: {e}", ingestion_id),
+            )
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
 def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) -> None:
-    """Background task: LLM-processes all queued chunks for an ingestion job."""
+    """Background task: LLM-processes all queued chunks using type-aware schema 1.0 prompts."""
     conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
 
-    # System instructions are merged into the user turn for compatibility with
-    # local LLM servers (e.g. LM Studio) that reject the 'system' role.
-    user_tpl = (
-        "You are extracting governed learning Tasks from technical documentation. "
-        "Follow the schema strictly. Do not invent steps not supported by the source. "
-        "Every step MUST include a concrete, observable completion check. "
-        "Return JSON ONLY — no markdown, no commentary.\n\n"
-        "From the following SOURCE TEXT, propose up to {per_chunk} Task records.\n\n"
-        "Rules:\n"
-        "- A Task is one atomic outcome.\n"
-        "- Provide: title, outcome, facts[], concepts[], dependencies[], procedure_name.\n"
-        "- Each step: text (one concrete action, starts with a verb), completion (observable), optional actions[].\n"
-        "- Do NOT include troubleshooting steps.\n"
-        "- Return JSON ONLY: {{\"tasks\": [ ... ]}}\n\n"
-        "{section_header}"
-        "SOURCE TEXT:\n{source}\n"
-    )
-
     try:
-        # Load config
-        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
-        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
-        cfg: dict[str, Any] = {
-            "llm_base_url": raw_cfg.get("llm_base_url", ""),
-            "llm_api_key": raw_cfg.get("llm_api_key", ""),
-            "llm_model": raw_cfg.get("llm_model", ""),
-            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
-            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
-            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
-            "llm_max_tasks_per_chunk": int(raw_cfg.get("llm_max_tasks_per_chunk", 5)),
-        }
-        max_tasks = cfg["llm_max_tasks_per_chunk"]
+        cfg = _load_llm_cfg_from_conn(conn)
 
         conn.execute(
             "UPDATE ingestions SET job_status='running', status='in_progress' WHERE id=?",
@@ -332,7 +364,7 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
         conn.commit()
 
         chunks = conn.execute(
-            "SELECT chunk_index, pages_json, text, section_title FROM ingestion_chunks "
+            "SELECT chunk_index, pages_json, text, section_title, chunk_type FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 AND chunk_status='queued' ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
@@ -346,17 +378,14 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
             conn.commit()
 
             section_title = (cr["section_title"] or "").strip()
-            section_header = f"SECTION: {section_title}\n\n" if section_title else ""
-            user_prompt = (
-                user_tpl
-                .replace("{per_chunk}", str(max_tasks))
-                .replace("{section_header}", section_header)
-                .replace("{source}", cr["text"])
-            )
+            chunk_type = (cr["chunk_type"] or "task").strip()
 
             try:
-                raw = _llm_chat([{"role": "user", "content": user_prompt}], cfg)
-                data = json.loads(raw)
+                if chunk_type == "workflow":
+                    data = _llm_extract_workflow_chunk(cr["text"] or "", section_title, cfg)
+                else:
+                    data = _llm_extract_task_chunk(cr["text"] or "", section_title, cfg)
+
                 conn.execute(
                     "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=? "
                     "WHERE ingestion_id=? AND chunk_index=?",
@@ -377,8 +406,6 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                 )
             conn.commit()
 
-        # Complete when every *selected* chunk has a terminal status.
-        # Unselected chunks remain 'pending' and are intentionally ignored.
         unprocessed = conn.execute(
             "SELECT COUNT(*) AS n FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 "
@@ -406,13 +433,14 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
         conn.close()
 
 
-@router.post("/import/pdf/queue/{ingestion_id}")
-def import_pdf_queue(
+@router.post("/import/pdf/triage/{ingestion_id}")
+def import_pdf_triage_queue(
     request: Request,
     ingestion_id: str,
     background_tasks: BackgroundTasks,
     chunk_index: list[int] = Form([]),
 ):
+    """Accept selected sections, fire triage background task."""
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
@@ -429,7 +457,6 @@ def import_pdf_queue(
         if not ing:
             raise HTTPException(404)
 
-        # Mark selected chunks as queued; deselect everything else
         conn.execute(
             "UPDATE ingestion_chunks SET selected=0, chunk_status='pending' WHERE ingestion_id=?",
             (ingestion_id,),
@@ -439,9 +466,123 @@ def import_pdf_queue(
                 "UPDATE ingestion_chunks SET selected=1, chunk_status='queued' WHERE ingestion_id=? AND chunk_index=?",
                 (ingestion_id, idx),
             )
-        conn.execute(
-            "UPDATE ingestions SET job_status='pending' WHERE id=?",
+        conn.execute("UPDATE ingestions SET job_status='triaging' WHERE id=?", (ingestion_id,))
+
+    background_tasks.add_task(_run_triage_background, ingestion_id, db_path, actor)
+    return RedirectResponse(url=f"/import/pdf/triage/{ingestion_id}", status_code=303)
+
+
+@router.get("/import/pdf/triage/{ingestion_id}", response_class=HTMLResponse)
+def import_pdf_triage_review(request: Request, ingestion_id: str):
+    """Show triage results (spinner while running, review table when done)."""
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        job_status = ing["job_status"]
+
+        if job_status == "running":
+            return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
+        if job_status in ("complete", "partial"):
+            return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
+
+        chunks = conn.execute(
+            "SELECT chunk_index, pages_json, text, section_title, section_level, "
+            "chunk_type, triage_confidence, triage_reason "
+            "FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 ORDER BY chunk_index ASC",
             (ingestion_id,),
+        ).fetchall()
+
+        # Fetch user's domain entitlements for the domain picker
+        uid = _user_id(conn, actor)
+        if request.state.role == "admin":
+            domains = _active_domains(conn)
+        else:
+            domains = _user_domains(conn, actor)
+
+    sections = []
+    for r in chunks:
+        text = (r["text"] or "").strip()
+        word_count = len(text.split())
+        pages = _json_load(r["pages_json"]) or []
+        page_label = f"p.{pages[0]}" if len(pages) == 1 else (f"pp.{pages[0]}–{pages[-1]}" if pages else "")
+        title = (r["section_title"] or f"Chunk {r['chunk_index'] + 1}").strip()
+        conf = r["triage_confidence"]
+        sections.append({
+            "chunk_index": r["chunk_index"],
+            "title": title,
+            "page_label": page_label,
+            "word_count": word_count,
+            "chunk_type": r["chunk_type"] or None,
+            "confidence": round(float(conf) * 100) if conf is not None else None,
+            "reason": r["triage_reason"] or "",
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "import_pdf_triage.html",
+        {
+            "ing": dict(ing),
+            "ingestion_id": ingestion_id,
+            "job_status": job_status,
+            "is_loading": job_status == "triaging",
+            "sections": sections,
+            "domains": domains,
+        },
+    )
+
+
+@router.post("/import/pdf/queue/{ingestion_id}")
+def import_pdf_queue(
+    request: Request,
+    ingestion_id: str,
+    background_tasks: BackgroundTasks,
+    chunk_index: list[int] = Form([]),
+    chunk_type: list[str] = Form([]),
+    domain: str = Form(""),
+):
+    """Accept triage overrides + domain, fire extraction background task."""
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    if not chunk_index:
+        return RedirectResponse(url=f"/import/pdf/triage/{ingestion_id}?error=none_selected", status_code=303)
+
+    db_path = DB_PATH_CTX.get()
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT * FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        # Deselect all; then apply submitted selections with their (possibly overridden) types
+        conn.execute(
+            "UPDATE ingestion_chunks SET selected=0, chunk_status='pending' WHERE ingestion_id=?",
+            (ingestion_id,),
+        )
+        type_map = dict(zip(chunk_index, chunk_type))
+        for idx in chunk_index:
+            ct = (type_map.get(idx) or "task").strip().lower()
+            if ct not in ("task", "workflow"):
+                ct = "task"
+            conn.execute(
+                "UPDATE ingestion_chunks SET selected=1, chunk_status='queued', chunk_type=? "
+                "WHERE ingestion_id=? AND chunk_index=?",
+                (ct, ingestion_id, idx),
+            )
+        conn.execute(
+            "UPDATE ingestions SET job_status='pending', domain=? WHERE id=?",
+            ((domain or "").strip(), ingestion_id),
         )
 
     background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor)
@@ -540,7 +681,7 @@ def import_pdf_delete(request: Request, ingestion_id: str):
         ).fetchone()
         if not ing:
             raise HTTPException(404)
-        if ing["job_status"] in ("running", "chunking"):
+        if ing["job_status"] in ("running", "chunking", "triaging"):
             raise HTTPException(status_code=409, detail="Cannot delete while processing is in progress.")
 
         file_path = ing["file_path"] or ""
@@ -574,7 +715,7 @@ def import_pdf_review(request: Request, ingestion_id: str):
             raise HTTPException(404)
 
         chunk_rows = conn.execute(
-            "SELECT chunk_index, pages_json, text, llm_result_json, section_title, chunk_status "
+            "SELECT chunk_index, pages_json, text, llm_result_json, section_title, chunk_status, chunk_type "
             "FROM ingestion_chunks WHERE ingestion_id=? AND selected=1 AND chunk_status='done' ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
@@ -603,6 +744,10 @@ def import_pdf_review(request: Request, ingestion_id: str):
                 })
 
     candidates: list[dict[str, Any]] = []
+    workflow_candidates: list[dict[str, Any]] = []
+    # Map local chunk T-IDs to candidate titles for workflow display
+    chunk_tid_to_title: dict[str, dict[str, str]] = {}  # chunk_index -> {T001: title}
+
     for cr in chunk_rows:
         if not cr["llm_result_json"]:
             continue
@@ -612,14 +757,40 @@ def import_pdf_review(request: Request, ingestion_id: str):
             continue
         tasks = data.get("tasks") if isinstance(data, dict) else []
         if not isinstance(tasks, list):
-            continue
+            tasks = []
+
+        local_tid_map: dict[str, str] = {}
         for t in tasks:
             if not isinstance(t, dict):
                 continue
             title = str(t.get("title", "")).strip()
             if not title:
                 continue
+            tid = str(t.get("id", "")).strip()
+            if tid:
+                local_tid_map[tid] = title
             candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
+
+        chunk_tid_to_title[str(cr["chunk_index"])] = local_tid_map
+
+        workflows = data.get("workflows") if isinstance(data, dict) else []
+        if isinstance(workflows, list):
+            for wf in workflows:
+                if not isinstance(wf, dict):
+                    continue
+                wf_title = str(wf.get("title", "")).strip()
+                wf_obj = str(wf.get("objective", "")).strip()
+                task_order = wf.get("task_order") or []
+                if not wf_title or not isinstance(task_order, list):
+                    continue
+                resolved_tasks = [local_tid_map.get(tid, tid) for tid in task_order]
+                workflow_candidates.append({
+                    "title": wf_title,
+                    "objective": wf_obj,
+                    "task_count": len(task_order),
+                    "task_titles": resolved_tasks,
+                    "chunk_index": int(cr["chunk_index"]),
+                })
 
     # Dedupe within candidates by fingerprint
     out: list[dict[str, Any]] = []
@@ -661,7 +832,7 @@ def import_pdf_review(request: Request, ingestion_id: str):
         {
             "ingestion": dict(ing),
             "candidates": flagged,
-            "workflows": [],
+            "workflows": workflow_candidates,
             "error": None,
             "skipped_note": skipped_note,
             "done": True,
@@ -669,12 +840,202 @@ def import_pdf_review(request: Request, ingestion_id: str):
     )
 
 
+def _commit_schema10_payload(
+    conn,
+    chunk_rows,
+    candidate_id: list[str],
+    workflow_chunk_indices: list[int],
+    ingestion_id: str,
+    filename: str,
+    domain: str,
+    actor: str,
+) -> tuple[int, int]:
+    """Assemble and commit a schema 1.0 payload from done chunks.
+
+    Merges task lists across chunks, remaps chunk-local T-IDs to globally
+    sequential IDs, inserts tasks then workflows.
+    Returns (tasks_created, workflows_created).
+    """
+    now = utc_now_iso()
+    initial_status = _import_initial_status(conn)
+
+    # Phase 1: collect selected tasks from all chunks, preserving chunk order
+    # Each entry: {task_dict, pages, chunk_index, local_tid}
+    all_task_items: list[dict[str, Any]] = []
+    # Also collect workflow stubs keyed by chunk_index for later resolution
+    workflow_stubs: list[dict[str, Any]] = []  # {title, objective, local_task_order, chunk_index}
+
+    seen_fp: set[str] = set()
+    for cr in chunk_rows:
+        if not cr["llm_result_json"]:
+            continue
+        try:
+            data = json.loads(cr["llm_result_json"])
+        except Exception:
+            continue
+        tasks = data.get("tasks") if isinstance(data, dict) else []
+        if not isinstance(tasks, list):
+            tasks = []
+
+        chunk_idx = int(cr["chunk_index"])
+        pages = _json_load(cr["pages_json"]) or []
+
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            fp = _task_fingerprint(t)
+            cid = _sha256_bytes((fp + str(chunk_idx)).encode("utf-8"))[:16]
+            if cid not in candidate_id:
+                continue
+            if fp in seen_fp:
+                continue
+            seen_fp.add(fp)
+            all_task_items.append({
+                "task": t,
+                "pages": pages,
+                "chunk_index": chunk_idx,
+                "local_tid": str(t.get("id", "")).strip(),
+            })
+
+        # Collect workflow stubs from workflow-type chunks
+        if chunk_idx in workflow_chunk_indices:
+            wfs = data.get("workflows") if isinstance(data, dict) else []
+            if isinstance(wfs, list):
+                for wf in wfs:
+                    if not isinstance(wf, dict):
+                        continue
+                    wf_title = str(wf.get("title", "")).strip()
+                    wf_obj = str(wf.get("objective", "")).strip()
+                    task_order = wf.get("task_order") or []
+                    if wf_title and isinstance(task_order, list):
+                        workflow_stubs.append({
+                            "title": wf_title,
+                            "objective": wf_obj,
+                            "local_task_order": [str(tid) for tid in task_order],
+                            "chunk_index": chunk_idx,
+                        })
+
+    # Phase 2: assign globally sequential T-IDs and build local→global+record_id map
+    # Key: (chunk_index, local_tid) → (global_tid, record_id)
+    tid_map: dict[tuple[int, str], tuple[str, str]] = {}
+    global_counter = 0
+
+    task_records: list[dict[str, Any]] = []
+    for item in all_task_items:
+        global_counter += 1
+        global_tid = f"T{global_counter:03d}"
+        record_id = str(uuid.uuid4())
+        local_tid = item["local_tid"]
+        chunk_idx = item["chunk_index"]
+        if local_tid:
+            tid_map[(chunk_idx, local_tid)] = (global_tid, record_id)
+        task_records.append({**item, "global_tid": global_tid, "record_id": record_id})
+
+    # Phase 3: insert tasks
+    tasks_created = 0
+    title_to_record: dict[str, tuple[str, int]] = {}  # title -> (record_id, version)
+    for item in task_records:
+        t = item["task"]
+        title = str(t.get("title", "")).strip()
+        outcome = str(t.get("outcome", "")).strip()
+        procedure_name = str(t.get("procedure_name", "")).strip() or title
+        facts = t.get("facts") or []
+        concepts = t.get("concepts") or []
+        deps = t.get("dependencies") or []
+        steps = t.get("steps") or []
+        steps_norm = _normalize_steps(steps)
+        _validate_steps_required(steps_norm)
+
+        if "irreversible" in t:
+            irrev = 1 if t["irreversible"] else 0
+        else:
+            irrev = 1 if bool(t.get("irreversible_flag")) else 0
+
+        assets = [{
+            "url": f"ingestion:{ingestion_id}",
+            "type": "link",
+            "label": f"source_pdf:{filename} pages:{item['pages']}",
+        }]
+
+        conn.execute(
+            """INSERT INTO tasks(
+              record_id, version, status,
+              title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
+              irreversible_flag, task_assets_json, domain,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note,
+              needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                item["record_id"], 1, initial_status,
+                title, outcome,
+                _json_dump([str(x) for x in facts]),
+                _json_dump([str(x) for x in concepts]),
+                procedure_name,
+                _json_dump(steps_norm),
+                _json_dump([str(x) for x in deps]),
+                irrev,
+                _json_dump(assets),
+                domain,
+                now, now, actor, actor,
+                None, None,
+                f"import:pdf ingestion={ingestion_id}",
+                1, "AI-imported: check for duplicates and correctness",
+            ),
+        )
+        audit("task", item["record_id"], 1, "create", actor, note="import:pdf", conn=conn)
+        title_to_record[title] = (item["record_id"], 1)
+        tasks_created += 1
+
+    # Phase 4: insert workflows, resolving local T-IDs via tid_map
+    workflows_created = 0
+    for stub in workflow_stubs:
+        wf_rid = str(uuid.uuid4())
+        chunk_idx = stub["chunk_index"]
+
+        # Resolve task_order: local T-IDs → record_ids
+        task_refs: list[tuple[str, int]] = []
+        for local_tid in stub["local_task_order"]:
+            key = (chunk_idx, local_tid)
+            if key in tid_map:
+                _, task_record_id = tid_map[key]
+                task_refs.append((task_record_id, 1))
+
+        if not task_refs:
+            continue
+
+        conn.execute(
+            "INSERT INTO workflows(record_id, version, status, title, objective, domains_json, tags_json, meta_json, "
+            "created_at, updated_at, created_by, updated_by, reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                wf_rid, 1, "draft",
+                stub["title"], stub["objective"],
+                _json_dump([domain] if domain else []),
+                "[]", "{}",
+                now, now, actor, actor,
+                None, None,
+                f"import:pdf ingestion={ingestion_id}",
+                1, "AI-imported: check composition",
+            ),
+        )
+        for order_idx, (task_rid, task_ver) in enumerate(task_refs, start=1):
+            conn.execute(
+                "INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version) "
+                "VALUES (?,?,?,?,?)",
+                (wf_rid, 1, order_idx, task_rid, task_ver),
+            )
+        audit("workflow", wf_rid, 1, "create", actor, note="import:pdf", conn=conn)
+        workflows_created += 1
+
+    return tasks_created, workflows_created
+
+
 @router.post("/import/pdf/commit")
 def import_pdf_commit(
     request: Request,
     ingestion_id: str = Form(...),
     candidate_id: list[str] = Form([]),
-    workflow_id: list[str] = Form([]),
 ):
     require(request.state.role, "import:pdf")
     actor = request.state.user
@@ -685,7 +1046,7 @@ def import_pdf_commit(
             raise HTTPException(404)
 
         chunk_rows = conn.execute(
-            "SELECT chunk_index, pages_json, text, llm_result_json FROM ingestion_chunks "
+            "SELECT chunk_index, pages_json, text, llm_result_json, chunk_type FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 AND chunk_status='done' ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
@@ -693,137 +1054,18 @@ def import_pdf_commit(
         if not chunk_rows:
             return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
-        # Reconstruct candidates deterministically
-        reconstructed: list[dict[str, Any]] = []
-        for cr in chunk_rows:
-            if not cr["llm_result_json"]:
-                continue
-            data = json.loads(cr["llm_result_json"])
-            tasks = data.get("tasks") if isinstance(data, dict) else []
-            for t in tasks:
-                if not isinstance(t, dict):
-                    continue
-                fp = _task_fingerprint(t)
-                cid = _sha256_bytes((fp + str(int(cr["chunk_index"]))).encode("utf-8"))[:16]
-                if cid not in candidate_id:
-                    continue
-                reconstructed.append({"task": t, "pages": _json_load(cr["pages_json"]) or []})
+        workflow_chunk_indices = [
+            int(cr["chunk_index"]) for cr in chunk_rows if (cr["chunk_type"] or "") == "workflow"
+        ]
+        domain = (ing["domain"] or "").strip() if "domain" in ing.keys() else ""
 
-        now = utc_now_iso()
-        initial_status = _import_initial_status(conn)
-        created_tasks: dict[str, tuple[str, int]] = {}  # title -> (record_id, version)
+        tasks_n, wfs_n = _commit_schema10_payload(
+            conn, chunk_rows, candidate_id, workflow_chunk_indices,
+            ingestion_id, ing["filename"] or "", domain, actor,
+        )
 
-        # Insert selected tasks
-        for item in reconstructed:
-            t = item["task"]
-            title = str(t.get("title", "")).strip()
-            outcome = str(t.get("outcome", "")).strip()
-            procedure_name = str(t.get("procedure_name", "")).strip() or title
-            facts = t.get("facts") or []
-            concepts = t.get("concepts") or []
-            deps = t.get("dependencies") or []
-            steps = t.get("steps") or []
-
-            steps_norm = _normalize_steps(steps)
-            _validate_steps_required(steps_norm)
-
-            record_id = str(uuid.uuid4())
-            version = 1
-
-            assets = [
-                {
-                    "url": f"ingestion:{ingestion_id}",
-                    "type": "link",
-                    "label": f"source_pdf:{ing['filename']} pages:{item['pages']}",
-                }
-            ]
-
-            conn.execute(
-                """
-                INSERT INTO tasks(
-                  record_id, version, status,
-                  title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
-                  irreversible_flag, task_assets_json,
-                  domain,
-                  created_at, updated_at, created_by, updated_by,
-                  reviewed_at, reviewed_by, change_note,
-                  needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    record_id,
-                    version,
-                    initial_status,
-                    title,
-                    outcome,
-                    _json_dump([str(x) for x in facts]),
-                    _json_dump([str(x) for x in concepts]),
-                    procedure_name,
-                    _json_dump(steps_norm),
-                    _json_dump([str(x) for x in deps]),
-                    0,
-                    _json_dump(assets),
-                    "",
-                    now,
-                    now,
-                    actor,
-                    actor,
-                    None,
-                    None,
-                    f"import:pdf ingestion={ingestion_id}",
-                    1,
-                    "AI-imported: check for duplicates and correctness",
-                ),
-            )
-            audit("task", record_id, version, "create", actor, note="import:pdf", conn=conn)
-            created_tasks[title] = (record_id, version)
-
-        # Insert workflows selected
-        # Recompute workflow candidates from selected titles (best-effort)
-        if workflow_id and created_tasks:
-            titles = list(created_tasks.keys())
-            wf_system = {"role": "system", "content": "You propose small Workflows from a list of Task titles. Return JSON only."}
-            wf_user = (
-                "Given these Task titles, propose up to 3 Workflow candidates.\n"
-                "Return JSON ONLY: {\"workflows\": [{\"id\":...,\"title\":...,\"objective\":...,\"task_titles\":[...] }]}\n"
-                "Rules: a workflow must reference 2-6 tasks by exact title; do not invent titles.\n\n"
-                + _json_dump({"task_titles": titles})
-            )
-            cfg = _get_llm_config(conn)
-            raw = _llm_chat([wf_system, {"role": "user", "content": wf_user}], cfg)
-            data = json.loads(raw)
-            wfs = data.get("workflows") if isinstance(data, dict) else None
-            if isinstance(wfs, list):
-                for wf in wfs:
-                    if not isinstance(wf, dict):
-                        continue
-                    wid = str(wf.get("id", "")).strip() or _sha256_bytes((str(wf.get("title",""))+str(wf.get("objective",""))).encode("utf-8"))[:16]
-                    if wid not in workflow_id:
-                        continue
-                    title = str(wf.get("title", "")).strip()
-                    objective = str(wf.get("objective", "")).strip()
-                    tts = wf.get("task_titles") or []
-                    if not title or not objective or not isinstance(tts, list):
-                        continue
-
-                    wf_rid = str(uuid.uuid4())
-                    wf_ver = 1
-                    conn.execute(
-                        "INSERT INTO workflows(record_id, version, status, title, objective, domains_json, tags_json, meta_json, created_at, updated_at, created_by, updated_by, reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (wf_rid, wf_ver, "draft", title, objective, "[]", "[]", "{}", now, now, actor, actor, None, None, f"import:pdf ingestion={ingestion_id}", 1, "AI-imported: check composition"),
-                    )
-
-                    order = 1
-                    for tt in [str(x) for x in tts if str(x) in created_tasks]:
-                        tr, tv = created_tasks[tt]
-                        conn.execute(
-                            "INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version) VALUES (?,?,?,?,?)",
-                            (wf_rid, wf_ver, order, tr, tv),
-                        )
-                        order += 1
-
-                    audit("workflow", wf_rid, wf_ver, "create", actor, note="import:pdf")
-
+    if wfs_n:
+        return RedirectResponse(url="/workflows", status_code=303)
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
 
@@ -853,7 +1095,11 @@ def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
     steps_norm = _normalize_steps(steps)
     _validate_steps_required(steps_norm)
 
-    irreversible_flag = 1 if bool(obj.get("irreversible_flag")) else 0
+    # Accept both schema 1.0 boolean "irreversible" and legacy integer "irreversible_flag"
+    if "irreversible" in obj:
+        irreversible_flag = 1 if obj["irreversible"] else 0
+    else:
+        irreversible_flag = 1 if bool(obj.get("irreversible_flag")) else 0
     assets = obj.get("task_assets") or obj.get("assets") or []
     if not isinstance(assets, list):
         raise HTTPException(status_code=400, detail=f"Task import '{title}': task_assets must be a list")

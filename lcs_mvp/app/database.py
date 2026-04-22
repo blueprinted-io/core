@@ -518,6 +518,12 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN chunk_status TEXT NOT NULL DEFAULT 'pending'")
         if "section_level" not in chunk_cols:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN section_level INTEGER NOT NULL DEFAULT 0")
+        if "chunk_type" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN chunk_type TEXT")
+        if "triage_confidence" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN triage_confidence REAL")
+        if "triage_reason" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN triage_reason TEXT")
 
         # ingestions: overall async job state + stored file path for deletion
         rows = conn.execute("PRAGMA table_info(ingestions)").fetchall()
@@ -526,6 +532,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestions ADD COLUMN job_status TEXT NOT NULL DEFAULT 'pending'")
         if "file_path" not in ingestion_cols:
             conn.execute("ALTER TABLE ingestions ADD COLUMN file_path TEXT")
+        if "domain" not in ingestion_cols:
+            conn.execute("ALTER TABLE ingestions ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
 
         # Contributor role migration: collapse legacy author/reviewer into contributor
         conn.execute("UPDATE users SET role='contributor' WHERE role IN ('author', 'reviewer')")

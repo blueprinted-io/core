@@ -309,3 +309,118 @@ def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
 
     # Weighted: outcome + targets matter more than title.
     return 0.20 * title_sim + 0.45 * out_sim + 0.35 * tgt_sim
+
+
+# ---------------------------------------------------------------------------
+# Triage and schema 1.0 extraction
+# ---------------------------------------------------------------------------
+
+_TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly one of:
+- "task": describes one or more concrete procedures an operator would perform
+- "workflow": describes a sequence of multiple distinct procedures achieving a larger outcome
+- "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable procedural content
+
+Return JSON only — no markdown, no commentary:
+{"type": "task", "confidence": 0.0, "reason": "one sentence"}"""
+
+_EXTRACT_TASK_SYSTEM = """You are generating a Blueprinted JSON import payload from a section of technical documentation.
+Follow these rules exactly:
+
+1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
+2. Assign each task a sequential ID starting at T001, incrementing by one (T001, T002, T003...). Do not skip, reuse, or modify IDs.
+3. Every field defined in the schema must be present in every object, even if the value is null, false, or an empty array. Never omit a field.
+4. For every step, write the completion condition first. If the completion condition is a restatement of the action, discard the step and merge its action into the preceding step. Only keep steps where the completion condition describes an observable, independently verifiable state change.
+5. Steps must be atomic — one operation per step. No compound instructions. Imperative form only.
+6. The irreversible field must always be present and must be a boolean (true or false).
+7. facts, concepts, dependencies, and actions may be empty arrays ([]) but must always be present.
+8. Do not invent content. Only extract what is present in the source text.
+
+Return JSON with this exact structure:
+{"tasks": [{"id": "T001", "title": "...", "outcome": "...", "procedure_name": "...", "facts": [], "concepts": [], "dependencies": [], "irreversible": false, "steps": [{"text": "...", "completion": "...", "actions": []}]}], "workflows": []}"""
+
+_EXTRACT_WORKFLOW_SYSTEM = """You are generating a Blueprinted JSON import payload from a section of technical documentation.
+Follow these rules exactly:
+
+1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
+2. Assign each task a sequential ID starting at T001, incrementing by one (T001, T002, T003...). Do not skip, reuse, or modify IDs.
+3. Every field defined in the schema must be present in every object, even if the value is null, false, or an empty array. Never omit a field.
+4. For every step, write the completion condition first. If the completion condition is a restatement of the action, discard the step and merge its action into the preceding step. Only keep steps where the completion condition describes an observable, independently verifiable state change.
+5. Steps must be atomic — one operation per step. No compound instructions. Imperative form only.
+6. The irreversible field must always be present and must be a boolean (true or false).
+7. facts, concepts, dependencies, and actions may be empty arrays ([]) but must always be present.
+8. Do not invent content. Only extract what is present in the source text.
+9. When referencing tasks in workflow task_order, copy the task ID exactly as assigned (e.g. "T001"). Do not use task titles in task_order.
+10. Propose a workflow only if the section explicitly describes a sequence or grouping of multiple distinct tasks.
+
+Return JSON with this exact structure:
+{"tasks": [{"id": "T001", "title": "...", "outcome": "...", "procedure_name": "...", "facts": [], "concepts": [], "dependencies": [], "irreversible": false, "steps": [{"text": "...", "completion": "...", "actions": []}]}], "workflows": [{"title": "...", "objective": "...", "task_order": ["T001", "T002"]}]}"""
+
+
+def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Classify a chunk as task/workflow/ignore. Skips LLM for sparse chunks."""
+    stripped = (text or "").strip()
+    if len(stripped) < 100:
+        return {"type": "ignore", "confidence": 1.0, "reason": "sparse section"}
+
+    user_msg = f"SECTION: {section_title}\n\nTEXT:\n{stripped[:6000]}"
+    triage_cfg = dict(cfg)
+    triage_cfg["max_tokens"] = 80
+    triage_cfg["temperature"] = 0.0
+    try:
+        raw = _llm_chat([
+            {"role": "system", "content": _TRIAGE_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ], triage_cfg)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        result = json.loads(raw)
+        chunk_type = str(result.get("type", "ignore")).lower()
+        if chunk_type not in ("task", "workflow", "ignore"):
+            chunk_type = "ignore"
+        return {
+            "type": chunk_type,
+            "confidence": float(result.get("confidence", 0.5)),
+            "reason": str(result.get("reason", ""))[:300],
+        }
+    except Exception:
+        return {"type": "task", "confidence": 0.3, "reason": "classification failed — defaulting to task"}
+
+
+def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract schema 1.0 task fragment from a task-type chunk."""
+    user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
+    raw = _llm_chat([
+        {"role": "system", "content": _EXTRACT_TASK_SYSTEM},
+        {"role": "user", "content": user_msg},
+    ], cfg)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    result = json.loads(raw)
+    if not isinstance(result.get("tasks"), list):
+        result["tasks"] = []
+    if not isinstance(result.get("workflows"), list):
+        result["workflows"] = []
+    return result
+
+
+def _llm_extract_workflow_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract schema 1.0 task+workflow fragment from a workflow-type chunk."""
+    user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
+    raw = _llm_chat([
+        {"role": "system", "content": _EXTRACT_WORKFLOW_SYSTEM},
+        {"role": "user", "content": user_msg},
+    ], cfg)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    result = json.loads(raw)
+    if not isinstance(result.get("tasks"), list):
+        result["tasks"] = []
+    if not isinstance(result.get("workflows"), list):
+        result["workflows"] = []
+    return result

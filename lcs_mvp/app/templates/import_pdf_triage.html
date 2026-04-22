@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Triage Sections</h1>
+<p class="muted">{{ ing.filename }}</p>
+
+{% if is_loading %}
+{# ── Triage running in background ── #}
+<div class="card" style="display:flex; align-items:center; gap:16px; padding:24px">
+  <div class="spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary,#2563eb);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
+  <div>
+    <div style="font-weight:600">Analysing sections…</div>
+    <div class="muted" style="font-size:0.85em; margin-top:2px">Classifying each section as task, workflow, or ignore. This page will update automatically.</div>
+  </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script>setTimeout(() => location.reload(), 3000);</script>
+
+{% elif job_status == 'failed' %}
+<div class="callout danger">
+  <b>Triage failed.</b><br>
+  {{ ing.note or "An unexpected error occurred during triage." }}
+</div>
+<a class="btn secondary" href="/import/pdf/sections/{{ ingestion_id }}">← Back to section selection</a>
+
+{% else %}
+{# ── Triage review ── #}
+<div class="callout">
+  Review the AI classification for each section. Override any misclassified sections, then choose a domain and run extraction.
+  Sections marked <b>ignore</b> will be excluded from extraction.
+</div>
+
+<form method="post" action="/import/pdf/queue/{{ ingestion_id }}">
+
+  {# Domain picker #}
+  <div class="card" style="padding:16px 20px; margin-bottom:16px">
+    <label style="font-weight:600; display:block; margin-bottom:8px">Domain</label>
+    <select name="domain" style="max-width:280px">
+      <option value="">— select domain —</option>
+      {% for d in domains %}
+        <option value="{{ d.name if d is mapping else d }}">{{ d.name if d is mapping else d }}</option>
+      {% endfor %}
+    </select>
+    <div class="muted" style="font-size:0.82em; margin-top:6px">All tasks and workflows committed from this import will be assigned to this domain.</div>
+  </div>
+
+  {# Section table #}
+  <div class="card" style="padding:0; overflow:hidden; margin-bottom:16px">
+    <div style="padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px">
+      <div style="flex:1; font-weight:600">{{ sections|length }} section{{ 's' if sections|length != 1 else '' }}</div>
+      <button type="button" id="select-all" class="btn secondary" style="padding:4px 10px; font-size:0.8em">Select all</button>
+      <button type="button" id="deselect-ignore" class="btn secondary" style="padding:4px 10px; font-size:0.8em">Deselect ignore</button>
+    </div>
+
+    <table style="width:100%; border-collapse:collapse">
+      <thead>
+        <tr style="font-size:0.8em; color:var(--muted); border-bottom:1px solid var(--border)">
+          <th style="padding:8px 12px; text-align:left; width:32px"></th>
+          <th style="padding:8px 12px; text-align:left">Section</th>
+          <th style="padding:8px 12px; text-align:left; width:140px">Classification</th>
+          <th style="padding:8px 12px; text-align:left; width:160px">Override</th>
+          <th style="padding:8px 12px; text-align:right; width:60px">Words</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sections %}
+        {% set default_checked = s.chunk_type != 'ignore' %}
+        <tr class="triage-row" data-default-type="{{ s.chunk_type or 'task' }}"
+            style="border-bottom:1px solid var(--border); {% if not default_checked %}opacity:0.55{% endif %}">
+          <td style="padding:8px 12px; vertical-align:top">
+            <input type="checkbox" name="chunk_index" value="{{ s.chunk_index }}"
+                   class="triage-check" {% if default_checked %}checked{% endif %} />
+          </td>
+          <td style="padding:8px 12px; vertical-align:top">
+            <div style="font-weight:500; font-size:0.9em">{{ s.title }}</div>
+            {% if s.page_label %}<div class="muted" style="font-size:0.78em">{{ s.page_label }}</div>{% endif %}
+            {% if s.reason %}
+            <div class="muted" style="font-size:0.78em; margin-top:3px; font-style:italic">{{ s.reason }}</div>
+            {% endif %}
+          </td>
+          <td style="padding:8px 12px; vertical-align:top">
+            {% if s.chunk_type == 'task' %}
+              <span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">task</span>
+            {% elif s.chunk_type == 'workflow' %}
+              <span style="background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">workflow</span>
+            {% elif s.chunk_type == 'ignore' %}
+              <span style="background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">ignore</span>
+            {% else %}
+              <span style="background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:99px;font-size:0.78em">—</span>
+            {% endif %}
+            {% if s.confidence is not none %}
+            <div class="muted" style="font-size:0.75em; margin-top:2px">{{ s.confidence }}% confident</div>
+            {% endif %}
+          </td>
+          <td style="padding:8px 12px; vertical-align:top">
+            <select name="chunk_type" class="triage-type-select" style="font-size:0.85em; padding:3px 6px">
+              <option value="task" {% if s.chunk_type == 'task' %}selected{% endif %}>task</option>
+              <option value="workflow" {% if s.chunk_type == 'workflow' %}selected{% endif %}>workflow</option>
+              <option value="ignore" {% if s.chunk_type == 'ignore' %}selected{% endif %}>ignore</option>
+            </select>
+          </td>
+          <td style="padding:8px 12px; vertical-align:top; text-align:right; color:var(--muted); font-size:0.82em">
+            {{ s.word_count }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex; gap:10px; align-items:center">
+    <button class="btn" type="submit">Run extraction on selected sections</button>
+    <a class="btn secondary" href="/import/pdf/sections/{{ ingestion_id }}">← Back</a>
+  </div>
+</form>
+{% endif %}
+
+<script>
+(function () {
+  // Keep type selects in sync with checkbox state (ignore → uncheck; task/workflow → check)
+  document.querySelectorAll('.triage-type-select').forEach(function (sel) {
+    var row = sel.closest('.triage-row');
+    var check = row ? row.querySelector('.triage-check') : null;
+
+    sel.addEventListener('change', function () {
+      if (!check) return;
+      if (sel.value === 'ignore') {
+        check.checked = false;
+        row.style.opacity = '0.55';
+      } else {
+        check.checked = true;
+        row.style.opacity = '1';
+      }
+    });
+
+    if (check) {
+      check.addEventListener('change', function () {
+        row.style.opacity = check.checked ? '1' : '0.55';
+        if (!check.checked && sel.value !== 'ignore') {
+          sel.value = 'ignore';
+        } else if (check.checked && sel.value === 'ignore') {
+          sel.value = row.dataset.defaultType || 'task';
+        }
+      });
+    }
+  });
+
+  document.getElementById('select-all').addEventListener('click', function () {
+    document.querySelectorAll('.triage-row').forEach(function (row) {
+      var check = row.querySelector('.triage-check');
+      var sel = row.querySelector('.triage-type-select');
+      if (check) { check.checked = true; row.style.opacity = '1'; }
+      if (sel && sel.value === 'ignore') { sel.value = row.dataset.defaultType || 'task'; }
+    });
+  });
+
+  document.getElementById('deselect-ignore').addEventListener('click', function () {
+    document.querySelectorAll('.triage-row').forEach(function (row) {
+      var check = row.querySelector('.triage-check');
+      var sel = row.querySelector('.triage-type-select');
+      if (sel && sel.value === 'ignore' && check) {
+        check.checked = false;
+        row.style.opacity = '0.55';
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

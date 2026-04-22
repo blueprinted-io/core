@@ -63,14 +63,12 @@
     </tbody>
   </table>
 
-  <h2 style="margin-top:18px">Workflow candidates</h2>
-  <p class="muted">Optional. Workflows reference selected Tasks by title.</p>
-
   {% if workflows %}
+  <h2 style="margin-top:18px">Workflow candidates</h2>
+  <p class="muted">Workflows extracted from workflow-type sections will be committed automatically alongside their tasks.</p>
   <table class="table">
     <thead>
       <tr>
-        <th style="width:34px"></th>
         <th>Title</th>
         <th>Objective</th>
         <th>Tasks</th>
@@ -79,16 +77,13 @@
     <tbody>
       {% for w in workflows %}
       <tr>
-        <td><input type="checkbox" name="workflow_id" value="{{ w.id }}" /></td>
-        <td>{{ w.title }}</td>
+        <td style="font-weight:500">{{ w.title }}</td>
         <td class="muted">{{ w.objective }}</td>
-        <td class="muted">{{ w.task_titles }}</td>
+        <td class="muted">{{ w.task_titles | join(', ') }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% else %}
-    <div class="muted">No workflows proposed in this run.</div>
   {% endif %}
 
   <div style="margin-top:14px">
