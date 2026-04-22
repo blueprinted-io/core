@@ -262,7 +262,7 @@ def admin_domains(request: Request, error: str | None = None):
 @router.post("/admin/domains/create")
 def admin_domains_create(request: Request, name: str = Form("")):
     require_admin(request)
-    name_norm = (name or "").strip().lower()
+    name_norm = re.sub(r"\s+", "-", (name or "").strip().lower())
     if not name_norm:
         raise HTTPException(status_code=400, detail="name required")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name_norm):
