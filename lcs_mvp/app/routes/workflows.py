@@ -666,18 +666,29 @@ def workflow_retire(request: Request, record_id: str, version: int, note: str = 
 
 @router.post("/workflows/{record_id}/delete")
 def workflow_delete(request: Request, record_id: str):
-    """Hard-delete all versions of a workflow. Admin only."""
-    from ..auth import require_admin
-    require_admin(request)
+    """Hard-delete all versions of a workflow.
+
+    Admins can always delete. Contributors can delete only their own records
+    that are still in draft or submitted status.
+    """
     actor = request.state.user
+    role = request.state.role
 
     with db() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM workflows WHERE record_id=? LIMIT 1", (record_id,)
+        row = conn.execute(
+            "SELECT status, created_by FROM workflows WHERE record_id=? ORDER BY version DESC LIMIT 1",
+            (record_id,),
         ).fetchone()
-        if not exists:
+        if not row:
             raise HTTPException(404)
+
+        if role != "admin":
+            if row["created_by"] != actor:
+                raise HTTPException(status_code=403, detail="You can only delete your own records.")
+            if row["status"] not in ("draft", "submitted"):
+                raise HTTPException(status_code=403, detail="Only draft or submitted records can be deleted.")
+
         conn.execute("DELETE FROM workflows WHERE record_id=?", (record_id,))
-        audit("workflow", record_id, 0, "delete", actor, note="hard delete by admin", conn=conn)
+        audit("workflow", record_id, 0, "delete", actor, note="hard delete", conn=conn)
 
     return RedirectResponse(url="/workflows", status_code=303)

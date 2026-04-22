@@ -714,19 +714,30 @@ def task_retire(request: Request, record_id: str, version: int, note: str = Form
 
 @router.post("/tasks/{record_id}/delete")
 def task_delete(request: Request, record_id: str):
-    """Hard-delete all versions of a task. Admin only."""
-    from ..auth import require_admin
-    require_admin(request)
+    """Hard-delete all versions of a task.
+
+    Admins can always delete. Contributors can delete only their own records
+    that are still in draft or submitted status.
+    """
     actor = request.state.user
+    role = request.state.role
 
     with db() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM tasks WHERE record_id=? LIMIT 1", (record_id,)
+        row = conn.execute(
+            "SELECT status, created_by FROM tasks WHERE record_id=? ORDER BY version DESC LIMIT 1",
+            (record_id,),
         ).fetchone()
-        if not exists:
+        if not row:
             raise HTTPException(404)
+
+        if role != "admin":
+            if row["created_by"] != actor:
+                raise HTTPException(status_code=403, detail="You can only delete your own records.")
+            if row["status"] not in ("draft", "submitted"):
+                raise HTTPException(status_code=403, detail="Only draft or submitted records can be deleted.")
+
         conn.execute("DELETE FROM tasks WHERE record_id=?", (record_id,))
-        audit("task", record_id, 0, "delete", actor, note="hard delete by admin", conn=conn)
+        audit("task", record_id, 0, "delete", actor, note="hard delete", conn=conn)
 
     return RedirectResponse(url="/tasks", status_code=303)
 

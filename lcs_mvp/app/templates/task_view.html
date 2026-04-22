@@ -197,6 +197,12 @@
         <button class="btn secondary" type="submit" style="color:var(--red,#b91c1c)">Delete task</button>
       </form>
     {% endif %}
+    {% if request.state.role == 'contributor' and task.created_by == request.state.user and task.status in ('draft', 'submitted') %}
+      <form method="post" action="/tasks/{{ task.record_id }}/delete"
+            onsubmit="return confirm('Permanently delete this task? This cannot be undone.')">
+        <button class="btn secondary" type="submit" style="color:var(--red,#b91c1c)">Delete task</button>
+      </form>
+    {% endif %}
   </aside>
 </div>
 
