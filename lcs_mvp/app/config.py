@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 # ---------------------------------------------------------------------------
 
 Status = Literal["draft", "submitted", "returned", "confirmed", "deprecated", "retired"]
-Role = Literal["viewer", "author", "assessment_author", "content_publisher", "reviewer", "audit", "admin"]
+Role = Literal["viewer", "contributor", "assessment_author", "content_publisher", "audit", "admin"]
 
 # ---------------------------------------------------------------------------
 # Filesystem paths

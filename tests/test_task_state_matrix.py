@@ -35,9 +35,9 @@ def _revise_task(client: TestClient, rid: str, version: int, note: str = "revise
 @pytest.mark.parametrize(
     "user,pw,domain,expected_status",
     [
-        ("jjoplin", "password2", "debian", 303),  # Y: author with entitled domain
-        ("jjoplin", "password2", "aws", 403),     # N: author lacking domain entitlement
-        ("jhendrix", "password1", "debian", 403), # N: reviewer cannot submit
+        ("jjoplin", "password2", "debian", 303),  # Y: contributor with entitled domain
+        ("jjoplin", "password2", "aws", 403),     # N: contributor lacking domain entitlement
+        ("jhendrix", "password1", "debian", 303), # Y: contributor with entitled domain can also submit
         ("fmercury", "password3", "debian", 403), # N: viewer cannot submit
     ],
 )
@@ -78,13 +78,17 @@ def test_stage_submitted_return_yes_no(client: TestClient, login, logout, create
     assert r_wrong_status.status_code == 409
     logout()
 
-    # N: author cannot return (wrong role).
+    # N: contributor cannot return content they created (self-review prohibition).
+    # jjoplin created the task, so jjoplin cannot return it even after it is
+    # revised and re-submitted. Create a fresh task, submit it, and verify.
     login("jjoplin", "password2")
-    r_wrong_role = client.post(
-        f"/tasks/{rid}/{ver}/return",
-        data={"note": "attempted author return"},
+    rid2, ver2 = create_task("debian")
+    assert client.post(f"/tasks/{rid2}/{ver2}/submit", follow_redirects=False).status_code == 303
+    r_self_review = client.post(
+        f"/tasks/{rid2}/{ver2}/return",
+        data={"note": "self-review attempt"},
     )
-    assert r_wrong_role.status_code == 403
+    assert r_self_review.status_code == 403
 
 
 def test_stage_submitted_confirm_yes_no(client: TestClient, login, logout, create_task) -> None:

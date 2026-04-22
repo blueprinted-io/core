@@ -92,9 +92,9 @@ def _create_workflow(client: TestClient, refs_text: str, title: str = "Workflow 
 @pytest.mark.parametrize(
     "submit_actor,submit_pw,task_domain,expected_status",
     [
-        ("jjoplin", "password2", "debian", 303),  # Y: author with entitled domain
-        ("jjoplin", "password2", "aws", 403),     # N: author lacking entitlement for workflow domain
-        ("jhendrix", "password1", "debian", 403), # N: reviewer cannot submit workflows
+        ("jjoplin", "password2", "debian", 303),  # Y: contributor with entitled domain
+        ("jjoplin", "password2", "aws", 403),     # N: contributor lacking entitlement for workflow domain
+        ("jhendrix", "password1", "debian", 303), # Y: contributor with entitled domain can also submit
         ("fmercury", "password3", "debian", 403), # N: viewer cannot submit workflows
     ],
 )

@@ -1,7 +1,7 @@
 # Project Loom — Development Guide
 
 **Repository:** https://github.com/blueprinted-io/project-loom  
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-04-22
 **Status:** MVP Active Development
 
 ---
@@ -46,8 +46,8 @@ Access at: http://localhost:8000
 
 Default demo users (if seeded):
 - `kcobain` / `admin` — Full admin access
-- `jhendrix` / `password1` — Can review/confirm all content
-- `jjoplin` / `password2` — Can create tasks/workflows
+- `jhendrix` / `password1` — Contributor: can create, submit, and review/confirm content
+- `jjoplin` / `password2` — Contributor: can create, submit, and review/confirm content
 - `wcarlos` / `password5` — Can create/maintain assessments
 - `fmercury` / `password3` — Read-only, sees all confirmed content
 - `rjohnson` / `password4` — Audit log access, sees all confirmed content
@@ -78,7 +78,17 @@ lcs_mvp/
 
 ---
 
-## Recent Changes (2026-02-28)
+## Recent Changes (2026-04-22)
+
+### Auth & Role Refactor
+- **`contributor` role:** Replaced separate `author` and `reviewer` roles with a unified `contributor` role that can both create/submit and review/confirm content.
+- **Self-review prohibition:** Contributors cannot confirm or return content they created (`created_by` check enforced server-side in all confirm/return handlers).
+- **`auth_mode` setting:** Admin toggle at `/admin/rules`. `demo` = existing login splash with user cards; `production` = clean credential form only.
+- **`auto_submit_on_import` setting:** Admin toggle at `/admin/rules`. When enabled, imported records (JSON + PDF) land as `submitted` instead of `draft`.
+- **DB migration:** Existing users with `role = 'author'` or `role = 'reviewer'` are automatically migrated to `contributor` on first startup after upgrade.
+- **Admin rules panel:** New `/admin/rules` page for managing `auth_mode` and `auto_submit_on_import` settings.
+
+## Previous Changes (2026-02-28)
 
 ### Dashboard & Role System
 - **Domain-agnostic roles:** `viewer`, `audit`, `content_publisher` now see all confirmed content across all domains (no domain assignment needed)
@@ -106,12 +116,22 @@ lcs_mvp/
 | Role | Domains | Can Create | Can Review | Notes |
 |------|---------|------------|------------|-------|
 | `admin` | All (implicit) | Yes | Yes | Full access, operational dashboard |
-| `reviewer` | All (implicit) | No | Yes | Review queue, can confirm/return anything |
-| `author` | Assigned only | Yes | No | Creates content, sees returned items |
+| `contributor` | Assigned only | Yes | Yes | Replaces former `author` + `reviewer` roles. Cannot review own content. |
 | `assessment_author` | Assigned only | Assessments | No | Creates assessments, sees confirmed tasks/workflows |
 | `viewer` | All (implicit) | No | No | Read-only, per-domain breakdown table |
 | `audit` | All (implicit) | No | No | Audit log access, per-domain breakdown |
 | `content_publisher` | All (implicit) | No | No | Export/publish, per-domain breakdown |
+
+**Self-review prohibition:** A `contributor` cannot confirm or return content where `created_by` equals their own username. This is enforced in the backend route handlers for all confirm/return endpoints (tasks, workflows, assessments) — both the HTML routes and the `/api/*` JSON routes.
+
+### Operational Settings (system_settings table)
+
+| Key | Values | Default | Notes |
+|-----|--------|---------|-------|
+| `auth_mode` | `demo` / `production` | `demo` | Controls login page. Demo shows all users with passwords for one-click access. Production shows only a credential form. |
+| `auto_submit_on_import` | `true` / `false` | `false` | When true, imported records (JSON + PDF) are created as `submitted` instead of `draft`. Imported records are never set to `confirmed`. |
+
+Manage these at `/admin/rules` (admin only).
 
 ### Content Lifecycle
 

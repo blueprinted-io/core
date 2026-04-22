@@ -396,9 +396,9 @@ def workflow_export_html(record_id: str, version: int):
 
 @router.get("/review", response_class=HTMLResponse)
 def review_queue(request: Request, item_type: str = ""):
-    # Reviewers and admins only. (Admin implicitly has all domains.)
-    if request.state.role not in ("reviewer", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden: reviewer/admin only")
+    # Contributors and admins only. (Admin implicitly has all domains.)
+    if request.state.role not in ("contributor", "admin"):
+        raise HTTPException(status_code=403, detail="Forbidden: contributor/admin only")
 
     with db() as conn:
         # Determine authorized domains

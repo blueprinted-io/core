@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..config import templates, UPLOADS_DIR, DB_PATH_CTX
-from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config
+from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config, _get_system_setting
 from ..linting import _normalize_steps, _validate_steps_required
 from ..audit import audit
 from ..auth import require
@@ -24,6 +24,17 @@ from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
 
 router = APIRouter()
+
+
+def _import_initial_status(conn) -> str:
+    """Return the status new import records should receive.
+
+    Reads the auto_submit_on_import system setting. When true, imported
+    records arrive as 'submitted' (ready for review). When false (default),
+    they arrive as 'draft'. 'confirmed' is never a valid import status.
+    """
+    val = _get_system_setting(conn, "auto_submit_on_import", "false") or "false"
+    return "submitted" if val == "true" else "draft"
 
 
 @router.get("/_llm/status")
@@ -699,6 +710,7 @@ def import_pdf_commit(
                 reconstructed.append({"task": t, "pages": _json_load(cr["pages_json"]) or []})
 
         now = utc_now_iso()
+        initial_status = _import_initial_status(conn)
         created_tasks: dict[str, tuple[str, int]] = {}  # title -> (record_id, version)
 
         # Insert selected tasks
@@ -741,7 +753,7 @@ def import_pdf_commit(
                 (
                     record_id,
                     version,
-                    "draft",
+                    initial_status,
                     title,
                     outcome,
                     _json_dump([str(x) for x in facts]),
@@ -959,12 +971,11 @@ def import_json_run(
     now = utc_now_iso()
 
     with db() as conn:
+        initial_status = _import_initial_status(conn)
         # tasks first
         for t in tasks_in:
             item = _parse_task_json(t)
-            # Import is ingress: always draft.
-            # (Seeding/demo data should write directly to the DB via seed scripts, not via import.)
-            item["status"] = "draft"
+            item["status"] = initial_status
 
             # Prevent overwrite
             exists = conn.execute(
@@ -1020,9 +1031,7 @@ def import_json_run(
         # workflows
         for w in workflows_in:
             item = _parse_workflow_json(w)
-            # Import is ingress: always draft.
-            # (Seeding/demo data should write directly to the DB via seed scripts, not via import.)
-            item["status"] = "draft"
+            item["status"] = initial_status
 
             exists = conn.execute(
                 "SELECT 1 FROM workflows WHERE record_id=? AND version=?",

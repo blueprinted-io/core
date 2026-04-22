@@ -563,13 +563,15 @@ def task_return_for_changes(
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?",
+            "SELECT status, domain, created_by FROM tasks WHERE record_id=? AND version=?",
             (record_id, version),
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted tasks can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         # Domain gate (admin implicitly authorized via _user_has_domain)
         domain = (row["domain"] or "").strip()
@@ -591,12 +593,14 @@ def task_confirm(request: Request, record_id: str, version: int):
     actor = request.state.user
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain, created_by FROM tasks WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(409, detail="Only submitted tasks can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         domain = (row["domain"] or "").strip()
         if not domain:

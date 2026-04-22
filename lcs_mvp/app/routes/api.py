@@ -396,12 +396,14 @@ def api_task_confirm(request: Request, record_id: str, version: int):
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain, created_by FROM tasks WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted tasks can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         domain = (row["domain"] or "").strip()
         if not domain:
@@ -447,12 +449,14 @@ def api_task_return(request: Request, record_id: str, version: int, body: Return
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domain FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain, created_by FROM tasks WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted tasks can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         domain = (row["domain"] or "").strip()
         if domain and not _user_has_domain(conn, actor, domain):
@@ -772,12 +776,14 @@ def api_workflow_confirm(request: Request, record_id: str, version: int):
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, created_by FROM workflows WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Workflow not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted workflows can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         refs = conn.execute(
             "SELECT task_record_id, task_version FROM workflow_task_refs"
@@ -831,12 +837,14 @@ def api_workflow_return(request: Request, record_id: str, version: int, body: Re
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, created_by FROM workflows WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Workflow not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted workflows can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         refs = conn.execute(
             "SELECT task_record_id, task_version FROM workflow_task_refs"
@@ -1204,12 +1212,14 @@ def api_assessment_return(request: Request, record_id: str, version: int, body: 
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, created_by FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Assessment not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted assessments can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         conn.execute(
             "UPDATE assessment_items SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
@@ -1222,18 +1232,20 @@ def api_assessment_return(request: Request, record_id: str, version: int, body: 
 
 @router.post("/assessments/{record_id}/{version}/confirm")
 def api_assessment_confirm(request: Request, record_id: str, version: int):
-    """Confirm a submitted assessment. Requires assessment:confirm (reviewer). Deprecates the previously confirmed version."""
+    """Confirm a submitted assessment. Requires assessment:confirm (contributor). Deprecates the previously confirmed version."""
     require(request.state.role, "assessment:confirm")
     actor = request.state.user
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, created_by FROM assessment_items WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Assessment not found")
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted assessments can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         conn.execute(
             "UPDATE assessment_items SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
@@ -1249,7 +1261,7 @@ def api_assessment_confirm(request: Request, record_id: str, version: int):
 
 
 # ---------------------------------------------------------------------------
-# Review queue — reviewer / admin
+# Review queue — contributor / admin
 # ---------------------------------------------------------------------------
 
 @router.get("/review")
@@ -1257,11 +1269,11 @@ def api_review_queue(request: Request, item_type: str = ""):
     """
     Return all submitted tasks, workflows, and assessments the caller is authorized to review.
 
-    Scope is determined by the caller's domain memberships (reviewer) or all active domains (admin).
+    Scope is determined by the caller's domain memberships (contributor) or all active domains (admin).
     Optionally filter by item_type: 'task', 'workflow', or 'assessment'.
     """
-    if request.state.role not in ("reviewer", "admin"):
-        raise HTTPException(status_code=403, detail="Forbidden: reviewer/admin only")
+    if request.state.role not in ("contributor", "admin"):
+        raise HTTPException(status_code=403, detail="Forbidden: contributor/admin only")
 
     filter_type = (item_type or "").strip().lower()
     if filter_type not in ("task", "workflow", "assessment"):

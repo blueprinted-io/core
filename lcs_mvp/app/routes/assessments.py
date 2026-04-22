@@ -874,13 +874,15 @@ def assessment_return_for_changes(
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM assessment_items WHERE record_id=? AND version=?",
+            "SELECT status, created_by FROM assessment_items WHERE record_id=? AND version=?",
             (record_id, version),
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted assessments can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         conn.execute(
             "UPDATE assessment_items SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
@@ -898,13 +900,15 @@ def assessment_confirm(request: Request, record_id: str, version: int):
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM assessment_items WHERE record_id=? AND version=?",
+            "SELECT status, created_by FROM assessment_items WHERE record_id=? AND version=?",
             (record_id, version),
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted assessments can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         conn.execute(
             "UPDATE assessment_items SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",

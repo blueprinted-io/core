@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Rules</h1>
+<p class="muted">Operational settings that control authentication behaviour and import governance.</p>
+
+<form method="post" action="/admin/rules/save">
+
+  <div class="card" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Auth mode</h2>
+    <p class="muted" style="margin-bottom:12px">Controls the login page experience. Changing this takes effect immediately — no restart required.</p>
+
+    <div style="display:flex; flex-direction:column; gap:10px">
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
+        <input type="radio" name="auth_mode" value="demo" {% if settings.auth_mode == "demo" %}checked{% endif %} style="margin-top:3px; flex-shrink:0" />
+        <span>
+          <strong>Demo</strong>
+          <span class="muted" style="display:block; font-size:0.875em">Login page lists all users with their demo passwords for one-click access. Use this for the public demo at app.blueprinted.io.</span>
+        </span>
+      </label>
+      <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
+        <input type="radio" name="auth_mode" value="production" {% if settings.auth_mode == "production" %}checked{% endif %} style="margin-top:3px; flex-shrink:0" />
+        <span>
+          <strong>Production</strong>
+          <span class="muted" style="display:block; font-size:0.875em">Login page shows only a username and password form. No user listing or demo hints. Use this for real deployments.</span>
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Import behaviour</h2>
+    <p class="muted" style="margin-bottom:12px">Controls the initial status assigned to records created via JSON or PDF import. Imported records are never set to <em>confirmed</em> regardless of this setting — confirmation remains a human-only trust boundary.</p>
+
+    <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
+      <input type="checkbox" name="auto_submit_on_import" value="true" {% if settings.auto_submit_on_import %}checked{% endif %} style="margin-top:3px; flex-shrink:0" />
+      <span>
+        <strong>Auto-submit on import</strong>
+        <span class="muted" style="display:block; font-size:0.875em">When enabled, imported records are created as <em>submitted</em> (ready for review) instead of <em>draft</em>. Useful when the import source is trusted and a draft review step is unnecessary.</span>
+      </span>
+    </label>
+  </div>
+
+  <div>
+    <button class="btn" type="submit">Save</button>
+  </div>
+
+</form>
+{% endblock %}

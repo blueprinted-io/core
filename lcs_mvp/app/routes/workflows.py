@@ -503,12 +503,14 @@ def workflow_confirm(request: Request, record_id: str, version: int):
     actor = request.state.user
     with db() as conn:
         row = conn.execute(
-            "SELECT status FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, created_by FROM workflows WHERE record_id=? AND version=?", (record_id, version)
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(409, detail="Only submitted workflows can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot confirm content they created.")
 
         refs = conn.execute(
             "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
@@ -610,13 +612,15 @@ def workflow_return_for_changes(
 
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domains_json FROM workflows WHERE record_id=? AND version=?",
+            "SELECT status, domains_json, created_by FROM workflows WHERE record_id=? AND version=?",
             (record_id, version),
         ).fetchone()
         if not row:
             raise HTTPException(404)
         if row["status"] != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted workflows can be returned")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(status_code=403, detail="Contributors cannot return content they created.")
 
         refs = conn.execute(
             "SELECT task_record_id, task_version FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",

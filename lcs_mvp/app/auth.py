@@ -22,14 +22,13 @@ SESSION_COOKIE = "lcs_session"
 DEFAULT_TAGS: list[str] = []
 DEFAULT_META: dict[str, str] = {}
 
-ROLE_ORDER: dict[Role, int] = {
+ROLE_ORDER: dict[str, int] = {
     "viewer": 0,
-    "author": 1,
+    "contributor": 1,
     "assessment_author": 2,
     "content_publisher": 3,
-    "reviewer": 4,
-    "audit": 5,
-    "admin": 6,
+    "audit": 4,
+    "admin": 5,
 }
 
 
@@ -53,6 +52,9 @@ def can(role: Role, action: str) -> bool:
     - Domain entitlements must NOT gate read-only viewing/browsing. Any authenticated user
       may view records across domains.
     - Delivery/publishing is confirmed-only. Export authorization is role-based, not domain-based.
+    - Contributors can both author and confirm, but CANNOT confirm their own content.
+      The self-review check (created_by != actor) is enforced in route handlers, not here,
+      because can() has no access to the record being acted on.
 
     Actions:
       - task:create, task:revise, task:submit, task:confirm
@@ -74,7 +76,7 @@ def can(role: Role, action: str) -> bool:
         return role in ("audit", "admin")
 
     if action == "delivery:view":
-        return role in ("viewer", "author", "assessment_author", "content_publisher", "reviewer")
+        return role in ("viewer", "contributor", "assessment_author", "content_publisher")
 
     if action == "delivery:export":
         return role in ("content_publisher",)
@@ -89,33 +91,28 @@ def can(role: Role, action: str) -> bool:
         return role in ("admin",)
 
     if action.endswith(":confirm"):
-        # Review firewall: reviewers can review/confirm *everything*.
-        # They do not revise content/assessments; they only confirm or return.
-        return role in ("reviewer",)
+        # Contributors can confirm. Self-review prohibition enforced in route handlers.
+        return role in ("contributor",)
 
     if action.startswith("assessment:"):
-        # Content/assessment firewall:
-        # - assessment authors create/revise/submit assessments
-        # - reviewers can confirm/return (handled by :confirm)
-        # - content authors do not author assessments
+        # assessment_author creates/revises/submits assessments.
+        # contributor can confirm assessments (handled by :confirm above).
         if action.endswith(":submit"):
             return role in ("assessment_author",)
         if action.endswith(":create") or action.endswith(":revise"):
             return role in ("assessment_author",)
 
     if action.endswith(":submit"):
-        return role in ("author",)
+        return role in ("contributor",)
 
     if action.endswith(":create"):
-        return role in ("author",)
+        return role in ("contributor",)
 
     if action.endswith(":revise"):
-        # Review firewall: reviewers do not revise.
-        return role in ("author",)
+        return role in ("contributor",)
 
     if action in ("import:pdf", "import:json"):
-        # Keep ingestion with content authoring, not assessment.
-        return role in ("author",)
+        return role in ("contributor",)
 
     if action == "db:switch":
         return role in ("admin",)

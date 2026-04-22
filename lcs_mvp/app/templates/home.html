@@ -15,10 +15,8 @@
     <h1>Dashboard</h1>
     {% if admin_mode %}
       <div class="muted">Operational health and intervention dashboard.</div>
-    {% elif reviewer_mode %}
-      <div class="muted">Review queue overview.</div>
-    {% elif author_mode %}
-      <div class="muted">Returned-items-first author workspace.</div>
+    {% elif contributor_mode %}
+      <div class="muted">Contributor workspace — review queue and authoring tasks.</div>
     {% elif domain_agnostic_mode %}
       <div class="muted">Confirmed content by domain.</div>
     {% else %}
@@ -285,14 +283,14 @@
     </div>
   {% else %}
 
-  {% if domains and not reviewer_mode and not author_mode %}
+  {% if domains and not contributor_mode %}
     <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
   {% endif %}
 
-  <div class="dashboard-grid {% if reviewer_mode %}reviewer-dashboard-grid{% endif %} {% if author_mode %}author-dashboard-grid{% endif %}">
+  <div class="dashboard-grid {% if contributor_mode %}contributor-dashboard-grid{% endif %}">
     {% for c in cards %}
-      <a class="card dashboard-card {% if reviewer_mode %}reviewer-card{% endif %} {% if author_mode %}author-returned-card{% endif %}" href="{{ c.href }}">
-        {% if reviewer_mode or author_mode %}
+      <a class="card dashboard-card {% if contributor_mode %}contributor-card{% endif %}" href="{{ c.href }}">
+        {% if contributor_mode %}
           <div class="reviewer-card-icon">
             {% if 'Tasks' in c.title %}✓{% elif 'Workflows' in c.title %}▦{% else %}◈{% endif %}
           </div>
@@ -303,7 +301,7 @@
       </a>
     {% endfor %}
 
-    {% if author_mode %}
+    {% if contributor_mode %}
       <a class="card dashboard-card author-action-card" href="/workflows/new">
         <div class="author-action-icon">⎇</div>
         <div class="dashboard-card-title">Write a workflow</div>
@@ -314,12 +312,6 @@
         <div class="author-action-icon">✓</div>
         <div class="dashboard-card-title">Write a task</div>
         <div class="muted">Create a new task</div>
-      </a>
-
-      <a class="card dashboard-card author-action-card" href="/assessments/new">
-        <div class="author-action-icon">◈</div>
-        <div class="dashboard-card-title">Write an assessment</div>
-        <div class="muted">Create a new assessment</div>
       </a>
 
       <a class="card dashboard-card author-action-card" href="/import/pdf">
@@ -335,7 +327,7 @@
       </a>
     {% endif %}
 
-    {% if not reviewer_mode and not author_mode and not assessment_author_mode %}
+    {% if not contributor_mode and not assessment_author_mode %}
     <section class="card dashboard-card audit-card">
       <div class="dashboard-card-title">Last audit</div>
       {% if last_audit %}

@@ -19,6 +19,7 @@ from ..database import (
     _active_domains, _available_db_keys, _db_profile_label, _list_custom_db_keys,
     _normalize_db_key, _user_id, _user_domains,
     _verify_password, _hash_password, _new_session_token,
+    _get_system_setting,
 )
 from ..audit import audit
 from ..achievements import get_user_achievements
@@ -62,28 +63,31 @@ def _clear_failures(username: str) -> None:
 
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request):
-    # Show demo users and their passwords (MVP demo convenience).
     with db() as conn:
-        users = conn.execute(
-            "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
-        ).fetchall()
+        auth_mode = _get_system_setting(conn, "auth_mode", "demo") or "demo"
+        demo_mode = auth_mode == "demo"
 
-        # Fetch domains for each user
-        users_with_domains = []
-        for u in users:
-            user_dict = dict(u)
-            if user_dict["role"] == "admin":
-                user_dict["domains"] = _active_domains(conn)
-            else:
-                user_dict["domains"] = _user_domains(conn, user_dict["username"])
-            users_with_domains.append(user_dict)
+        if demo_mode:
+            users = conn.execute(
+                "SELECT id, username, role, COALESCE(demo_password, '') AS demo_password FROM users WHERE disabled_at IS NULL ORDER BY role DESC, username ASC"
+            ).fetchall()
+            users_with_domains: list[dict] = []
+            for u in users:
+                user_dict = dict(u)
+                if user_dict["role"] == "admin":
+                    user_dict["domains"] = _active_domains(conn)
+                else:
+                    user_dict["domains"] = _user_domains(conn, user_dict["username"])
+                users_with_domains.append(user_dict)
+        else:
+            users_with_domains = []
 
     custom = _list_custom_db_keys()
     profiles = [{"key": k, "label": _db_profile_label(k)} for k in [DB_KEY_DEBIAN, DB_KEY_BLANK] + custom]
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"users": users_with_domains, "profiles": profiles, "db_key": request.state.db_key},
+        {"users": users_with_domains, "profiles": profiles, "db_key": request.state.db_key, "demo_mode": demo_mode},
     )
 
 

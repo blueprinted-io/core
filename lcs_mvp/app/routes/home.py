@@ -30,14 +30,13 @@ def home(request: Request):
 
         admin_panels: dict[str, Any] = {}
         domain_breakdown: list[dict[str, Any]] = []
-        if role == "reviewer":
+        if role == "contributor":
             cards = [
+                # Review queue
                 {"title": "Tasks outstanding for review", "value": _count_entity_status(conn, "tasks", "submitted", role, dset), "href": "/review?item_type=task"},
                 {"title": "Workflows outstanding for review", "value": _count_entity_status(conn, "workflows", "submitted", role, dset), "href": "/review?item_type=workflow"},
                 {"title": "Assessments outstanding for review", "value": _count_entity_status(conn, "assessment_items", "submitted", role, dset), "href": "/review?item_type=assessment"},
-            ]
-        elif role == "author":
-            cards = [
+                # Authoring queue
                 {"title": "Returned Tasks", "value": _count_entity_status(conn, "tasks", "returned", role, dset), "href": "/tasks?status=returned"},
                 {"title": "Returned Workflows", "value": _count_entity_status(conn, "workflows", "returned", role, dset), "href": "/workflows?status=returned"},
                 {"title": "Returned Assessments", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
@@ -118,8 +117,7 @@ def home(request: Request):
             "staleness_days": STALENESS_DAYS,
             # Role flags — computed here so templates don't embed role logic.
             "admin_mode": role == "admin",
-            "reviewer_mode": role == "reviewer",
-            "author_mode": role == "author",
+            "contributor_mode": role == "contributor",
             "assessment_author_mode": role == "assessment_author",
             "domain_agnostic_mode": role in ("viewer", "audit", "content_publisher"),
             # Admin alert values — pulled from admin_panels to avoid string-matching in template.

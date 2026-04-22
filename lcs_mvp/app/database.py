@@ -522,6 +522,21 @@ def init_db_path(db_path: str) -> None:
         if "file_path" not in ingestion_cols:
             conn.execute("ALTER TABLE ingestions ADD COLUMN file_path TEXT")
 
+        # Contributor role migration: collapse legacy author/reviewer into contributor
+        conn.execute("UPDATE users SET role='contributor' WHERE role IN ('author', 'reviewer')")
+
+        # Seed new system_settings defaults (INSERT OR IGNORE — never overwrite existing admin choices)
+        now_iso = utc_now_iso()
+        for _key, _default in [
+            ("auth_mode", "demo"),
+            ("auto_submit_on_import", "false"),
+        ]:
+            conn.execute(
+                "INSERT INTO system_settings(key, value, updated_at, updated_by) VALUES(?,?,?,?) "
+                "ON CONFLICT(key) DO NOTHING",
+                (_key, _default, now_iso, "system"),
+            )
+
         _backfill_workflow_domains(conn)
         _relink_avatars(conn)
 
@@ -558,6 +573,14 @@ def _get_llm_config(conn: sqlite3.Connection) -> dict:
         "llm_timeout_seconds":   int(_s("llm_timeout_seconds", "120")),
         "llm_max_tasks_per_chunk": int(_s("llm_max_tasks_per_chunk", "5")),
         "llm_max_chunks_per_run": int(_s("llm_max_chunks_per_run", "8")),
+    }
+
+
+def _get_app_settings(conn: sqlite3.Connection) -> dict:
+    """Return operational settings dict with safe defaults."""
+    return {
+        "auth_mode": _get_system_setting(conn, "auth_mode", "demo") or "demo",
+        "auto_submit_on_import": (_get_system_setting(conn, "auto_submit_on_import", "false") or "false") == "true",
     }
 
 
@@ -675,8 +698,8 @@ def _seed_demo_users(conn: sqlite3.Connection) -> None:
     now = utc_now_iso()
 
     demo = [
-        ("jhendrix", "reviewer", "password1"),
-        ("jjoplin", "author", "password2"),
+        ("jhendrix", "contributor", "password1"),
+        ("jjoplin", "contributor", "password2"),
         ("wcarlos", "assessment_author", "password5"),
         ("awinehouse", "content_publisher", "password6"),
         ("fmercury", "viewer", "password3"),

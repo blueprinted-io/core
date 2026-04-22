@@ -13,7 +13,7 @@ from ..database import (
     _active_domains, _available_db_keys, _create_custom_db_profile,
     _db_profile_label, _hash_password, _list_custom_db_keys,
     _normalize_db_key, _user_id,
-    _get_llm_config, _set_system_setting,
+    _get_llm_config, _set_system_setting, _get_app_settings,
 )
 from ..ingestion import _llm_probe
 from ..audit import audit
@@ -414,3 +414,33 @@ def admin_llm_models(request: Request, base_url: str = "", api_key: str = ""):
             return JSONResponse({"ok": True, "models": models})
     except Exception as e:
         return JSONResponse({"ok": False, "models": [], "detail": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Operational rules panel
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/rules", response_class=HTMLResponse)
+def admin_rules(request: Request):
+    require_admin(request)
+    with db() as conn:
+        settings = _get_app_settings(conn)
+    return templates.TemplateResponse(request, "admin/rules.html", {"settings": settings})
+
+
+@router.post("/admin/rules/save")
+def admin_rules_save(
+    request: Request,
+    auth_mode: str = Form("demo"),
+    auto_submit_on_import: str = Form("false"),
+):
+    require_admin(request)
+    if auth_mode not in ("demo", "production"):
+        raise HTTPException(status_code=400, detail="Invalid auth_mode value")
+    if auto_submit_on_import not in ("true", "false"):
+        raise HTTPException(status_code=400, detail="Invalid auto_submit_on_import value")
+    actor = request.state.user
+    with db() as conn:
+        _set_system_setting(conn, "auth_mode", auth_mode, actor)
+        _set_system_setting(conn, "auto_submit_on_import", auto_submit_on_import, actor)
+    return RedirectResponse(url="/admin/rules", status_code=303)
