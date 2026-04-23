@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..config import DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, templates
+from ..config import DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, DATA_DIR, templates
 from ..database import (
     db, utc_now_iso,
     _active_domains, _available_db_keys, _create_custom_db_profile,
@@ -459,3 +460,70 @@ def admin_rules_save(
     with db() as conn:
         _set_system_setting(conn, "auto_submit_on_import", auto_submit_on_import, actor)
     return RedirectResponse(url="/admin/rules", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Application log viewer
+# ---------------------------------------------------------------------------
+
+_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+def _read_log_tail(log_path: str, lines: int, level_filter: str) -> list[dict]:
+    """Read the last `lines` entries from the log file, optionally filtered by level."""
+    _level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
+    min_level = _level_order.get(level_filter.upper(), 0)
+
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            raw_lines = f.readlines()
+    except FileNotFoundError:
+        return []
+
+    entries = []
+    for raw in reversed(raw_lines):
+        line = raw.rstrip()
+        if not line:
+            continue
+        parts = line.split(" | ", 3)
+        if len(parts) == 4:
+            ts, lvl, name, msg = parts
+            lvl = lvl.strip()
+            line_level = _level_order.get(lvl, 0)
+            if line_level < min_level:
+                continue
+            entries.append({"ts": ts, "level": lvl, "logger": name, "message": msg})
+        else:
+            # continuation line (e.g. traceback) — attach to previous entry
+            if entries:
+                entries[-1]["message"] += "\n" + line
+            continue
+        if len(entries) >= lines:
+            break
+
+    return entries  # already newest-first
+
+
+@router.get("/admin/logs", response_class=HTMLResponse)
+def admin_logs(
+    request: Request,
+    lines: int = 200,
+    level: str = "WARNING",
+):
+    require_admin(request)
+    lines = max(10, min(lines, 2000))
+    if level.upper() not in _LOG_LEVELS:
+        level = "WARNING"
+    log_path = os.path.join(DATA_DIR, "app.log")
+    entries = _read_log_tail(log_path, lines, level)
+    return templates.TemplateResponse(
+        request,
+        "admin/logs.html",
+        {
+            "entries": entries,
+            "lines": lines,
+            "level": level.upper(),
+            "log_path": log_path,
+            "log_exists": os.path.exists(log_path),
+        },
+    )

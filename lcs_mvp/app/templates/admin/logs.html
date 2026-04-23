@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Application Logs</h1>
+    <p class="muted">{{ log_path }}</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/admin/logs?lines={{ lines }}&level={{ level }}">Refresh</a>
+  </div>
+</div>
+
+{% if not log_exists %}
+  <div class="callout warn">
+    <b>No log file yet.</b> The log file is created when the first event is recorded after startup.
+  </div>
+{% else %}
+
+<form method="get" action="/admin/logs" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:16px">
+  <div>
+    <label style="display:block; margin-bottom:4px; font-size:0.875em">Min level</label>
+    <select name="level" onchange="this.form.submit()">
+      {% for lvl in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] %}
+        <option value="{{ lvl }}" {% if level == lvl %}selected{% endif %}>{{ lvl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label style="display:block; margin-bottom:4px; font-size:0.875em">Lines</label>
+    <select name="lines" onchange="this.form.submit()">
+      {% for n in [50, 100, 200, 500, 1000] %}
+        <option value="{{ n }}" {% if lines == n %}selected{% endif %}>{{ n }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <noscript><button class="btn secondary" type="submit">Apply</button></noscript>
+</form>
+
+{% if not entries %}
+  <p class="muted">No log entries at this level. Try a lower filter.</p>
+{% else %}
+<div style="overflow-x:auto">
+  <table class="table" style="font-size:0.8em; font-family:monospace; table-layout:fixed; width:100%">
+    <colgroup>
+      <col style="width:170px">
+      <col style="width:80px">
+      <col style="width:180px">
+      <col>
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Level</th>
+        <th>Logger</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in entries %}
+        <tr style="
+          {% if e.level == 'ERROR' or e.level == 'CRITICAL' %}background:color-mix(in oklab,var(--danger,#dc2626) 8%,transparent){% endif %}
+          {% if e.level == 'WARNING' %}background:color-mix(in oklab,var(--warn,#d97706) 6%,transparent){% endif %}
+        ">
+          <td style="white-space:nowrap; color:var(--muted)">{{ e.ts }}</td>
+          <td>
+            {% if e.level in ('ERROR', 'CRITICAL') %}
+              <span class="badge badge-danger">{{ e.level }}</span>
+            {% elif e.level == 'WARNING' %}
+              <span class="badge badge-warn">{{ e.level }}</span>
+            {% elif e.level == 'INFO' %}
+              <span class="badge badge-confirmed">{{ e.level }}</span>
+            {% else %}
+              <span class="badge">{{ e.level }}</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="{{ e.logger }}">{{ e.logger }}</td>
+          <td style="white-space:pre-wrap; word-break:break-word">{{ e.message }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted" style="font-size:0.8em; margin-top:8px">Showing {{ entries|length }} most recent entries (newest first). Rotate threshold: 10 MB × 3 files.</p>
+{% endif %}
+
+{% endif %}
+{% endblock %}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any
 
@@ -10,6 +11,8 @@ from pypdf import PdfReader
 from fastapi import HTTPException
 
 from .linting import _normalize_steps
+
+logger = logging.getLogger("blueprinted.ingestion")
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +236,7 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
             return data["message"].get("content"), None
         return None, None
 
+    logger.debug("LLM request model=%s max_tokens=%s url=%s", model or "(default)", max_tokens, bu)
     try:
         with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0), verify=False) as client:
             last_err: str = ""
@@ -242,29 +246,40 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
                     last_err = f"HTTP 404 at {url}"
                     continue
                 if r.status_code >= 400:
-                    raise HTTPException(status_code=502, detail=f"LLM API error {r.status_code}: {r.text[:500]}")
-                content, finish_reason = _extract_content(r.json())
+                    err = f"LLM API error {r.status_code}: {r.text[:500]}"
+                    logger.error("LLM API error: %s", err)
+                    raise HTTPException(status_code=502, detail=err)
+                data = r.json()
+                content, finish_reason = _extract_content(data)
+                usage = data.get("usage", {})
+                logger.debug(
+                    "LLM response finish_reason=%s prompt_tokens=%s completion_tokens=%s",
+                    finish_reason, usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?"),
+                )
                 if finish_reason == "length":
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"LLM hit max_tokens limit (finish_reason=length) before producing output. "
-                               f"Increase max_tokens in admin LLM settings (current: {max_tokens}). "
-                               f"Reasoning models like GLM-4.7 need 8000+ tokens.",
+                    msg = (
+                        f"LLM hit max_tokens limit (finish_reason=length) before producing output. "
+                        f"Increase max_tokens in admin LLM settings (current: {max_tokens}). "
+                        f"Reasoning models like GLM-4.7 need 8000+ tokens."
                     )
+                    logger.error("LLM max_tokens exhausted: model=%s max_tokens=%s", model, max_tokens)
+                    raise HTTPException(status_code=502, detail=msg)
                 if content is not None:
                     return content
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"LLM response at {url} had no extractable content field. Response: {r.text[:300]}",
-                )
+                err = f"LLM response at {url} had no extractable content field. Response: {r.text[:300]}"
+                logger.error("LLM no content: %s", err)
+                raise HTTPException(status_code=502, detail=err)
             raise HTTPException(status_code=502, detail=f"No chat/completions endpoint found. Last error: {last_err}")
     except HTTPException:
         raise
     except httpx.ReadTimeout as e:
+        logger.error("LLM timeout after %ss: %s", timeout_s, e)
         raise HTTPException(status_code=504, detail=f"LLM request timed out after {timeout_s}s: {e}")
     except httpx.ConnectError as e:
+        logger.error("LLM connection error: %s", e)
         raise HTTPException(status_code=502, detail=f"LLM connection error: {e}")
     except httpx.HTTPError as e:
+        logger.error("LLM HTTP error: %s", e)
         raise HTTPException(status_code=502, detail=f"LLM HTTP error: {e}")
 
 
@@ -466,17 +481,20 @@ def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dic
         chunk_type = str(result.get("type", "ignore")).lower()
         if chunk_type not in ("task", "workflow", "ignore"):
             chunk_type = "ignore"
+        logger.debug("Triage '%s' → %s (confidence=%.2f)", section_title[:60], chunk_type, float(result.get("confidence", 0.5)))
         return {
             "type": chunk_type,
             "confidence": float(result.get("confidence", 0.5)),
             "reason": str(result.get("reason", ""))[:300],
         }
-    except Exception:
+    except Exception as exc:
+        logger.warning("Triage failed for '%s': %s — defaulting to task", section_title[:60], exc)
         return {"type": "task", "confidence": 0.3, "reason": "classification failed — defaulting to task"}
 
 
 def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract schema 1.0 task fragment from a task-type chunk."""
+    logger.info("Extracting tasks from '%s'", section_title[:80])
     user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
     raw = _llm_chat([
         {"role": "system", "content": _EXTRACT_TASK_SYSTEM},
@@ -491,11 +509,13 @@ def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) 
         result["tasks"] = []
     if not isinstance(result.get("workflows"), list):
         result["workflows"] = []
+    logger.info("Extracted %d task(s) from '%s'", len(result["tasks"]), section_title[:80])
     return result
 
 
 def _llm_extract_workflow_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract schema 1.0 task+workflow fragment from a workflow-type chunk."""
+    logger.info("Extracting workflow from '%s'", section_title[:80])
     user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
     raw = _llm_chat([
         {"role": "system", "content": _EXTRACT_WORKFLOW_SYSTEM},
@@ -510,4 +530,5 @@ def _llm_extract_workflow_chunk(text: str, section_title: str, cfg: dict[str, An
         result["tasks"] = []
     if not isinstance(result.get("workflows"), list):
         result["workflows"] = []
+    logger.info("Extracted %d task(s) + %d workflow(s) from '%s'", len(result["tasks"]), len(result["workflows"]), section_title[:80])
     return result

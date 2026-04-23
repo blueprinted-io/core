@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import logging.handlers
 import os
 from contextlib import asynccontextmanager
 from typing import Any
@@ -9,9 +11,45 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
+    DATA_DIR as _DATA_DIR,
     STATIC_ASSET_VERSION, templates,
 )
 from .database import init_db
+
+# ---------------------------------------------------------------------------
+# Logging — rotating file at data/app.log, also echo to stderr
+# ---------------------------------------------------------------------------
+def _setup_logging() -> None:
+    log_path = os.path.join(_DATA_DIR, "app.log")
+    os.makedirs(_DATA_DIR, exist_ok=True)
+
+    fmt = logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+
+    file_handler = logging.handlers.RotatingFileHandler(
+        log_path, maxBytes=10 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    file_handler.setFormatter(fmt)
+    file_handler.setLevel(logging.DEBUG)
+
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setFormatter(fmt)
+    stderr_handler.setLevel(logging.WARNING)
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    if not root.handlers:
+        root.addHandler(file_handler)
+        root.addHandler(stderr_handler)
+    else:
+        root.addHandler(file_handler)
+
+    # quieten noisy third-party loggers
+    for _noisy in ("httpx", "httpcore", "uvicorn.access", "watchfiles"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+
+_setup_logging()
+logger = logging.getLogger("blueprinted.app")
 from .auth import can, AuthMiddleware
 from .routes import auth as auth_routes, admin as admin_routes
 from .routes import home as home_routes
@@ -100,6 +138,10 @@ def _import_error_response(request: Request, detail: str, status_code: int):
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     accept = (request.headers.get("accept") or "").lower()
+    if exc.status_code >= 500:
+        logger.error("HTTP %s on %s %s — %s", exc.status_code, request.method, request.url.path, exc.detail)
+    elif exc.status_code >= 400:
+        logger.warning("HTTP %s on %s %s — %s", exc.status_code, request.method, request.url.path, exc.detail)
     if "text/html" not in accept:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     path = str(request.url.path)
@@ -110,8 +152,7 @@ async def _http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception):
-    import traceback
-    traceback.print_exc()
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     accept = (request.headers.get("accept") or "").lower()
     if "text/html" not in accept:
         return JSONResponse(status_code=500, content={"detail": "An unexpected error occurred."})

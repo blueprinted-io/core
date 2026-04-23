@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
 import uuid
 from typing import Any
+
+logger = logging.getLogger("blueprinted.imports")
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -327,6 +330,7 @@ def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> No
             (ingestion_id,),
         ).fetchall()
 
+        logger.info("Triage started ingestion=%s chunks=%d user=%s", ingestion_id[:8], len(chunks), username)
         for cr in chunks:
             result = _llm_triage_chunk(
                 cr["text"] or "",
@@ -342,7 +346,9 @@ def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> No
 
         conn.execute("UPDATE ingestions SET job_status='triaged' WHERE id=?", (ingestion_id,))
         conn.commit()
+        logger.info("Triage complete ingestion=%s", ingestion_id[:8])
     except Exception as e:
+        logger.exception("Triage failed ingestion=%s", ingestion_id[:8])
         try:
             conn.execute(
                 "UPDATE ingestions SET job_status='failed', note=? WHERE id=?",
@@ -377,6 +383,8 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
             (ingestion_id,),
         ).fetchall()
 
+        logger.info("Extraction started ingestion=%s chunks=%d user=%s", ingestion_id[:8], len(chunks), username)
+        done = errors = 0
         for cr in chunks:
             chunk_index = int(cr["chunk_index"])
             conn.execute(
@@ -399,19 +407,24 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                     "WHERE ingestion_id=? AND chunk_index=?",
                     (json.dumps(data), ingestion_id, chunk_index),
                 )
+                done += 1
             except HTTPException as e:
                 status = "timeout" if e.status_code == 504 else "error"
+                logger.error("Chunk %d extraction %s ingestion=%s: %s", chunk_index, status, ingestion_id[:8], e.detail)
                 conn.execute(
                     "UPDATE ingestion_chunks SET chunk_status=?, llm_result_json=? "
                     "WHERE ingestion_id=? AND chunk_index=?",
                     (status, json.dumps({"error": str(e.detail)}), ingestion_id, chunk_index),
                 )
+                errors += 1
             except Exception as e:
+                logger.exception("Chunk %d extraction error ingestion=%s", chunk_index, ingestion_id[:8])
                 conn.execute(
                     "UPDATE ingestion_chunks SET chunk_status='error', llm_result_json=? "
                     "WHERE ingestion_id=? AND chunk_index=?",
                     (json.dumps({"error": str(e)}), ingestion_id, chunk_index),
                 )
+                errors += 1
             conn.commit()
 
         unprocessed = conn.execute(
@@ -426,9 +439,11 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
             (final_status, ingestion_id),
         )
         conn.commit()
+        logger.info("Extraction %s ingestion=%s done=%d errors=%d", final_status, ingestion_id[:8], done, errors)
         _notify_ingestion_complete(ingestion_id, username, db_path)
 
     except Exception:
+        logger.exception("Extraction job failed ingestion=%s", ingestion_id[:8])
         try:
             conn.execute(
                 "UPDATE ingestions SET job_status='failed' WHERE id=?",
