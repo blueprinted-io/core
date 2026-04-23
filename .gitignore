@@ -7,7 +7,8 @@
 # LCS MVP runtime artifacts
 lcs_mvp/.venv/
 
-# Keep data directory but ignore WAL files (auto-generated)
+# Keep data directory but ignore DB files and WAL files (runtime state)
+lcs_mvp/data/*.db
 lcs_mvp/data/*.db-shm
 lcs_mvp/data/*.db-wal
 lcs_mvp/data/exports/
