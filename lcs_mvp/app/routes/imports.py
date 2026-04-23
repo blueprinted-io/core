@@ -7,7 +7,7 @@ import sqlite3
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..config import templates, UPLOADS_DIR, DB_PATH_CTX
@@ -207,9 +207,10 @@ def import_pdf_prepare(
 # ---------------------------------------------------------------------------
 
 @router.get("/import/pdf/sections/{ingestion_id}", response_class=HTMLResponse)
-def import_pdf_sections(request: Request, ingestion_id: str):
+def import_pdf_sections(request: Request, ingestion_id: str, mode: str = Query("")):
     require(request.state.role, "import:pdf")
     actor = request.state.user
+    is_resume = mode == "resume"
 
     with db() as conn:
         ing = conn.execute(
@@ -225,7 +226,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             return RedirectResponse(url=f"/import/pdf/triage/{ingestion_id}", status_code=303)
         if job_status == "running":
             return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
-        if job_status in ("complete", "partial"):
+        if job_status in ("complete", "partial") and not is_resume:
             return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
 
         chunks = conn.execute(
@@ -250,6 +251,12 @@ def import_pdf_sections(request: Request, ingestion_id: str):
         preview = text[:200].replace("\n", " ").strip()
         if len(text) > 200:
             preview += "…"
+        chunk_status = r["chunk_status"] or "pending"
+        if is_resume:
+            # In resume mode: retry errors by default, leave done/pending unchecked
+            default_selected = chunk_status in ("error", "timeout")
+        else:
+            default_selected = bool(r["selected"])
         sections.append({
             "chunk_index": r["chunk_index"],
             "title": title,
@@ -257,9 +264,9 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             "word_count": word_count,
             "preview": preview,
             "sparse": word_count < 40,
-            "selected": bool(r["selected"]),
+            "selected": default_selected,
             "level": int(r["section_level"] or 0),
-            "chunk_status": r["chunk_status"] or "pending",
+            "chunk_status": chunk_status,
         })
 
     # Mark which rows are groups (have children in the TOC hierarchy)
@@ -280,6 +287,7 @@ def import_pdf_sections(request: Request, ingestion_id: str):
             "max_level": max_level,
             "ingestion_id": ingestion_id,
             "job_status": job_status,
+            "is_resume": is_resume,
         },
     )
 
@@ -698,6 +706,51 @@ def import_pdf_delete(request: Request, ingestion_id: str):
 
 
 # ---------------------------------------------------------------------------
+# PDF import — debug: raw chunk data (admin only)
+# ---------------------------------------------------------------------------
+
+@router.get("/import/pdf/{ingestion_id}/debug")
+def import_pdf_debug(request: Request, ingestion_id: str):
+    from fastapi.responses import JSONResponse
+    if request.state.role != "admin":
+        raise HTTPException(403)
+    actor = request.state.user
+    with db() as conn:
+        ing = conn.execute("SELECT * FROM ingestions WHERE id=?", (ingestion_id,)).fetchone()
+        if not ing:
+            raise HTTPException(404)
+        rows = conn.execute(
+            "SELECT chunk_index, section_title, chunk_status, chunk_type, selected, "
+            "triage_confidence, triage_reason, llm_result_json "
+            "FROM ingestion_chunks WHERE ingestion_id=? ORDER BY chunk_index ASC",
+            (ingestion_id,),
+        ).fetchall()
+    chunks = []
+    for r in rows:
+        raw = r["llm_result_json"]
+        parsed = None
+        parse_error = None
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except Exception as e:
+                parse_error = str(e)
+        chunks.append({
+            "chunk_index": r["chunk_index"],
+            "section_title": r["section_title"],
+            "chunk_status": r["chunk_status"],
+            "chunk_type": r["chunk_type"],
+            "selected": r["selected"],
+            "triage_confidence": r["triage_confidence"],
+            "triage_reason": r["triage_reason"],
+            "llm_result_raw_len": len(raw) if raw else 0,
+            "llm_result_parsed": parsed,
+            "parse_error": parse_error,
+        })
+    return JSONResponse({"ingestion_id": ingestion_id, "job_status": ing["job_status"], "chunks": chunks})
+
+
+# ---------------------------------------------------------------------------
 # PDF import — step 5: review candidates and commit
 # ---------------------------------------------------------------------------
 
@@ -1052,7 +1105,7 @@ def import_pdf_commit(
         ).fetchall()
 
         if not chunk_rows:
-            return RedirectResponse(url="/tasks?status=draft", status_code=303)
+            return RedirectResponse(url="/import/pdf", status_code=303)
 
         workflow_chunk_indices = [
             int(cr["chunk_index"]) for cr in chunk_rows if (cr["chunk_type"] or "") == "workflow"
@@ -1064,9 +1117,7 @@ def import_pdf_commit(
             ingestion_id, ing["filename"] or "", domain, actor,
         )
 
-    if wfs_n:
-        return RedirectResponse(url="/workflows", status_code=303)
-    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+    return RedirectResponse(url="/import/pdf", status_code=303)
 
 
 @router.get("/import/json", response_class=HTMLResponse)

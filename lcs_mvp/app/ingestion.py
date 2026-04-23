@@ -221,12 +221,17 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
     if model:
         payload["model"] = model
 
-    def _extract_content(data: Any) -> str | None:
+    def _extract_content(data: Any) -> tuple[str | None, str | None]:
+        """Returns (content, finish_reason). content is None if not extractable."""
         if isinstance(data, dict) and "choices" in data:
-            return data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            finish = choice.get("finish_reason")
+            content = msg.get("content")
+            return content, finish
         if isinstance(data, dict) and "message" in data and isinstance(data["message"], dict):
-            return data["message"].get("content", "")
-        return None
+            return data["message"].get("content"), None
+        return None, None
 
     try:
         with httpx.Client(timeout=httpx.Timeout(timeout_s, connect=30.0), verify=False) as client:
@@ -238,10 +243,20 @@ def _llm_chat(messages: list[dict[str, str]], cfg: dict[str, Any]) -> str:
                     continue
                 if r.status_code >= 400:
                     raise HTTPException(status_code=502, detail=f"LLM API error {r.status_code}: {r.text[:500]}")
-                content = _extract_content(r.json())
+                content, finish_reason = _extract_content(r.json())
+                if finish_reason == "length":
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"LLM hit max_tokens limit (finish_reason=length) before producing output. "
+                               f"Increase max_tokens in admin LLM settings (current: {max_tokens}). "
+                               f"Reasoning models like GLM-4.7 need 8000+ tokens.",
+                    )
                 if content is not None:
                     return content
-                return json.dumps(r.json())
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"LLM response at {url} had no extractable content field. Response: {r.text[:300]}",
+                )
             raise HTTPException(status_code=502, detail=f"No chat/completions endpoint found. Last error: {last_err}")
     except HTTPException:
         raise
@@ -343,37 +358,89 @@ _TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly 
 Return JSON only — no markdown, no commentary:
 {"type": "task", "confidence": 0.0, "reason": "one sentence"}"""
 
-_EXTRACT_TASK_SYSTEM = """You are generating a Blueprinted JSON import payload from a section of technical documentation.
-Follow these rules exactly:
+_EXTRACT_TASK_SYSTEM = """You are extracting structured task records from a section of technical documentation.
+
+## Field definitions
+
+outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
+
+facts: Declarative knowledge the learner must be able to remember or recall to perform the task. Includes both prerequisites (what they must have available) and subject-matter knowledge (names, identifiers, commands, file paths, port numbers, measurements, system behaviours). Ask: what would a learner need to be able to list or recite to do this correctly? Write each as a complete sentence.
+  Good: "The package name is open-iscsi." / "The default iSCSI port is 3260." / "Node startup defaults to manual after discovery."
+  Bad: topic nouns like "Ubuntu" or "iSCSI protocol"
+
+concepts: The WHY. What principle is at work? What goes wrong if done incorrectly? Why does this task exist at all? Write in plain English — avoid jargon where ordinary language works. A full explanation is expected and valuable; do not summarise to a single line. The concept should leave the learner able to reason about edge cases, not just follow steps.
+  Good: a paragraph explaining what iSCSI sessions are, why they are not persistent by nature, and what happens if persistence is not configured.
+  Bad: "iSCSI is a network storage protocol." (defines the noun, explains nothing)
+
+dependencies: Specific preconditions that must be true before the operator can start. Full sentences.
+  Good: "Ubuntu machine is accessible with sudo privileges." / "No backup jobs are currently running."
+
+procedure_name: A short imperative phrase naming the method used, distinct from the task title.
+  Example: title "Upgrade Veeam Agent for Microsoft Windows" → procedure_name "Interactive upgrade via Control Panel"
+
+irreversible: true only if completing this task produces changes that are difficult or impossible to undo without significant additional work or data loss risk. Formatting a disk = true. Installing or upgrading software = false.
+
+steps: Each step is a single physical or digital action.
+  - Start with a concrete verb: open, close, press, click, run, record, insert, remove, verify, enter, select.
+  - Do NOT start with abstract verbs: configure, manage, set up, ensure, handle, prepare, edit.
+  - One action only. If the step contains "and", "then", or "also", split it into two consecutive steps.
+  - text: the instruction itself.
+  - completion: observable confirmation the step is done. Specific — not "Step is complete." or "Done."
+      Good: "Terminal shows 'OK'." / "Wizard advances to the License Agreement screen."
+      Bad: "Software is installed." / "Step is complete."
+  - actions: array of substeps giving the concrete method — menu navigation paths, exact CLI commands, keyboard shortcuts. Empty array [] if the step text is self-explanatory.
+  - notes: "oh by the way" information from the source — edge cases, uncommon configurations, or conditional caveats that don't always apply. Extract from callouts, notes, or asides in the source text. null if none.
+
+## Output rules
 
 1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
-2. Assign each task a sequential ID starting at T001, incrementing by one (T001, T002, T003...). Do not skip, reuse, or modify IDs.
-3. Every field defined in the schema must be present in every object, even if the value is null, false, or an empty array. Never omit a field.
-4. For every step, write the completion condition first. If the completion condition is a restatement of the action, discard the step and merge its action into the preceding step. Only keep steps where the completion condition describes an observable, independently verifiable state change.
-5. Steps must be atomic — one operation per step. No compound instructions. Imperative form only.
-6. The irreversible field must always be present and must be a boolean (true or false).
-7. facts, concepts, dependencies, and actions may be empty arrays ([]) but must always be present.
-8. Do not invent content. Only extract what is present in the source text.
+2. Assign each task a sequential ID starting at T001 (T001, T002, T003...). Never skip or reuse IDs.
+3. Every field must be present in every object, even if null, false, or []. Never omit a field.
+4. Do not invent content. Extract only what is present in the source text. If facts, concepts, or dependencies are not present in the source, use [].
 
-Return JSON with this exact structure:
-{"tasks": [{"id": "T001", "title": "...", "outcome": "...", "procedure_name": "...", "facts": [], "concepts": [], "dependencies": [], "irreversible": false, "steps": [{"text": "...", "completion": "...", "actions": []}]}], "workflows": []}"""
+## Example
 
-_EXTRACT_WORKFLOW_SYSTEM = """You are generating a Blueprinted JSON import payload from a section of technical documentation.
-Follow these rules exactly:
+{"tasks":[{"id":"T001","title":"Install the iSCSI initiator utilities","outcome":"The open-iscsi package is installed and the iscsid service is running on the Ubuntu machine.","procedure_name":"Install open-iscsi via apt","facts":["The package name is open-iscsi.","Installing open-iscsi also installs iscsiadm, the command-line tool used for all subsequent iSCSI operations.","The service name is iscsid.","sudo systemctl status iscsid confirms the service is active."],"concepts":["iSCSI separates storage from the machine that uses it — the target exposes a block device over the network, and the initiator is the software stack that makes the local OS treat that remote device as if it were locally attached. open-iscsi is that entire initiator stack. Without it running, the OS has no mechanism to speak the iSCSI protocol or maintain the session that keeps the device available."],"dependencies":["Ubuntu machine is accessible with sudo privileges.","Machine has internet or local repository access."],"irreversible":false,"steps":[{"text":"Update the package index.","completion":"Completes without error.","actions":["sudo apt update"],"notes":null},{"text":"Install the open-iscsi package.","completion":"Completes without error, confirming open-iscsi and iscsiadm are installed.","actions":["sudo apt install open-iscsi"],"notes":"If open-iscsi is already installed, apt will report 'open-iscsi is already the newest version' and no further action is required."},{"text":"Enable the iscsid service to start on boot.","completion":"Returns a symlink confirmation line.","actions":["sudo systemctl enable iscsid"],"notes":"On some Ubuntu versions, open-iscsi enables iscsid automatically on installation — if so, this command returns without output and no further action is needed."},{"text":"Start the iscsid service.","completion":"Returns to prompt without error.","actions":["sudo systemctl start iscsid"],"notes":null},{"text":"Confirm the service is active.","completion":"Output shows Active: active (running).","actions":["sudo systemctl status iscsid"],"notes":"On some minimal Ubuntu installations the service may show as 'inactive (dead)' immediately after install — if so, repeat the start command and check again."}]}],"workflows":[]}"""
+
+_EXTRACT_WORKFLOW_SYSTEM = """You are extracting structured task records from a section of technical documentation. This section describes a workflow — a sequence of multiple distinct tasks achieving a larger outcome.
+
+## Field definitions
+
+outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
+
+facts: Declarative knowledge the learner must be able to remember or recall to perform the task. Includes both prerequisites (what they must have available) and subject-matter knowledge (names, identifiers, commands, file paths, port numbers, measurements, system behaviours). Ask: what would a learner need to be able to list or recite to do this correctly? Write each as a complete sentence.
+  Good: "The package name is open-iscsi." / "The default iSCSI port is 3260." / "Node startup defaults to manual after discovery."
+  Bad: topic nouns like "Ubuntu" or "iSCSI protocol"
+
+concepts: The WHY. What principle is at work? What goes wrong if done incorrectly? Why does this task exist at all? Write in plain English — avoid jargon where ordinary language works. A full explanation is expected and valuable; do not summarise to a single line. The concept should leave the learner able to reason about edge cases, not just follow steps.
+
+dependencies: Specific preconditions that must be true before the operator can start. Full sentences.
+
+procedure_name: A short imperative phrase naming the method used, distinct from the task title.
+
+irreversible: true only if completing this task produces changes that are difficult or impossible to undo without significant additional work or data loss risk.
+
+steps: Each step is a single physical or digital action.
+  - Start with a concrete verb: open, close, press, click, run, record, insert, remove, verify, enter, select.
+  - Do NOT start with abstract verbs: configure, manage, set up, ensure, handle, prepare, edit.
+  - One action only. If the step contains "and", "then", or "also", split it into two consecutive steps.
+  - text: the instruction itself.
+  - completion: observable confirmation the step is done. Specific — not "Step is complete." or "Done."
+  - actions: array of substeps — menu paths, CLI commands, keyboard shortcuts. [] if self-explanatory.
+  - notes: edge cases or conditional caveats from the source text. null if none.
+
+workflow objective: The measurable end state the whole sequence achieves. Distinct from any single task outcome — describes what has been accomplished when all tasks are done.
+
+## Output rules
 
 1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
-2. Assign each task a sequential ID starting at T001, incrementing by one (T001, T002, T003...). Do not skip, reuse, or modify IDs.
-3. Every field defined in the schema must be present in every object, even if the value is null, false, or an empty array. Never omit a field.
-4. For every step, write the completion condition first. If the completion condition is a restatement of the action, discard the step and merge its action into the preceding step. Only keep steps where the completion condition describes an observable, independently verifiable state change.
-5. Steps must be atomic — one operation per step. No compound instructions. Imperative form only.
-6. The irreversible field must always be present and must be a boolean (true or false).
-7. facts, concepts, dependencies, and actions may be empty arrays ([]) but must always be present.
-8. Do not invent content. Only extract what is present in the source text.
-9. When referencing tasks in workflow task_order, copy the task ID exactly as assigned (e.g. "T001"). Do not use task titles in task_order.
-10. Propose a workflow only if the section explicitly describes a sequence or grouping of multiple distinct tasks.
+2. Assign each task a sequential ID starting at T001 (T001, T002, T003...). Never skip or reuse IDs.
+3. Every field must be present in every object, even if null, false, or []. Never omit a field.
+4. Do not invent content. Extract only what is present in the source text.
+5. In workflow task_order, copy task IDs exactly as assigned in this response (e.g. "T001"). Do not use task titles.
+6. Only propose a workflow if the section explicitly describes a sequence or grouping of multiple distinct tasks.
 
-Return JSON with this exact structure:
-{"tasks": [{"id": "T001", "title": "...", "outcome": "...", "procedure_name": "...", "facts": [], "concepts": [], "dependencies": [], "irreversible": false, "steps": [{"text": "...", "completion": "...", "actions": []}]}], "workflows": [{"title": "...", "objective": "...", "task_order": ["T001", "T002"]}]}"""
+Return JSON with this structure: {"tasks":[{"id":"T001","title":"...","outcome":"...","procedure_name":"...","facts":[],"concepts":[],"dependencies":[],"irreversible":false,"steps":[{"text":"...","completion":"...","actions":[],"notes":null}]}],"workflows":[{"title":"...","objective":"...","task_order":["T001","T002"]}]}"""
 
 
 def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:

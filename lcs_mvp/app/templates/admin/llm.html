@@ -36,11 +36,16 @@
       <div class="muted" style="font-size:0.8em; margin-top:4px">Passed as the <code>model</code> field in chat completions. Leave blank to use the server default.</div>
     </div>
 
-    <div class="grid" style="grid-template-columns:1fr 1fr 1fr; gap:12px">
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:12px">
       <div>
         <label>Timeout (seconds)</label>
         <input type="number" name="llm_timeout_seconds" value="{{ cfg.llm_timeout_seconds }}" min="10" max="600" style="width:100%" />
         <div class="muted" style="font-size:0.8em; margin-top:4px">Per-chunk request timeout.</div>
+      </div>
+      <div>
+        <label>Max tokens</label>
+        <input type="number" name="llm_max_tokens" value="{{ cfg.llm_max_tokens or 2000 }}" min="256" max="131072" style="width:100%" />
+        <div class="muted" style="font-size:0.8em; margin-top:4px">Output token limit per call. Reasoning models need 8000+.</div>
       </div>
       <div>
         <label>Max tasks per chunk</label>

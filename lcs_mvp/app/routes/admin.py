@@ -346,6 +346,7 @@ def admin_llm_save(
     llm_api_key: str = Form(""),
     llm_model: str = Form(""),
     llm_timeout_seconds: str = Form("120"),
+    llm_max_tokens: str = Form("2000"),
     llm_max_tasks_per_chunk: str = Form("5"),
     llm_max_chunks_per_run: str = Form("8"),
 ):
@@ -355,6 +356,7 @@ def admin_llm_save(
         _set_system_setting(conn, "llm_base_url", llm_base_url.strip(), actor)
         _set_system_setting(conn, "llm_model", llm_model.strip(), actor)
         _set_system_setting(conn, "llm_timeout_seconds", llm_timeout_seconds.strip() or "120", actor)
+        _set_system_setting(conn, "llm_max_tokens", llm_max_tokens.strip() or "2000", actor)
         _set_system_setting(conn, "llm_max_tasks_per_chunk", llm_max_tasks_per_chunk.strip() or "5", actor)
         _set_system_setting(conn, "llm_max_chunks_per_run", llm_max_chunks_per_run.strip() or "8", actor)
         if llm_api_key.strip():

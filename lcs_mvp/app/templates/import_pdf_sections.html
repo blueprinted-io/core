@@ -31,10 +31,16 @@
 </div>
 {% endif %}
 
+{% if is_resume %}
+<div class="callout" style="border-left-color:var(--primary,#2563eb)">
+  <b>Resuming import</b> — sections already processed are shown with a <span style="color:var(--green,#16a34a)">✓ done</span> badge and are unchecked by default. Failed sections are pre-checked for retry. Select any additional sections to process, or re-check done sections to reprocess them.
+</div>
+{% else %}
 <div class="callout">
   Tick the sections you want processed by AI. Only selected sections will be sent to the LLM — everything else is ignored.
   {% if max_level > 0 %}Use the <b>▶</b> toggles to expand chapters, or the level buttons to show more depth at once.{% endif %}
 </div>
+{% endif %}
 
 <form method="post" action="/import/pdf/triage/{{ ingestion_id }}">
   <div class="card" style="padding:0; overflow:hidden">

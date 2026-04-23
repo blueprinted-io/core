@@ -40,9 +40,10 @@
         <td class="muted" style="font-size:0.85em; white-space:nowrap">
           {{ i.done_chunks }}/{{ i.total_chunks }}
         </td>
-        <td style="display:flex; gap:6px; align-items:center">
-          {% if i.job_status == 'complete' %}
+        <td style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
+          {% if i.job_status in ('complete', 'partial') %}
             <a class="btn secondary" href="/import/pdf/review/{{ i.id }}">Review</a>
+            <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}?mode=resume">Continue</a>
           {% elif i.job_status == 'running' %}
             <a class="btn secondary" href="/import/pdf/status/{{ i.id }}">View progress</a>
           {% else %}
