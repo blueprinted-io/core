@@ -736,7 +736,17 @@ def task_delete(request: Request, record_id: str):
             if row["status"] not in ("draft", "submitted"):
                 raise HTTPException(status_code=403, detail="Only draft or submitted records can be deleted.")
 
-        conn.execute("DELETE FROM workflow_task_refs WHERE task_record_id=?", (record_id,))
+        wf_refs = conn.execute(
+            "SELECT DISTINCT workflow_record_id FROM workflow_task_refs WHERE task_record_id=?",
+            (record_id,),
+        ).fetchall()
+        if wf_refs:
+            wf_ids = ", ".join(r["workflow_record_id"][:8] + "…" for r in wf_refs)
+            raise HTTPException(
+                status_code=409,
+                detail=f"This task is referenced by {len(wf_refs)} workflow(s) ({wf_ids}) and cannot be deleted. Delete or retire the workflow(s) first.",
+            )
+
         conn.execute("DELETE FROM tasks WHERE record_id=?", (record_id,))
         audit("task", record_id, 0, "delete", actor, note="hard delete", conn=conn)
 
