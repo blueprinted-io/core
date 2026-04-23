@@ -494,6 +494,8 @@ def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dic
 
 def _parse_llm_json(raw: str, section_title: str, max_tokens: int) -> dict[str, Any]:
     """Strip code fences, parse JSON, and raise HTTPException with a helpful message on failure."""
+    from json_repair import repair_json
+
     raw = raw.strip()
     if raw.startswith("```"):
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
@@ -501,17 +503,34 @@ def _parse_llm_json(raw: str, section_title: str, max_tokens: int) -> dict[str, 
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        # Log the raw content so it's inspectable in the admin log viewer
-        logger.error(
-            "JSON parse failed for '%s' at char %d — raw output (first 500 chars): %s",
-            section_title[:80], exc.pos, raw[:500],
+        # Log context around the error position so it's diagnosable in the admin log viewer
+        start = max(0, exc.pos - 80)
+        end = min(len(raw), exc.pos + 80)
+        snippet = repr(raw[start:end])
+        logger.warning(
+            "JSON parse failed for '%s' at char %d — attempting repair. Context: ...%s...",
+            section_title[:80], exc.pos, snippet,
         )
-        hint = (
-            f"Output was truncated mid-JSON (parse error at char {exc.pos}). "
-            f"This usually means max_tokens ({max_tokens}) is too low for this section. "
-            f"Increase max_tokens in Admin → LLM Provider."
+        try:
+            repaired = repair_json(raw, return_objects=True)
+            if isinstance(repaired, dict):
+                logger.info("JSON repair succeeded for '%s'", section_title[:80])
+                return repaired
+            logger.error(
+                "JSON repair returned unexpected type %s for '%s'", type(repaired).__name__, section_title[:80]
+            )
+        except Exception as repair_exc:
+            logger.error("JSON repair also failed for '%s': %s", section_title[:80], repair_exc)
+
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"LLM returned malformed JSON for '{section_title[:60]}' (error at char {exc.pos}). "
+                f"This is usually caused by unescaped characters in the output or the response being "
+                f"cut off before the JSON was complete. Check Admin → App Logs for the raw context. "
+                f"If this is a token limit issue, current max_tokens is {max_tokens}."
+            ),
         )
-        raise HTTPException(status_code=502, detail=hint)
 
 
 def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
