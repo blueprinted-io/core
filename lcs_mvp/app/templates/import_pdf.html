@@ -49,6 +49,7 @@
           {% else %}
             <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}">Continue</a>
           {% endif %}
+          <a class="btn secondary" href="/import/pdf/{{ i.id }}/download" title="Download original PDF">↓ PDF</a>
           {% if i.job_status not in ('running', 'chunking') %}
           <form method="post" action="/import/pdf/delete/{{ i.id }}"
                 onsubmit="return confirm('Delete this import and its uploaded file? This cannot be undone.')">

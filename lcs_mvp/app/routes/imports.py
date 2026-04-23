@@ -8,7 +8,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from ..config import templates, UPLOADS_DIR, DB_PATH_CTX
 from ..database import db, utc_now_iso, _workflow_domains, enforce_workflow_ref_rules, _get_llm_config, _get_system_setting, _user_domains, _active_domains, _user_id
@@ -703,6 +703,27 @@ def import_pdf_delete(request: Request, ingestion_id: str):
             pass  # best-effort; record is already gone
 
     return RedirectResponse(url="/import/pdf", status_code=303)
+
+
+@router.get("/import/pdf/{ingestion_id}/download")
+def import_pdf_download(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT file_path, filename FROM ingestions WHERE id=? AND created_by=?",
+            (ingestion_id, actor),
+        ).fetchone()
+    if not ing:
+        raise HTTPException(404)
+    file_path = ing["file_path"] or ""
+    if not file_path or not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File no longer available.")
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename=ing["filename"] or "document.pdf",
+    )
 
 
 # ---------------------------------------------------------------------------
