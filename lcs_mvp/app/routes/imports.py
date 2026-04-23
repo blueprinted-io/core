@@ -1156,13 +1156,19 @@ def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
     if not outcome:
         raise HTTPException(status_code=400, detail=f"Task import '{title}': outcome is required")
 
-    facts = obj.get("facts") or []
-    concepts = obj.get("concepts") or []
-    deps = obj.get("dependencies") or []
-    steps = obj.get("steps") or []
+    def _to_str_list(val: Any) -> list[str]:
+        if not val:
+            return []
+        if isinstance(val, str):
+            return [val]
+        if isinstance(val, list):
+            return [str(v) for v in val if v]
+        return []
 
-    if not isinstance(facts, list) or not isinstance(concepts, list) or not isinstance(deps, list):
-        raise HTTPException(status_code=400, detail=f"Task import '{title}': facts/concepts/dependencies must be lists")
+    facts = _to_str_list(obj.get("facts"))
+    concepts = _to_str_list(obj.get("concepts"))
+    deps = _to_str_list(obj.get("dependencies"))
+    steps = obj.get("steps") or []
 
     steps_norm = _normalize_steps(steps)
     _validate_steps_required(steps_norm)

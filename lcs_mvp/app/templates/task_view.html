@@ -56,19 +56,25 @@
       <p><b>Irreversible:</b> {{ 'yes' if task.irreversible_flag else 'no' }}</p>
 
       <h3>Facts</h3>
-      <ul>
-        {% for f in task.facts %}<li>{{ f }}</li>{% endfor %}
-      </ul>
+      {% if task.facts is string %}
+        <p>{{ task.facts }}</p>
+      {% else %}
+        <ul>{% for f in task.facts %}<li>{{ f }}</li>{% endfor %}</ul>
+      {% endif %}
 
       <h3>Concepts</h3>
-      <ul>
-        {% for c in task.concepts %}<li>{{ c }}</li>{% endfor %}
-      </ul>
+      {% if task.concepts is string %}
+        <p>{{ task.concepts }}</p>
+      {% else %}
+        <ul>{% for c in task.concepts %}<li>{{ c }}</li>{% endfor %}</ul>
+      {% endif %}
 
       <h3>Dependencies</h3>
-      <ul>
-        {% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}
-      </ul>
+      {% if task.dependencies is string %}
+        <p>{{ task.dependencies }}</p>
+      {% else %}
+        <ul>{% for d in task.dependencies %}<li>{{ d }}</li>{% endfor %}</ul>
+      {% endif %}
 
       <h3>Referenced by Workflows</h3>
       {% if workflows_using %}
