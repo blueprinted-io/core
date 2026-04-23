@@ -492,6 +492,28 @@ def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dic
         return {"type": "task", "confidence": 0.3, "reason": "classification failed — defaulting to task"}
 
 
+def _parse_llm_json(raw: str, section_title: str, max_tokens: int) -> dict[str, Any]:
+    """Strip code fences, parse JSON, and raise HTTPException with a helpful message on failure."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # Log the raw content so it's inspectable in the admin log viewer
+        logger.error(
+            "JSON parse failed for '%s' at char %d — raw output (first 500 chars): %s",
+            section_title[:80], exc.pos, raw[:500],
+        )
+        hint = (
+            f"Output was truncated mid-JSON (parse error at char {exc.pos}). "
+            f"This usually means max_tokens ({max_tokens}) is too low for this section. "
+            f"Increase max_tokens in Admin → LLM Provider."
+        )
+        raise HTTPException(status_code=502, detail=hint)
+
+
 def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
     """Extract schema 1.0 task fragment from a task-type chunk."""
     logger.info("Extracting tasks from '%s'", section_title[:80])
@@ -500,11 +522,7 @@ def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) 
         {"role": "system", "content": _EXTRACT_TASK_SYSTEM},
         {"role": "user", "content": user_msg},
     ], cfg)
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-    result = json.loads(raw)
+    result = _parse_llm_json(raw, section_title, int(cfg.get("llm_max_tokens") or 2000))
     if not isinstance(result.get("tasks"), list):
         result["tasks"] = []
     if not isinstance(result.get("workflows"), list):
@@ -521,11 +539,7 @@ def _llm_extract_workflow_chunk(text: str, section_title: str, cfg: dict[str, An
         {"role": "system", "content": _EXTRACT_WORKFLOW_SYSTEM},
         {"role": "user", "content": user_msg},
     ], cfg)
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-    result = json.loads(raw)
+    result = _parse_llm_json(raw, section_title, int(cfg.get("llm_max_tokens") or 2000))
     if not isinstance(result.get("tasks"), list):
         result["tasks"] = []
     if not isinstance(result.get("workflows"), list):
