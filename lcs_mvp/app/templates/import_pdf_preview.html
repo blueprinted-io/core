@@ -31,31 +31,103 @@
 <form method="post" action="/import/pdf/commit" class="card">
   <input type="hidden" name="ingestion_id" value="{{ ingestion.id }}" />
 
-  <h2>Task candidates</h2>
-  <p class="muted">Select items to create as <b>draft</b>. Possible duplicates are allowed but flagged.</p>
+  <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px">
+    <h2 style="margin:0">Task candidates</h2>
+    <p class="muted" style="margin:0">Select items to create as <b>draft</b>. Click a title to preview content. Possible duplicates are allowed but flagged.</p>
+  </div>
 
   <table class="table">
     <thead>
       <tr>
-        <th style="width:34px"></th>
+        <th style="width:34px">
+          <input type="checkbox" id="select-all" title="Select / deselect all" />
+        </th>
         <th>Title</th>
-        <th>Pages</th>
-        <th>Dup signals</th>
+        <th style="width:90px">Pages</th>
+        <th style="width:200px">Dup signals</th>
       </tr>
     </thead>
     <tbody>
       {% for c in candidates %}
       <tr>
-        <td><input type="checkbox" name="candidate_id" value="{{ c.id }}" /></td>
-        <td>{{ c.title }}</td>
-        <td class="muted">{{ c.pages }}</td>
+        <td style="vertical-align:top; padding-top:10px">
+          <input type="checkbox" name="candidate_id" value="{{ c.id }}" class="candidate-cb" />
+        </td>
         <td>
+          <details>
+            <summary style="cursor:pointer; font-weight:500; list-style:none; display:flex; align-items:center; gap:6px">
+              <span style="font-size:0.75em; color:var(--muted); flex-shrink:0">▶</span>
+              {{ c.title }}
+            </summary>
+            <div style="margin-top:10px; padding:10px 12px; background:var(--panel,#f8f8f8); border-radius:4px; font-size:0.875em">
+
+              {% if c.task.outcome %}
+                <p style="margin:0 0 8px"><b>Outcome:</b> {{ c.task.outcome }}</p>
+              {% endif %}
+
+              {% if c.task.software_name or c.task.software_version %}
+                <p style="margin:0 0 8px" class="muted">
+                  {% if c.task.software_name %}<b>Product:</b> {{ c.task.software_name }}{% endif %}
+                  {% if c.task.software_version %} · <b>Version:</b> {{ c.task.software_version }}{% endif %}
+                </p>
+              {% endif %}
+
+              {% if c.task.facts %}
+                <p style="margin:0 0 4px"><b>Facts</b></p>
+                <ul style="margin:0 0 8px; padding-left:18px">
+                  {% if c.task.facts is string %}
+                    <li>{{ c.task.facts }}</li>
+                  {% else %}
+                    {% for f in c.task.facts %}<li>{{ f }}</li>{% endfor %}
+                  {% endif %}
+                </ul>
+              {% endif %}
+
+              {% if c.task.concepts %}
+                <p style="margin:0 0 4px"><b>Concepts</b></p>
+                {% if c.task.concepts is string %}
+                  <p style="margin:0 0 8px">{{ c.task.concepts }}</p>
+                {% else %}
+                  {% for con in c.task.concepts %}
+                    <p style="margin:0 0 8px">{{ con }}</p>
+                  {% endfor %}
+                {% endif %}
+              {% endif %}
+
+              {% if c.task.dependencies %}
+                <p style="margin:0 0 4px"><b>Dependencies</b></p>
+                <ul style="margin:0 0 8px; padding-left:18px">
+                  {% if c.task.dependencies is string %}
+                    <li>{{ c.task.dependencies }}</li>
+                  {% else %}
+                    {% for d in c.task.dependencies %}<li>{{ d }}</li>{% endfor %}
+                  {% endif %}
+                </ul>
+              {% endif %}
+
+              {% if c.task.steps %}
+                <p style="margin:0 0 6px"><b>Steps ({{ c.task.steps | length }})</b></p>
+                <ol style="margin:0; padding-left:18px">
+                  {% for st in c.task.steps %}
+                    <li style="margin-bottom:4px">
+                      {{ st.text }}
+                      {% if st.completion %}<span class="muted"> → {{ st.completion }}</span>{% endif %}
+                    </li>
+                  {% endfor %}
+                </ol>
+              {% endif %}
+
+            </div>
+          </details>
+        </td>
+        <td class="muted" style="vertical-align:top; padding-top:10px">{{ c.pages }}</td>
+        <td style="vertical-align:top; padding-top:10px">
           {% if c.dup_matches %}
             {% for m in c.dup_matches %}
-              <div class="muted">{{ m.kind }} dup: <code>{{ m.record_id[:8] }}…</code> ({{ m.score }})</div>
+              <div class="muted" style="font-size:0.85em">{{ m.kind }}: <code>{{ m.record_id[:8] }}…</code> ({{ m.score }})</div>
             {% endfor %}
           {% else %}
-            <span class="muted">none</span>
+            <span class="muted">—</span>
           {% endif %}
         </td>
       </tr>
@@ -64,7 +136,7 @@
   </table>
 
   {% if workflows %}
-  <h2 style="margin-top:18px">Workflow candidates</h2>
+  <h2 style="margin-top:24px">Workflow candidates</h2>
   <p class="muted">Workflows extracted from workflow-type sections will be committed automatically alongside their tasks.</p>
   <table class="table">
     <thead>
@@ -92,4 +164,32 @@
   </div>
 </form>
 {% endif %}
+
+<script>
+  var selectAll = document.getElementById('select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      document.querySelectorAll('.candidate-cb').forEach(function (cb) {
+        cb.checked = selectAll.checked;
+      });
+    });
+    // Keep select-all in sync when individual boxes change
+    document.querySelectorAll('.candidate-cb').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var all = document.querySelectorAll('.candidate-cb');
+        var checked = document.querySelectorAll('.candidate-cb:checked');
+        selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+        selectAll.checked = checked.length === all.length;
+      });
+    });
+  }
+
+  // Rotate the ▶ arrow when a details element opens
+  document.querySelectorAll('details').forEach(function (el) {
+    el.addEventListener('toggle', function () {
+      var arrow = el.querySelector('summary span');
+      if (arrow) arrow.textContent = el.open ? '▼' : '▶';
+    });
+  });
+</script>
 {% endblock %}

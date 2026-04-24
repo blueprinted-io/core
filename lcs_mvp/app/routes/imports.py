@@ -911,6 +911,7 @@ def import_pdf_review(request: Request, ingestion_id: str):
             "chunk_index": c["chunk_index"],
             "pages": c["pages"],
             "dup_matches": near_matches,
+            "task": t,
         })
 
     skipped_note = f"{errored} section(s) could not be processed (timeout or error)." if errored else ""
