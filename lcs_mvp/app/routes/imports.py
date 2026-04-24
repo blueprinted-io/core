@@ -1034,7 +1034,12 @@ def _commit_schema10_payload(
         deps = t.get("dependencies") or []
         steps = t.get("steps") or []
         steps_norm = _normalize_steps(steps)
-        _validate_steps_required(steps_norm)
+        if not steps_norm:
+            logger.warning(
+                "Skipping task '%s' during commit (ingestion=%s): no steps extracted",
+                title[:80], ingestion_id[:8],
+            )
+            continue
 
         if "irreversible" in t:
             irrev = 1 if t["irreversible"] else 0

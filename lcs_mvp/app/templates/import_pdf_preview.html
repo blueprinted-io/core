@@ -58,6 +58,7 @@
             <summary style="cursor:pointer; font-weight:500; list-style:none; display:flex; align-items:center; gap:6px">
               <span style="font-size:0.75em; color:var(--muted); flex-shrink:0">▶</span>
               {{ c.title }}
+              {% if not c.task.steps %}<span class="badge badge-warn" style="margin-left:4px; font-size:0.75em; font-weight:normal">no steps — will be skipped</span>{% endif %}
             </summary>
             <div style="margin-top:10px; padding:10px 12px; background:var(--panel,#f8f8f8); border-radius:4px; font-size:0.875em">
 
