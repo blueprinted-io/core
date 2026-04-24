@@ -1050,11 +1050,11 @@ def _commit_schema10_payload(
             """INSERT INTO tasks(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
-              irreversible_flag, task_assets_json, domain, software_version,
+              irreversible_flag, task_assets_json, domain, software_name, software_version,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item["record_id"], 1, initial_status,
                 title, outcome,
@@ -1066,6 +1066,7 @@ def _commit_schema10_payload(
                 irrev,
                 _json_dump(assets),
                 domain,
+                t.get("software_name") or None,
                 t.get("software_version") or None,
                 now, now, actor, actor,
                 None, None,
@@ -1206,6 +1207,7 @@ def _parse_task_json(obj: dict[str, Any]) -> dict[str, Any]:
         "title": title,
         "outcome": outcome,
         "procedure_name": procedure_name,
+        "software_name": str(obj["software_name"]).strip() or None if obj.get("software_name") else None,
         "software_version": str(obj["software_version"]).strip() or None if obj.get("software_version") else None,
         "facts": [str(x) for x in facts],
         "concepts": [str(x) for x in concepts],
@@ -1335,11 +1337,11 @@ def import_json_run(
                   record_id, version, status,
                   title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
                   irreversible_flag, task_assets_json,
-                  domain, software_version,
+                  domain, software_name, software_version,
                   created_at, updated_at, created_by, updated_by,
                   reviewed_at, reviewed_by, change_note,
                   needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     item["record_id"],
@@ -1355,6 +1357,7 @@ def import_json_run(
                     item["irreversible_flag"],
                     _json_dump(item["task_assets"]),
                     "",
+                    item.get("software_name"),
                     item.get("software_version"),
                     now,
                     now,

@@ -40,6 +40,15 @@
         {% endfor %}
       </select>
 
+      {% if software_names %}
+      <select name="sn">
+        <option value="">All products</option>
+        {% for n in software_names %}
+          <option value="{{ n }}" {% if sn == n %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+
       {% if software_versions %}
       <select name="sv">
         <option value="">All versions</option>

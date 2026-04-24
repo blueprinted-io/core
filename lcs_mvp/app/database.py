@@ -494,6 +494,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN needs_review_note TEXT")
         if not _column_exists(conn, "tasks", "software_version"):
             conn.execute("ALTER TABLE tasks ADD COLUMN software_version TEXT")
+        if not _column_exists(conn, "tasks", "software_name"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN software_name TEXT")
         if not _column_exists(conn, "workflows", "needs_review_flag"):
             conn.execute("ALTER TABLE workflows ADD COLUMN needs_review_flag INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "workflows", "needs_review_note"):
