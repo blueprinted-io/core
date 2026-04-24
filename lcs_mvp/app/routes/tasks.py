@@ -18,10 +18,11 @@ router = APIRouter()
 
 
 @router.get("/tasks", response_class=HTMLResponse)
-def tasks_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None):
+def tasks_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None, sv: str | None = None):
     q_norm = (q or "").strip().lower()
     domain_norm = (domain or "").strip().lower() or None
     tag_norm = (tag or "").strip().lower() or None
+    sv_norm = (sv or "").strip().lower() or None
 
     with db() as conn:
         sql = "SELECT record_id, MAX(version) AS latest_version FROM tasks GROUP BY record_id ORDER BY record_id"
@@ -30,6 +31,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
         # Option lists (for dropdown filters)
         domains = _active_domains(conn)
         all_tags: set[str] = set()
+        all_svs: set[str] = set()
 
         items = []
         for r in rows:
@@ -56,15 +58,20 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
 
             tags = [str(x).strip().lower() for x in (_json_load(latest["tags_json"]) if "tags_json" in latest.keys() else [])]
             domain_val = (latest["domain"] if "domain" in latest.keys() else "")
+            sv_val = (latest["software_version"] if "software_version" in latest.keys() else None) or ""
 
             for t in tags:
                 if t:
                     all_tags.add(t)
+            if sv_val:
+                all_svs.add(sv_val)
 
             # Apply filters
             if domain_norm and (domain_val or "").strip().lower() != domain_norm:
                 continue
             if tag_norm and tag_norm not in set(tags):
+                continue
+            if sv_norm and sv_val.strip().lower() != sv_norm:
                 continue
 
             # Returned-for-changes signal: does this version have a return note?
@@ -86,6 +93,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
                     "update_pending_confirmation": update_pending,
                     "tags": tags,
                     "domain": domain_val,
+                    "software_version": sv_val,
                     "has_return_note": has_return_note,
                 }
             )
@@ -99,8 +107,10 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
             "q": q,
             "domain": domain_norm or "",
             "tag": tag_norm or "",
+            "sv": sv_norm or "",
             "domains": domains,
             "tags": sorted(all_tags),
+            "software_versions": sorted(all_svs),
         },
     )
 
@@ -123,6 +133,7 @@ def task_create(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    software_version: str = Form(""),
     domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
@@ -164,12 +175,12 @@ def task_create(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain,
+              domain, software_version,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -185,6 +196,7 @@ def task_create(
                 1 if irreversible_flag else 0,
                 _json_dump([]),
                 domain_norm,
+                software_version.strip() or None,
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -327,6 +339,7 @@ def task_save(
     title: str = Form(...),
     outcome: str = Form(...),
     procedure_name: str = Form(...),
+    software_version: str = Form(""),
     domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
@@ -388,12 +401,12 @@ def task_save(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain,
+              domain, software_version,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -409,6 +422,7 @@ def task_save(
                 1 if irreversible_flag else 0,
                 src["task_assets_json"],
                 (domain or "").strip().lower(),
+                software_version.strip() or None,
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -453,12 +467,12 @@ def task_new_version(request: Request, record_id: str, version: int):
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain,
+              domain, software_version,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -474,6 +488,7 @@ def task_new_version(request: Request, record_id: str, version: int):
                 src["irreversible_flag"],
                 src["task_assets_json"],
                 (src["domain"] if "domain" in src.keys() else ""),
+                (src["software_version"] if "software_version" in src.keys() else None),
                 "[]",  # Phase 1: tasks are tagless.
                 (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,

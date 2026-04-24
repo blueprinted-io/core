@@ -40,6 +40,15 @@
         {% endfor %}
       </select>
 
+      {% if software_versions %}
+      <select name="sv">
+        <option value="">All versions</option>
+        {% for v in software_versions %}
+          <option value="{{ v }}" {% if sv == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+
       <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
       <button class="btn" type="submit">Apply</button>
     </form>

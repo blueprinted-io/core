@@ -22,6 +22,9 @@
   <label>Procedure name</label>
   <input name="procedure_name" value="{{ task.procedure_name if task else '' }}" required />
 
+  <label>Software version <span class="muted" style="font-weight:normal">(optional — the version this content was written for, e.g. "6.1" or "22.04 LTS")</span></label>
+  <input name="software_version" value="{{ task.software_version if task and task.software_version else '' }}" style="max-width:240px" />
+
   <label>Domain</label>
   <select name="domain">
     <option value="" {% if not task or not task.domain %}selected{% endif %}>(unassigned)</option>

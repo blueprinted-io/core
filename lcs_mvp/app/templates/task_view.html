@@ -130,6 +130,9 @@
           <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
           <div style="margin-top:10px">
             <p class="muted">record_id=<code>{{ task.record_id }}</code> · version=<code>{{ task.version }}</code></p>
+            {% if task.software_version %}
+              <p class="muted">software_version=<code>{{ task.software_version }}</code></p>
+            {% endif %}
             <p class="muted">created_by={{ task.created_by }} · created_at={{ task.created_at }}</p>
             <p class="muted">updated_by={{ task.updated_by }} · updated_at={{ task.updated_at }}</p>
             {% if task.reviewed_by %}
