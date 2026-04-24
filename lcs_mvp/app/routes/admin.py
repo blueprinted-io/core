@@ -452,13 +452,17 @@ def admin_rules(request: Request):
 def admin_rules_save(
     request: Request,
     auto_submit_on_import: str = Form("false"),
+    import_select_all: str = Form("false"),
 ):
     require_admin(request)
     if auto_submit_on_import not in ("true", "false"):
         raise HTTPException(status_code=400, detail="Invalid auto_submit_on_import value")
+    if import_select_all not in ("true", "false"):
+        raise HTTPException(status_code=400, detail="Invalid import_select_all value")
     actor = request.state.user
     with db() as conn:
         _set_system_setting(conn, "auto_submit_on_import", auto_submit_on_import, actor)
+        _set_system_setting(conn, "import_select_all", import_select_all, actor)
     return RedirectResponse(url="/admin/rules", status_code=303)
 
 

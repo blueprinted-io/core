@@ -597,6 +597,7 @@ def _get_app_settings(conn: sqlite3.Connection) -> dict:
     """Return operational settings dict with safe defaults."""
     return {
         "auto_submit_on_import": (_get_system_setting(conn, "auto_submit_on_import", "false") or "false") == "true",
+        "import_select_all": (_get_system_setting(conn, "import_select_all", "false") or "false") == "true",
     }
 
 

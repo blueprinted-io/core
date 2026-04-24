@@ -16,6 +16,14 @@
         <span class="muted" style="display:block; font-size:0.875em">When enabled, imported records are created as <em>submitted</em> (ready for review) instead of <em>draft</em>. Useful when the import source is trusted and a draft review step is unnecessary.</span>
       </span>
     </label>
+
+    <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; margin-top:14px">
+      <input type="checkbox" name="import_select_all" value="true" {% if settings.import_select_all %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
+      <span>
+        <strong>Show "Select all" on section picker</strong>
+        <span class="muted" style="display:block; font-size:0.875em">Shows a <em>Select all</em> / <em>Deselect all</em> control on the PDF import section picker. Disabled by default — intended for testing edge cases only. Selecting every section in a large document will submit the entire document to the LLM.</span>
+      </span>
+    </label>
   </div>
 
   <div>

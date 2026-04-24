@@ -60,8 +60,10 @@
       </div>
       {% endif %}
 
+      {% if show_select_all %}
       <button type="button" class="btn secondary" style="font-size:0.8em; padding:4px 10px" onclick="toggleAll(true)">Select all</button>
       <button type="button" class="btn secondary" style="font-size:0.8em; padding:4px 10px" onclick="toggleAll(false)">Deselect all</button>
+      {% endif %}
       <span id="sel-count" class="muted" style="font-size:0.85em">0 selected</span>
     </div>
 

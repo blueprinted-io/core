@@ -238,6 +238,9 @@ def import_pdf_sections(request: Request, ingestion_id: str, mode: str = Query("
             (ingestion_id,),
         ).fetchall()
 
+        from ..database import _get_app_settings
+        show_select_all = _get_app_settings(conn).get("import_select_all", False)
+
     has_toc = any((r["section_title"] or "").strip() for r in chunks)
 
     sections = []
@@ -291,6 +294,7 @@ def import_pdf_sections(request: Request, ingestion_id: str, mode: str = Query("
             "ingestion_id": ingestion_id,
             "job_status": job_status,
             "is_resume": is_resume,
+            "show_select_all": show_select_all,
         },
     )
 
