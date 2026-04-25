@@ -68,7 +68,7 @@
          ondragover="poolDragOver(event)" ondrop="poolDrop(event)" ondragleave="poolDragLeave(event)">
       <div class="muted" style="font-size:0.82em; margin-bottom:6px">Unassigned screenshots — drag to a step</div>
       <div id="pool-tiles" style="display:flex; flex-wrap:wrap; gap:8px; min-height:60px">
-        {% set assigned_urls = task.steps | map(attribute='screenshot') | select('string') | list if task and task.steps else [] %}
+        {% set assigned_urls = task.steps | map(attribute='screenshots') | sum(start=[]) | list if task and task.steps else [] %}
         {% for img in task_images %}
           {% if img.url not in assigned_urls %}
           <div class="ss-tile" draggable="true"
@@ -100,25 +100,29 @@
       <tbody id="steps-body">
         {% if task and task.steps %}
           {% for st in task.steps %}
+            {% set st_shots = st.screenshots if st.screenshots is defined else ([st.screenshot] if st.screenshot else []) %}
             <tr>
               <td><textarea name="step_text" rows="2" placeholder="What you are doing (intent)">{{ st.text }}</textarea></td>
               <td><textarea name="step_actions" rows="2" placeholder="How to do it (optional, tool-specific)">{% if st.actions %}{{ st.actions|join('\n') }}{% endif %}</textarea></td>
               <td><textarea name="step_notes" rows="2" placeholder="Rare: caveats/alternatives (not instructions)">{{ st.notes if st.notes else '' }}</textarea></td>
               <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)">{{ st.completion }}</textarea></td>
               <td class="ss-drop-zone" ondragover="zoneDragOver(event)" ondrop="zoneDrop(event)" ondragleave="zoneDragLeave(event)">
-                <input type="hidden" name="step_screenshot" value="{{ st.screenshot or '' }}">
-                {% if st.screenshot %}
-                <div class="ss-tile ss-assigned" draggable="true"
-                     data-url="{{ st.screenshot }}"
-                     data-label="{{ task_images | selectattr('url','equalto',st.screenshot) | map(attribute='label') | first | default('screenshot') }}"
-                     ondragstart="tileDragStart(event)" ondragend="tileDragEnd(event)">
-                  <img src="{{ st.screenshot }}" alt="screenshot"
-                       style="max-width:110px; max-height:82px; border-radius:3px; object-fit:contain; display:block; pointer-events:none">
-                  <button type="button" class="ss-remove" onclick="removeZoneScreenshot(this)" title="Remove">×</button>
+                <input type="hidden" name="step_screenshots_json" class="ss-json" value="{{ st_shots | tojson }}">
+                <div class="ss-tiles-container">
+                  {% for url in st_shots %}
+                  <div class="ss-tile ss-assigned" draggable="true"
+                       data-url="{{ url }}"
+                       data-label="{{ task_images | selectattr('url','equalto',url) | map(attribute='label') | first | default('screenshot') }}"
+                       ondragstart="tileDragStart(event)" ondragend="tileDragEnd(event)">
+                    <img src="{{ url }}" alt="screenshot"
+                         style="max-width:90px; max-height:68px; border-radius:3px; object-fit:contain; display:block; pointer-events:none">
+                    <button type="button" class="ss-remove" onclick="removeZoneScreenshot(this)" title="Remove">×</button>
+                  </div>
+                  {% endfor %}
+                  {% if not st_shots %}
+                  <div class="ss-empty">Drop screenshots here</div>
+                  {% endif %}
                 </div>
-                {% else %}
-                <div class="ss-empty">Drop screenshot here</div>
-                {% endif %}
               </td>
               <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
             </tr>
@@ -130,8 +134,10 @@
             <td><textarea name="step_notes" rows="2" placeholder="Rare: caveats/alternatives (not instructions)"></textarea></td>
             <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)"></textarea></td>
             <td class="ss-drop-zone" ondragover="zoneDragOver(event)" ondrop="zoneDrop(event)" ondragleave="zoneDragLeave(event)">
-              <input type="hidden" name="step_screenshot" value="">
-              <div class="ss-empty">Drop screenshot here</div>
+              <input type="hidden" name="step_screenshots_json" class="ss-json" value="[]">
+              <div class="ss-tiles-container">
+                <div class="ss-empty">Drop screenshots here</div>
+              </div>
             </td>
             <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
           </tr>
@@ -200,6 +206,13 @@
   vertical-align: middle;
   min-width: 120px;
 }
+.ss-tiles-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 52px;
+  align-items: flex-start;
+}
 .ss-empty {
   border: 1px dashed var(--border, #e5e7eb);
   border-radius: 4px;
@@ -207,14 +220,14 @@
   color: var(--muted, #9ca3af);
   font-size: 0.78em;
   text-align: center;
+  width: 100%;
   min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s, border-color 0.15s;
 }
-.ss-drop-zone.drag-over .ss-empty,
-.ss-drop-zone.drag-over .ss-tile {
+.ss-drop-zone.drag-over .ss-tiles-container {
   outline: 2px solid var(--primary, #2563eb);
   border-radius: 4px;
 }
@@ -222,10 +235,10 @@
 
 <script>
 // ── Drag state ────────────────────────────────────────────────────────────────
-let _dragTile = null;       // the DOM element being dragged
+let _dragTile = null;
 let _dragUrl = '';
 let _dragLabel = '';
-let _sourceZone = null;     // ss-drop-zone td the tile came from (null = pool)
+let _sourceZone = null;  // null = came from pool
 
 function tileDragStart(e) {
   _dragTile = e.currentTarget;
@@ -238,10 +251,7 @@ function tileDragStart(e) {
 }
 function tileDragEnd(e) {
   if (_dragTile) _dragTile.classList.remove('dragging');
-  _dragTile = null;
-  _dragUrl = '';
-  _dragLabel = '';
-  _sourceZone = null;
+  _dragTile = null; _dragUrl = ''; _dragLabel = ''; _sourceZone = null;
 }
 
 // ── Pool ──────────────────────────────────────────────────────────────────────
@@ -257,9 +267,9 @@ function poolDragLeave(e) {
 function poolDrop(e) {
   e.preventDefault();
   document.getElementById('screenshot-pool').classList.remove('drag-over');
-  if (!_dragUrl || !_sourceZone) return; // already in pool, nothing to do
-  // Move tile back to pool
-  returnTileToPool(_dragUrl, _dragLabel, _sourceZone);
+  if (!_dragUrl || !_sourceZone) return;
+  removeTileFromZone(_dragTile, _sourceZone);
+  addTileToPool(_dragUrl, _dragLabel);
 }
 
 // ── Drop zones ────────────────────────────────────────────────────────────────
@@ -269,105 +279,83 @@ function zoneDragOver(e) {
   e.dataTransfer.dropEffect = 'move';
   e.currentTarget.classList.add('drag-over');
 }
-function zoneDragLeave(e) {
-  e.currentTarget.classList.remove('drag-over');
-}
+function zoneDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
 function zoneDrop(e) {
   e.preventDefault();
   const zone = e.currentTarget;
   zone.classList.remove('drag-over');
   if (!_dragUrl) return;
+  if (_sourceZone === zone) return;  // same zone, no-op
 
-  const url = _dragUrl;
-  const label = _dragLabel;
-  const prevZone = _sourceZone;
+  // Check if this URL is already in the target zone
+  const container = zone.querySelector('.ss-tiles-container');
+  if (container && container.querySelector('[data-url="' + CSS.escape(_dragUrl) + '"]')) return;
 
-  // If dropping on the same zone, do nothing
-  if (prevZone === zone) return;
-
-  // If the target zone already has a screenshot, displace it back to pool
-  const existingHidden = zone.querySelector('input[name="step_screenshot"]');
-  const existingUrl = existingHidden ? existingHidden.value : '';
-  const existingLabel = existingUrl
-    ? (zone.querySelector('.ss-tile') ? zone.querySelector('.ss-tile').dataset.label : '') : '';
-
-  // Assign to target zone
-  assignToZone(zone, url, label);
-
-  // Clear the source
-  if (prevZone) {
-    // Came from another step zone — leave that zone empty (or fill with displaced image)
-    if (existingUrl) {
-      assignToZone(prevZone, existingUrl, existingLabel);
-    } else {
-      clearZone(prevZone);
-    }
+  if (_sourceZone) {
+    // Move from one zone to another
+    removeTileFromZone(_dragTile, _sourceZone);
   } else {
-    // Came from pool — remove tile from pool
-    removeTileFromPool(url);
-    // If there was something displaced from target, return it to pool
-    if (existingUrl) {
-      addTileToPool(existingUrl, existingLabel);
-    }
+    // From pool
+    removeTileFromPool(_dragUrl);
   }
+  appendTileToZone(zone, _dragUrl, _dragLabel);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function assignToZone(zone, url, label) {
-  const hidden = zone.querySelector('input[name="step_screenshot"]');
-  if (hidden) hidden.value = url;
-  // Replace zone content with tile
-  let tile = zone.querySelector('.ss-tile');
-  if (!tile) {
-    // Remove empty placeholder
-    const empty = zone.querySelector('.ss-empty');
-    if (empty) empty.remove();
-    tile = document.createElement('div');
-    tile.className = 'ss-tile ss-assigned';
-    tile.setAttribute('draggable', 'true');
-    tile.ondragstart = tileDragStart;
-    tile.ondragend = tileDragEnd;
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'ss-remove';
-    removeBtn.title = 'Remove';
-    removeBtn.textContent = '×';
-    removeBtn.onclick = function() { removeZoneScreenshot(this); };
-    tile.appendChild(removeBtn);
-    const img = document.createElement('img');
-    img.style.cssText = 'max-width:110px;max-height:82px;border-radius:3px;object-fit:contain;display:block;pointer-events:none';
-    img.alt = 'screenshot';
-    tile.appendChild(img);
-    zone.appendChild(tile);
-  }
+function syncZoneJson(zone) {
+  const hidden = zone.querySelector('.ss-json');
+  if (!hidden) return;
+  const urls = [...zone.querySelectorAll('.ss-tiles-container .ss-tile')].map(t => t.dataset.url);
+  hidden.value = JSON.stringify(urls);
+}
+
+function appendTileToZone(zone, url, label) {
+  const container = zone.querySelector('.ss-tiles-container');
+  if (!container) return;
+  const empty = container.querySelector('.ss-empty');
+  if (empty) empty.remove();
+
+  const tile = document.createElement('div');
+  tile.className = 'ss-tile ss-assigned';
+  tile.setAttribute('draggable', 'true');
   tile.dataset.url = url;
   tile.dataset.label = label || '';
-  const img = tile.querySelector('img');
-  if (img) { img.src = url; img.alt = label || 'screenshot'; }
+  tile.ondragstart = tileDragStart;
+  tile.ondragend = tileDragEnd;
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'ss-remove';
+  removeBtn.title = 'Remove';
+  removeBtn.textContent = '×';
+  removeBtn.onclick = function() { removeZoneScreenshot(this); };
+  tile.appendChild(removeBtn);
+
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = label || 'screenshot';
+  img.style.cssText = 'max-width:90px;max-height:68px;border-radius:3px;object-fit:contain;display:block;pointer-events:none';
+  tile.appendChild(img);
+
+  container.appendChild(tile);
+  syncZoneJson(zone);
 }
 
-function clearZone(zone) {
-  const hidden = zone.querySelector('input[name="step_screenshot"]');
-  if (hidden) hidden.value = '';
-  const tile = zone.querySelector('.ss-tile');
-  if (tile) tile.remove();
-  if (!zone.querySelector('.ss-empty')) {
+function removeTileFromZone(tile, zone) {
+  tile.remove();
+  const container = zone.querySelector('.ss-tiles-container');
+  if (container && !container.querySelector('.ss-tile')) {
     const empty = document.createElement('div');
     empty.className = 'ss-empty';
-    empty.textContent = 'Drop screenshot here';
-    zone.appendChild(empty);
+    empty.textContent = 'Drop screenshots here';
+    container.appendChild(empty);
   }
-}
-
-function returnTileToPool(url, label, zone) {
-  clearZone(zone);
-  addTileToPool(url, label);
+  syncZoneJson(zone);
 }
 
 function addTileToPool(url, label) {
   const pool = document.getElementById('pool-tiles');
   if (!pool) return;
-  // Don't add duplicates
   if (pool.querySelector('[data-url="' + CSS.escape(url) + '"]')) return;
   const tile = document.createElement('div');
   tile.className = 'ss-tile';
@@ -377,13 +365,10 @@ function addTileToPool(url, label) {
   tile.ondragstart = tileDragStart;
   tile.ondragend = tileDragEnd;
   const hidden = document.createElement('input');
-  hidden.type = 'hidden';
-  hidden.name = 'kept_image';
-  hidden.value = url;
+  hidden.type = 'hidden'; hidden.name = 'kept_image'; hidden.value = url;
   tile.appendChild(hidden);
   const img = document.createElement('img');
-  img.src = url;
-  img.alt = label || '';
+  img.src = url; img.alt = label || '';
   img.style.cssText = 'max-width:90px;max-height:68px;border-radius:3px;object-fit:contain;display:block;pointer-events:none';
   tile.appendChild(img);
   const lbl = document.createElement('div');
@@ -391,10 +376,8 @@ function addTileToPool(url, label) {
   lbl.textContent = label || '';
   tile.appendChild(lbl);
   const delBtn = document.createElement('button');
-  delBtn.type = 'button';
-  delBtn.className = 'ss-delete';
-  delBtn.title = 'Delete screenshot';
-  delBtn.textContent = '×';
+  delBtn.type = 'button'; delBtn.className = 'ss-delete';
+  delBtn.title = 'Delete screenshot'; delBtn.textContent = '×';
   delBtn.onclick = function() { deleteFromPool(this); };
   tile.appendChild(delBtn);
   pool.appendChild(tile);
@@ -419,7 +402,8 @@ function removeZoneScreenshot(btn) {
   if (!zone) return;
   const url = tile.dataset.url;
   const label = tile.dataset.label;
-  returnTileToPool(url, label, zone);
+  removeTileFromZone(tile, zone);
+  addTileToPool(url, label);
 }
 
 // ── Steps table ───────────────────────────────────────────────────────────────
@@ -432,8 +416,10 @@ function addStep() {
     <td><textarea name="step_notes" rows="2" placeholder="Rare: caveats/alternatives (not instructions)"></textarea></td>
     <td><textarea name="step_completion" rows="2" required placeholder="How you prove it's done (required)"></textarea></td>
     <td class="ss-drop-zone" ondragover="zoneDragOver(event)" ondrop="zoneDrop(event)" ondragleave="zoneDragLeave(event)">
-      <input type="hidden" name="step_screenshot" value="">
-      <div class="ss-empty">Drop screenshot here</div>
+      <input type="hidden" name="step_screenshots_json" class="ss-json" value="[]">
+      <div class="ss-tiles-container">
+        <div class="ss-empty">Drop screenshots here</div>
+      </div>
     </td>
     <td><button class="btn secondary" type="button" onclick="removeRow(this)">x</button></td>
   `;
@@ -444,18 +430,22 @@ function removeRow(btn) {
   const tr = btn.closest('tr');
   if (!tr) return;
   const body = document.getElementById('steps-body');
-  // Return any assigned screenshot to the pool before removing the row
   const zone = tr.querySelector('.ss-drop-zone');
   if (zone) {
-    const hidden = zone.querySelector('input[name="step_screenshot"]');
-    const tile = zone.querySelector('.ss-tile');
-    if (hidden && hidden.value) {
-      addTileToPool(hidden.value, tile ? tile.dataset.label : '');
-    }
+    // Return all screenshots assigned to this step back to the pool
+    zone.querySelectorAll('.ss-tile').forEach(tile => {
+      addTileToPool(tile.dataset.url, tile.dataset.label);
+    });
   }
   if (body.children.length <= 1) {
     tr.querySelectorAll('textarea').forEach(t => t.value = '');
-    clearZone(zone);
+    if (zone) {
+      const container = zone.querySelector('.ss-tiles-container');
+      if (container) {
+        container.innerHTML = '<div class="ss-empty">Drop screenshots here</div>';
+        syncZoneJson(zone);
+      }
+    }
     return;
   }
   tr.remove();

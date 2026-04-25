@@ -157,7 +157,7 @@ def task_create(
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
     step_notes: list[str] = Form([]),
-    step_screenshot: list[str] = Form([]),
+    step_screenshots_json: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
 ):
     require(request.state.role, "task:create")
@@ -171,7 +171,7 @@ def task_create(
     # Phase 1: tasks are intentionally tagless (workflow-only tags model).
     tags_list: list[str] = []
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshot)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshots_json)
     _validate_steps_required(steps_list)
 
     warnings = lint_steps(steps_list)
@@ -292,7 +292,7 @@ def task_view(request: Request, record_id: str, version: int):
 
     # Check for unassigned screenshots (blocks confirmation)
     image_urls = {a["url"] for a in task["assets"] if a.get("type") == "image"}
-    assigned_urls = {s.get("screenshot") for s in task["steps"] if s.get("screenshot")}
+    assigned_urls = {url for s in task["steps"] for url in (s.get("screenshots") or [])}
     unassigned_images = len(image_urls - assigned_urls)
 
     return templates.TemplateResponse(
@@ -376,7 +376,7 @@ def task_save(
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
     step_notes: list[str] = Form([]),
-    step_screenshot: list[str] = Form([]),
+    step_screenshots_json: list[str] = Form([]),
     kept_image: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
     change_note: str = Form(""),
@@ -394,7 +394,7 @@ def task_save(
     # Phase 1: tasks are intentionally tagless (workflow-only tags model).
     tags_list: list[str] = []
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshot)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshots_json)
     _validate_steps_required(steps_list)
 
     note = change_note.strip()
@@ -425,7 +425,9 @@ def task_save(
 
         # Filter assets: keep non-image assets always; keep image assets only if
         # the user left them in the pool (kept_image) or assigned to a step.
-        kept_set = set(kept_image) | {s for s in step_screenshot if s}
+        import json as _json
+        all_step_shots = [u for ssj in step_screenshots_json for u in (_json.loads(ssj or "[]") if ssj else []) if isinstance(u, str) and u]
+        kept_set = set(kept_image) | set(all_step_shots)
         src_assets = _json_load((src["task_assets_json"] if "task_assets_json" in src.keys() else None) or "[]") or []
         new_assets = [a for a in src_assets if a.get("type") != "image" or a.get("url") in kept_set]
 
@@ -665,7 +667,7 @@ def task_confirm(request: Request, record_id: str, version: int):
         image_urls = {a["url"] for a in assets if a.get("type") == "image"}
         if image_urls:
             steps = _normalize_steps(_json_load((row["steps_json"] if "steps_json" in row.keys() else None) or "[]") or [])
-            assigned_urls = {s["screenshot"] for s in steps if s.get("screenshot")}
+            assigned_urls = {url for s in steps for url in (s.get("screenshots") or [])}
             unassigned = image_urls - assigned_urls
             if unassigned:
                 raise HTTPException(

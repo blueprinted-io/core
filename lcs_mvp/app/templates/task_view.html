@@ -129,11 +129,16 @@
                 {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
               </td>
               <td>
-                {% if st.screenshot %}
-                <a href="{{ st.screenshot }}" target="_blank" rel="noopener">
-                  <img src="{{ st.screenshot }}" alt="step screenshot"
-                       style="max-width:160px; max-height:120px; border:1px solid var(--border); border-radius:3px; object-fit:contain; display:block">
-                </a>
+                {% set shots = st.screenshots if st.screenshots is defined else ([st.screenshot] if st.screenshot else []) %}
+                {% if shots %}
+                <div style="display:flex; flex-wrap:wrap; gap:4px">
+                  {% for url in shots %}
+                  <a href="{{ url }}" target="_blank" rel="noopener">
+                    <img src="{{ url }}" alt="step screenshot"
+                         style="max-width:140px; max-height:105px; border:1px solid var(--border); border-radius:3px; object-fit:contain; display:block">
+                  </a>
+                  {% endfor %}
+                </div>
                 {% else %}
                 <span class="muted">—</span>
                 {% endif %}

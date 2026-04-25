@@ -346,9 +346,10 @@ def _extract_and_match_images(
                     best_idx, best_ratio = _best_step_match(section_title)
                     # Lower threshold here — section titles are authoritative
                     if best_ratio >= 0.20 and best_idx >= 0:
-                        if not steps_out[best_idx].get("screenshot"):
-                            steps_out[best_idx]["screenshot"] = url
-                            matched = True
+                        shots = steps_out[best_idx].setdefault("screenshots", [])
+                        if url not in shots:
+                            shots.append(url)
+                        matched = True
 
                 # Strategy 2: positional text-block fallback
                 if not matched and step_texts:
@@ -365,9 +366,10 @@ def _extract_and_match_images(
                             block_text = (nearest_block[4] or "").strip().lower()
                             best_idx, best_ratio = _best_step_match(block_text)
                             if best_ratio >= 0.35 and best_idx >= 0:
-                                if not steps_out[best_idx].get("screenshot"):
-                                    steps_out[best_idx]["screenshot"] = url
-                                    matched = True
+                                shots = steps_out[best_idx].setdefault("screenshots", [])
+                                if url not in shots:
+                                    shots.append(url)
+                                matched = True
 
                 if not matched:
                     unmatched.append({
@@ -386,7 +388,7 @@ def _extract_and_match_images(
         except Exception:
             pass
 
-    matched_count = sum(1 for s in steps_out if s.get("screenshot"))
+    matched_count = sum(1 for s in steps_out if s.get("screenshots"))
     if matched_count or unmatched:
         logger.info(
             "Extracted images for task %s: %d matched to steps, %d unmatched",
@@ -615,6 +617,10 @@ Return JSON only — no markdown, no commentary:
 _EXTRACT_TASK_SYSTEM = """You are extracting structured task records from a section of technical documentation.
 
 ## Field definitions
+
+title: A concise noun phrase (5–10 words) naming the task from the operator's perspective. Must be unique within the document. Do not start with a verb; do not repeat the software name unless necessary for clarity.
+  Good: "Initial Backup Job Configuration" / "Agent Installation on Windows Server"
+  Bad: "Configure a backup job" (verb start) / "Veeam Backup Configuration" (too generic)
 
 outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
 

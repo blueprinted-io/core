@@ -3,60 +3,97 @@
 <h1>Import Tasks from PDF</h1>
 <p class="muted">Upload a text-based PDF. The system will extract its table of contents, let you choose which sections to import, then process them in the background using AI.</p>
 
-{% if error %}
-<div class="callout danger">
-  <b>Upload failed:</b> {{ error }}
-</div>
-{% endif %}
-
 <div class="callout warn">
   <b>Trust boundary:</b> All imported Tasks are created as <b>draft</b> and flagged for review. Nothing is auto-confirmed.
 </div>
 
-{% if ingestions %}
-<div class="card">
-  <h2 style="margin-top:0">Previous imports</h2>
-  <p class="muted">Re-uploading the same file will resume from where you left off — progress is keyed by document hash, not filename.</p>
+{% if library %}
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Document library</h2>
+  <p class="muted" style="margin-top:0">All documents uploaded by any user. Start your own import session from any document, or continue one you've already started.</p>
   <table class="table">
-    <thead><tr><th>File</th><th>Started</th><th>State</th><th>Chunks</th><th></th></tr></thead>
-    <tbody>
-      {% for i in ingestions %}
+    <thead>
       <tr>
-        <td>{{ i.filename }}</td>
-        <td class="muted" style="font-size:0.85em">{{ i.created_at }}</td>
+        <th>Document</th>
+        <th style="width:120px">Uploaded</th>
+        <th>Sessions</th>
+        <th style="width:220px">My actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in library %}
+      <tr>
         <td>
-          {% if i.job_status == 'complete' %}
-            <span class="badge badge-confirmed">complete</span>
-          {% elif i.job_status == 'partial' %}
-            <span class="badge badge-submitted">partial</span>
-          {% elif i.job_status == 'running' %}
-            <span class="badge badge-submitted">processing…</span>
-          {% elif i.job_status == 'failed' %}
-            <span class="badge badge-danger">failed</span>
-          {% else %}
-            <span class="badge">{{ i.job_status or 'pending' }}</span>
+          <div style="font-weight:500">{{ doc.filename }}</div>
+          {% if not doc.file_exists %}
+            <div class="muted" style="font-size:0.78em; color:var(--danger,#dc2626)">⚠ File no longer on disk</div>
           {% endif %}
         </td>
-        <td class="muted" style="font-size:0.85em; white-space:nowrap">
-          {{ i.done_chunks }}/{{ i.total_chunks }}
-        </td>
-        <td style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
-          {% if i.job_status in ('complete', 'partial') %}
-            <a class="btn secondary" href="/import/pdf/review/{{ i.id }}">Review</a>
-            <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}?mode=resume">Continue</a>
-          {% elif i.job_status == 'running' %}
-            <a class="btn secondary" href="/import/pdf/status/{{ i.id }}">View progress</a>
+        <td class="muted" style="font-size:0.82em; white-space:nowrap">{{ doc.first_uploaded[:10] }}</td>
+        <td>
+          {% if doc.sessions %}
+            <div style="display:flex; flex-wrap:wrap; gap:6px">
+              {% for s in doc.sessions %}
+                <div style="display:flex; align-items:center; gap:4px; font-size:0.82em">
+                  <span class="muted">{{ s.created_by }}</span>
+                  {% if s.job_status == 'complete' %}
+                    <span class="badge badge-confirmed">complete</span>
+                  {% elif s.job_status == 'partial' %}
+                    <span class="badge badge-submitted">partial</span>
+                  {% elif s.job_status in ('running', 'chunking', 'triaging') %}
+                    <span class="badge badge-submitted">processing…</span>
+                  {% elif s.job_status == 'failed' %}
+                    <span class="badge badge-danger">failed</span>
+                  {% elif s.job_status == 'triaged' %}
+                    <span class="badge">triaged</span>
+                  {% else %}
+                    <span class="badge">{{ s.job_status or 'pending' }}</span>
+                  {% endif %}
+                  {% if s.total_chunks %}
+                    <span class="muted">({{ s.done_chunks }}/{{ s.total_chunks }})</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
           {% else %}
-            <a class="btn secondary" href="/import/pdf/sections/{{ i.id }}">Continue</a>
+            <span class="muted">—</span>
           {% endif %}
-          <a class="btn secondary" href="/import/pdf/{{ i.id }}/download" title="Download original PDF">↓ PDF</a>
-          {% if i.job_status not in ('running', 'chunking') %}
-          <form method="post" action="/import/pdf/delete/{{ i.id }}"
-                onsubmit="return confirm('Delete this import and its uploaded file? This cannot be undone.')">
-            <button class="btn secondary" type="submit"
-                    style="color:var(--danger,#dc2626); border-color:var(--danger,#dc2626)">Delete</button>
-          </form>
-          {% endif %}
+        </td>
+        <td>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+            {% if doc.my_session %}
+              {% set ms = doc.my_session %}
+              {% if ms.job_status in ('complete', 'partial') %}
+                <a class="btn secondary" href="/import/pdf/review/{{ ms.id }}">Review</a>
+                <a class="btn secondary" href="/import/pdf/sections/{{ ms.id }}?mode=resume">Continue</a>
+              {% elif ms.job_status in ('running', 'chunking', 'triaging') %}
+                <a class="btn secondary" href="/import/pdf/status/{{ ms.id }}">View progress</a>
+              {% else %}
+                <a class="btn secondary" href="/import/pdf/sections/{{ ms.id }}">Continue</a>
+              {% endif %}
+              {% if doc.file_exists %}
+                <a class="btn secondary" href="/import/pdf/{{ ms.id }}/download" title="Download PDF">↓</a>
+              {% endif %}
+              {% if ms.job_status not in ('running', 'chunking', 'triaging') %}
+              <form method="post" action="/import/pdf/delete/{{ ms.id }}"
+                    onsubmit="return confirm('Remove your import session for this document?')">
+                <button class="btn secondary" type="submit"
+                        style="color:var(--danger,#dc2626); border-color:var(--danger,#dc2626)">Remove</button>
+              </form>
+              {% endif %}
+            {% elif doc.file_exists %}
+              <form method="post" action="/import/pdf/use">
+                <input type="hidden" name="source_sha256" value="{{ doc.source_sha256 }}" />
+                <button class="btn secondary" type="submit">Start import</button>
+              </form>
+              {% set any_session = doc.sessions | first %}
+              {% if any_session %}
+                <a class="btn secondary" href="/import/pdf/{{ any_session.id }}/download" title="Download PDF">↓ PDF</a>
+              {% endif %}
+            {% else %}
+              <span class="muted" style="font-size:0.82em">File unavailable</span>
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% endfor %}
@@ -66,7 +103,8 @@
 {% endif %}
 
 <form method="post" action="/import/pdf/prepare" enctype="multipart/form-data" class="card">
-  <h2 style="margin-top:0">New import</h2>
+  <h2 style="margin-top:0">Upload new document</h2>
+  <p class="muted" style="margin-top:0">If a document has already been uploaded by another user it will appear in the library above — no need to upload it again.</p>
 
   <div>
     <label>PDF file</label>

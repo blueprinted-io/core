@@ -26,7 +26,7 @@
 {# ── Triage review ── #}
 <div class="callout">
   Review the AI classification for each section. Override any misclassified sections, then choose a domain and run extraction.
-  Sections marked <b>ignore</b> will be excluded from extraction.
+  Sections marked <b>ignore</b> will be excluded. Use the <b>Task group</b> column to control merging — sections sharing a group are extracted as one task. Change a section to <b>New group</b> to split it out, or assign it the same group number as another section to merge them together.
 </div>
 
 <form method="post" action="/import/pdf/queue/{{ ingestion_id }}">
@@ -58,15 +58,14 @@
           <th style="padding:8px 12px; text-align:left">Section</th>
           <th style="padding:8px 12px; text-align:left; width:140px">Classification</th>
           <th style="padding:8px 12px; text-align:left; width:160px">Override</th>
+          <th style="padding:8px 12px; text-align:left; width:130px">Task group</th>
           <th style="padding:8px 12px; text-align:right; width:60px">Words</th>
         </tr>
       </thead>
       <tbody>
         {% for s in sections %}
         {% set default_checked = s.chunk_type != 'ignore' %}
-        <tr class="triage-row" data-default-type="{{ s.chunk_type or 'task' }}"
-            {% if s.is_merge_parent %}data-parent-chunk="{{ s.chunk_index }}"{% endif %}
-            {% if s.will_merge %}data-merge-parent="{{ s.merge_into_idx }}"{% endif %}
+        <tr class="triage-row" data-chunk-idx="{{ s.chunk_index }}" data-default-type="{{ s.chunk_type or 'task' }}"
             style="border-bottom:1px solid var(--border); {% if not default_checked %}opacity:0.55{% endif %}">
           <td style="padding:8px 12px; vertical-align:top">
             <input type="checkbox" name="chunk_index" value="{{ s.chunk_index }}"
@@ -75,23 +74,7 @@
           <td style="padding:8px 12px; vertical-align:top; padding-left:calc({{ s.level }} * 18px + 12px)">
             <div style="font-weight:500; font-size:0.9em">{{ s.title }}</div>
             {% if s.page_label %}<div class="muted" style="font-size:0.78em">{{ s.page_label }}</div>{% endif %}
-            {% if s.is_merge_parent %}
-            <div style="font-size:0.75em; margin-top:4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-              <span class="merge-parent-label" style="color:var(--primary,#2563eb)">↳ will merge {{ s.child_count }} section{{ 's' if s.child_count != 1 else '' }} into this task</span>
-              <button type="button" class="btn secondary split-toggle"
-                      style="padding:1px 7px; font-size:0.8em; line-height:1.6"
-                      onclick="toggleSplit(this, {{ s.chunk_index }})">Split into separate tasks</button>
-            </div>
-            {% endif %}
-            {% if s.will_merge %}
-            <div class="merge-label" style="font-size:0.75em; color:var(--primary,#2563eb); margin-top:3px">
-              ↳ will be merged into parent section at extraction
-            </div>
-            <div class="split-label" style="font-size:0.75em; color:#059669; margin-top:3px; display:none">
-              → will extract as a separate task
-            </div>
-            {% endif %}
-            {% if s.reason and not s.will_merge and not s.is_merge_parent %}
+            {% if s.reason %}
             <div class="muted" style="font-size:0.78em; margin-top:3px; font-style:italic">{{ s.reason }}</div>
             {% endif %}
           </td>
@@ -116,6 +99,15 @@
               <option value="ignore" {% if s.chunk_type == 'ignore' %}selected{% endif %}>ignore</option>
             </select>
           </td>
+          <td style="padding:8px 12px; vertical-align:top">
+            <div style="display:flex; align-items:center; gap:6px">
+              <span class="group-badge" id="gbadge-{{ s.chunk_index }}" data-chunk="{{ s.chunk_index }}">Task {{ s.task_group }}</span>
+              <select class="group-select" data-chunk="{{ s.chunk_index }}"
+                      onchange="onGroupChange({{ s.chunk_index }}, this.value)"
+                      style="font-size:0.8em; padding:2px 4px; max-width:100px"></select>
+              <input type="hidden" name="chunk_group" class="chunk-group-input" data-chunk="{{ s.chunk_index }}" value="{{ s.task_group }}">
+            </div>
+          </td>
           <td style="padding:8px 12px; vertical-align:top; text-align:right; color:var(--muted); font-size:0.82em">
             {{ s.word_count }}
           </td>
@@ -132,43 +124,92 @@
 </form>
 {% endif %}
 
-<script>
-function toggleSplit(btn, parentChunk) {
-  var parentRow = document.querySelector('tr[data-parent-chunk="' + parentChunk + '"]');
-  if (!parentRow) return;
-  var isSplit = parentRow.dataset.split === '1';
+<style>
+.group-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-size: 0.75em;
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 48px;
+  text-align: center;
+}
+/* 8 rotating group colours */
+.gc0 { background:#dbeafe; color:#1e3a8a }
+.gc1 { background:#dcfce7; color:#14532d }
+.gc2 { background:#fef3c7; color:#78350f }
+.gc3 { background:#fce7f3; color:#831843 }
+.gc4 { background:#ede9fe; color:#3b0764 }
+.gc5 { background:#ffedd5; color:#7c2d12 }
+.gc6 { background:#cffafe; color:#164e63 }
+.gc7 { background:#f3f4f6; color:#374151 }
+</style>
 
-  if (isSplit) {
-    // Revert to merge
-    parentRow.dataset.split = '0';
-    var inp = parentRow.querySelector('.split-group-input');
-    if (inp) inp.remove();
-    btn.textContent = 'Split into separate tasks';
-    parentRow.querySelector('.merge-parent-label').style.color = 'var(--primary,#2563eb)';
-    document.querySelectorAll('tr[data-merge-parent="' + parentChunk + '"]').forEach(function (row) {
-      var ml = row.querySelector('.merge-label');
-      var sl = row.querySelector('.split-label');
-      if (ml) ml.style.display = '';
-      if (sl) sl.style.display = 'none';
-    });
-  } else {
-    // Split
-    parentRow.dataset.split = '1';
-    var inp = document.createElement('input');
-    inp.type = 'hidden';
-    inp.name = 'split_group';
-    inp.value = parentChunk;
-    inp.className = 'split-group-input';
-    parentRow.appendChild(inp);
-    btn.textContent = 'Merge into one task';
-    parentRow.querySelector('.merge-parent-label').style.color = '#059669';
-    document.querySelectorAll('tr[data-merge-parent="' + parentChunk + '"]').forEach(function (row) {
-      var ml = row.querySelector('.merge-label');
-      var sl = row.querySelector('.split-label');
-      if (ml) ml.style.display = 'none';
-      if (sl) sl.style.display = '';
-    });
-  }
+<script>
+// ── Group state ───────────────────────────────────────────────────────────────
+// chunk_index (int) → group_number (int)
+var assignments = {};
+
+(function initAssignments() {
+  document.querySelectorAll('.chunk-group-input').forEach(function (inp) {
+    var chunk = parseInt(inp.dataset.chunk);
+    assignments[chunk] = parseInt(inp.value);
+  });
+  rebuildAllSelects();
+})();
+
+function activeGroups() {
+  var seen = {};
+  Object.values(assignments).forEach(function (g) { seen[g] = true; });
+  return Object.keys(seen).map(Number).sort(function (a, b) { return a - b; });
+}
+
+function nextFreeGroup() {
+  var grps = activeGroups();
+  return grps.length ? Math.max.apply(null, grps) + 1 : 1;
+}
+
+function onGroupChange(chunkIdx, value) {
+  var grp = value === '__new__' ? nextFreeGroup() : parseInt(value);
+  assignments[chunkIdx] = grp;
+  document.querySelector('.chunk-group-input[data-chunk="' + chunkIdx + '"]').value = grp;
+  rebuildAllSelects();
+}
+
+function rebuildAllSelects() {
+  var grps = activeGroups();
+  // Build colour map: group_number → colour index (stable: by sorted order)
+  var colorMap = {};
+  grps.forEach(function (g, i) { colorMap[g] = i % 8; });
+
+  document.querySelectorAll('.group-select').forEach(function (sel) {
+    var chunk = parseInt(sel.dataset.chunk);
+    var current = assignments[chunk];
+    var html = grps.map(function (g) {
+      var label = grps.length === 1 ? 'Task (no merge)' : 'Task ' + g;
+      return '<option value="' + g + '"' + (g === current ? ' selected' : '') + '>' + label + '</option>';
+    }).join('');
+    html += '<option value="__new__">── New group</option>';
+    sel.innerHTML = html;
+  });
+
+  // Update badges
+  document.querySelectorAll('.group-badge').forEach(function (badge) {
+    var chunk = parseInt(badge.dataset.chunk);
+    var grp = assignments[chunk];
+    var ci = colorMap[grp];
+    badge.className = 'group-badge gc' + ci;
+    badge.textContent = grps.length === 1 ? 'Task' : 'Task ' + grp;
+  });
+
+  // Tint rows by group colour
+  document.querySelectorAll('.triage-row').forEach(function (row) {
+    var chunk = parseInt(row.dataset.chunkIdx);
+    var grp = assignments[chunk];
+    if (grp === undefined) return;
+    row.style.setProperty('--row-tint', 'transparent');
+  });
 }
 
 (function () {
@@ -196,7 +237,13 @@ function toggleSplit(btn, parentChunk) {
         } else if (check.checked && sel.value === 'ignore') {
           sel.value = row.dataset.defaultType || 'task';
         }
+        // Keep chunk_group input disabled in sync so unchecked rows don't submit a group
+        var grpInp = row.querySelector('.chunk-group-input');
+        if (grpInp) grpInp.disabled = !check.checked;
       });
+      // Initialise disabled state
+      var grpInp = row.querySelector('.chunk-group-input');
+      if (grpInp) grpInp.disabled = !check.checked;
     }
   });
 
@@ -204,8 +251,10 @@ function toggleSplit(btn, parentChunk) {
     document.querySelectorAll('.triage-row').forEach(function (row) {
       var check = row.querySelector('.triage-check');
       var sel = row.querySelector('.triage-type-select');
+      var grpInp = row.querySelector('.chunk-group-input');
       if (check) { check.checked = true; row.style.opacity = '1'; }
       if (sel && sel.value === 'ignore') { sel.value = row.dataset.defaultType || 'task'; }
+      if (grpInp) grpInp.disabled = false;
     });
   });
 
@@ -213,9 +262,11 @@ function toggleSplit(btn, parentChunk) {
     document.querySelectorAll('.triage-row').forEach(function (row) {
       var check = row.querySelector('.triage-check');
       var sel = row.querySelector('.triage-type-select');
+      var grpInp = row.querySelector('.chunk-group-input');
       if (sel && sel.value === 'ignore' && check) {
         check.checked = false;
         row.style.opacity = '0.55';
+        if (grpInp) grpInp.disabled = true;
       }
     });
   });

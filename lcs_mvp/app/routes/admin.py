@@ -84,60 +84,55 @@ def admin_users(request: Request, error: str | None = None):
 
 
 @router.post("/admin/users/create")
-def admin_users_create(request: Request, username: str = Form(""), role: str = Form("viewer"), password: str = Form("")):
+def admin_users_create(request: Request, username: str = Form(""), role: str = Form("viewer")):
     require_admin(request)
+    import secrets as _secrets
     username = (username or "").strip()
-    password = password or ""
     if not username:
         raise HTTPException(status_code=400, detail="username is required")
     if role not in ROLE_ORDER:
         raise HTTPException(status_code=400, detail="invalid role")
-    if not password:
-        raise HTTPException(status_code=400, detail="password is required")
 
-    import secrets
-
-    salt = secrets.token_bytes(16).hex()
+    temp_pw = _secrets.token_urlsafe(12)
+    salt = _secrets.token_bytes(16).hex()
     with db() as conn:
         try:
             conn.execute(
-                """
-                INSERT INTO users(username, role, password_salt_hex, password_hash_hex, demo_password, created_at, created_by)
-                VALUES (?,?,?,?,?,?,?)
-                """,
-                (username, role, salt, _hash_password(password, salt), password, utc_now_iso(), request.state.user),
+                "INSERT INTO users(username, role, password_salt_hex, password_hash_hex, created_at, created_by) VALUES (?,?,?,?,?,?)",
+                (username, role, salt, _hash_password(temp_pw, salt), utc_now_iso(), request.state.user),
             )
             audit("user", username, 1, "create", request.state.user, note=f"role={role}", conn=conn)
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="username already exists")
 
-    return RedirectResponse(url="/admin/users", status_code=303)
+    return RedirectResponse(url=f"/admin/users?created={username}&temp_pw={temp_pw}", status_code=303)
 
 
 @router.post("/admin/users/reset")
-def admin_users_reset(request: Request, username: str = Form(""), password: str = Form("")):
+def admin_users_reset(request: Request, username: str = Form("")):
     require_admin(request)
+    import secrets as _secrets
     username = (username or "").strip()
-    password = password or ""
-    if not username or not password:
-        raise HTTPException(status_code=400, detail="username and password required")
+    if not username:
+        raise HTTPException(status_code=400, detail="username required")
 
-    import secrets
-
-    salt = secrets.token_bytes(16).hex()
+    temp_pw = _secrets.token_urlsafe(12)
+    salt = _secrets.token_bytes(16).hex()
     with db() as conn:
         row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="user not found")
         conn.execute(
-            "UPDATE users SET password_salt_hex=?, password_hash_hex=?, demo_password=? WHERE username=?",
-            (salt, _hash_password(password, salt), password, username),
+            "UPDATE users SET password_salt_hex=?, password_hash_hex=? WHERE username=?",
+            (salt, _hash_password(temp_pw, salt), username),
         )
-        # Revoke sessions
-        conn.execute("UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL", (utc_now_iso(), int(row["id"])))
+        conn.execute(
+            "UPDATE sessions SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL",
+            (utc_now_iso(), int(row["id"])),
+        )
         audit("user", username, 1, "reset_password", request.state.user, conn=conn)
 
-    return RedirectResponse(url="/admin/users", status_code=303)
+    return RedirectResponse(url=f"/admin/users?reset={username}&temp_pw={temp_pw}", status_code=303)
 
 
 @router.post("/admin/users/disable")

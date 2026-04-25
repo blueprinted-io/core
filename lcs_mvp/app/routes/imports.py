@@ -60,31 +60,53 @@ def import_pdf_form(request: Request):
     require(request.state.role, "import:pdf")
     actor = request.state.user
 
+    done_statuses_sql = "'done','error','timeout','skipped','merged'"
+
     with db() as conn:
-        rows = conn.execute(
-            "SELECT id, filename, created_at, status, job_status FROM ingestions "
-            "WHERE source_type='pdf' AND created_by=? ORDER BY created_at DESC LIMIT 50",
-            (actor,),
+        # All unique documents ever uploaded, ordered by most recent first
+        docs = conn.execute(
+            "SELECT source_sha256, filename, MIN(created_at) AS first_uploaded, MAX(file_path) AS file_path "
+            "FROM ingestions WHERE source_type='pdf' "
+            "GROUP BY source_sha256 ORDER BY first_uploaded DESC LIMIT 100"
         ).fetchall()
 
-        ingestions = []
-        done_statuses = ("'done'", "'error'", "'timeout'", "'skipped'", "'merged'")
-        for r in rows:
-            ing = dict(r)
-            counts = conn.execute(
-                f"SELECT COUNT(*) AS total, "
-                f"SUM(CASE WHEN chunk_status IN ({','.join(done_statuses)}) THEN 1 ELSE 0 END) AS done "
-                f"FROM ingestion_chunks WHERE ingestion_id=?",
-                (r["id"],),
-            ).fetchone()
-            ing["total_chunks"] = counts["total"] or 0
-            ing["done_chunks"] = counts["done"] or 0
-            ingestions.append(ing)
+        library = []
+        for doc in docs:
+            sha = doc["source_sha256"]
+            sessions = conn.execute(
+                "SELECT id, created_by, job_status, created_at FROM ingestions "
+                "WHERE source_type='pdf' AND source_sha256=? ORDER BY created_at DESC",
+                (sha,),
+            ).fetchall()
+
+            session_list = []
+            my_session = None
+            for s in sessions:
+                counts = conn.execute(
+                    f"SELECT COUNT(*) AS total, "
+                    f"SUM(CASE WHEN chunk_status IN ({done_statuses_sql}) THEN 1 ELSE 0 END) AS done "
+                    f"FROM ingestion_chunks WHERE ingestion_id=?",
+                    (s["id"],),
+                ).fetchone()
+                entry = {**dict(s), "total_chunks": counts["total"] or 0, "done_chunks": counts["done"] or 0}
+                session_list.append(entry)
+                if s["created_by"] == actor:
+                    my_session = entry
+
+            file_path = doc["file_path"] or ""
+            library.append({
+                "source_sha256": sha,
+                "filename": doc["filename"],
+                "first_uploaded": doc["first_uploaded"],
+                "file_exists": bool(file_path) and os.path.isfile(file_path),
+                "sessions": session_list,
+                "my_session": my_session,
+            })
 
     return templates.TemplateResponse(
         request,
         "import_pdf.html",
-        {"ingestions": ingestions},
+        {"library": library},
     )
 
 
@@ -202,6 +224,50 @@ def import_pdf_prepare(
         )
 
     background_tasks.add_task(_run_chunking_background, ingestion_id, out_path, db_path)
+    return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
+
+
+@router.post("/import/pdf/use")
+def import_pdf_use(request: Request, background_tasks: BackgroundTasks, source_sha256: str = Form(...)):
+    """Start a personal import session from a document already in the shared library."""
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+    db_path = DB_PATH_CTX.get()
+
+    with db() as conn:
+        # Check if this user already has a session for this document
+        existing = conn.execute(
+            "SELECT id, job_status FROM ingestions WHERE source_type='pdf' AND source_sha256=? AND created_by=? ORDER BY created_at DESC LIMIT 1",
+            (source_sha256, actor),
+        ).fetchone()
+        if existing:
+            ingestion_id = str(existing["id"])
+            job_status = existing["job_status"]
+            if job_status in ("complete", "partial"):
+                return RedirectResponse(url=f"/import/pdf/review/{ingestion_id}", status_code=303)
+            if job_status in ("running", "chunking", "triaging", "triaged"):
+                return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
+            return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
+
+        # Find the shared file on disk
+        doc = conn.execute(
+            "SELECT filename, file_path FROM ingestions WHERE source_type='pdf' AND source_sha256=? ORDER BY created_at ASC LIMIT 1",
+            (source_sha256,),
+        ).fetchone()
+        if not doc:
+            raise HTTPException(404, "Document not found in library")
+        file_path = doc["file_path"] or ""
+        if not file_path or not os.path.isfile(file_path):
+            raise HTTPException(400, "The original file is no longer on disk — ask an admin to re-upload it")
+
+        ingestion_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO ingestions(id, source_type, source_sha256, filename, file_path, created_by, created_at, status, cursor_chunk, max_tasks_per_run, note, job_status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (ingestion_id, "pdf", source_sha256, doc["filename"], file_path, actor, utc_now_iso(), "draft", 0, 5, "From shared library", "chunking"),
+        )
+
+    background_tasks.add_task(_run_chunking_background, ingestion_id, file_path, db_path)
     return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
 
 
@@ -415,7 +481,7 @@ def _merge_chunk_texts(lead, children: list) -> str:
     return "\n\n---\n\n".join(p for p in parts if p)
 
 
-def _run_ingestion_background(ingestion_id: str, db_path: str, username: str, split_groups: set[int] | None = None) -> None:
+def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) -> None:
     """Background task: LLM-processes all queued chunks using type-aware schema 1.0 prompts."""
     conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
@@ -432,12 +498,22 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str, sp
         conn.commit()
 
         chunks = conn.execute(
-            "SELECT chunk_index, pages_json, text, section_title, chunk_type, section_level FROM ingestion_chunks "
+            "SELECT chunk_index, pages_json, text, section_title, chunk_type, section_level, task_group FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 AND chunk_status='queued' ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
 
-        groups = _group_chunks_by_hierarchy(list(chunks), split_groups=split_groups)
+        # Group by user-assigned task_group; fall back to chunk_index (each chunk its own task)
+        from collections import defaultdict
+        group_buckets: dict[int, list] = defaultdict(list)
+        for ch in chunks:
+            grp = ch["task_group"] if ch["task_group"] is not None else int(ch["chunk_index"])
+            group_buckets[grp].append(ch)
+        # Within each bucket, lowest chunk_index is lead; rest are children (in order)
+        groups = []
+        for grp_id in sorted(group_buckets.keys()):
+            bucket = sorted(group_buckets[grp_id], key=lambda c: int(c["chunk_index"]))
+            groups.append((bucket[0], bucket[1:]))
         logger.info(
             "Extraction started ingestion=%s chunks=%d groups=%d user=%s",
             ingestion_id[:8], len(chunks), len(groups), username,
@@ -640,25 +716,19 @@ def import_pdf_triage_review(request: Request, ingestion_id: str):
             "will_merge": False,
         })
 
-    # Mark child sections that will be merged into their parent at extraction time
+    # Assign initial task_group numbers based on hierarchy detection.
+    # Sections already stored with a task_group (from a previous queue submission) keep it.
     groups = _group_chunks_by_hierarchy(list(chunks))
-    merged_indices = {int(c["chunk_index"]) for _, children in groups for c in children}
-    parent_of: dict[int, str] = {}
-    parent_idx_of: dict[int, int] = {}
-    parent_child_count: dict[int, int] = {}
-    for lead, children in groups:
-        if children:
-            parent_child_count[int(lead["chunk_index"])] = len(children)
+    chunk_to_group: dict[int, int] = {}
+    for group_num, (lead, children) in enumerate(groups, start=1):
+        chunk_to_group[int(lead["chunk_index"])] = group_num
         for c in children:
-            parent_of[int(c["chunk_index"])] = (lead["section_title"] or "").strip()
-            parent_idx_of[int(c["chunk_index"])] = int(lead["chunk_index"])
+            chunk_to_group[int(c["chunk_index"])] = group_num
+
     sections = []
-    for s in raw_sections:
-        s["will_merge"] = s["chunk_index"] in merged_indices
-        s["merge_into"] = parent_of.get(s["chunk_index"], "")
-        s["merge_into_idx"] = parent_idx_of.get(s["chunk_index"], -1)
-        s["is_merge_parent"] = s["chunk_index"] in parent_child_count
-        s["child_count"] = parent_child_count.get(s["chunk_index"], 0)
+    for r_raw, s in zip(chunks, raw_sections):
+        stored_group = r_raw["task_group"] if "task_group" in r_raw.keys() and r_raw["task_group"] is not None else None
+        s["task_group"] = stored_group if stored_group is not None else chunk_to_group.get(s["chunk_index"], s["chunk_index"])
         sections.append(s)
 
     return templates.TemplateResponse(
@@ -682,8 +752,8 @@ def import_pdf_queue(
     background_tasks: BackgroundTasks,
     chunk_index: list[int] = Form([]),
     chunk_type: list[str] = Form([]),
+    chunk_group: list[int] = Form([]),
     domain: str = Form(""),
-    split_group: list[int] = Form([]),
 ):
     """Accept triage overrides + domain, fire extraction background task."""
     require(request.state.role, "import:pdf")
@@ -708,21 +778,23 @@ def import_pdf_queue(
             (ingestion_id,),
         )
         type_map = dict(zip(chunk_index, chunk_type))
+        group_map = dict(zip(chunk_index, chunk_group))
         for idx in chunk_index:
             ct = (type_map.get(idx) or "task").strip().lower()
             if ct not in ("task", "workflow"):
                 ct = "task"
+            grp = group_map.get(idx)
             conn.execute(
-                "UPDATE ingestion_chunks SET selected=1, chunk_status='queued', chunk_type=? "
+                "UPDATE ingestion_chunks SET selected=1, chunk_status='queued', chunk_type=?, task_group=? "
                 "WHERE ingestion_id=? AND chunk_index=?",
-                (ct, ingestion_id, idx),
+                (ct, grp, ingestion_id, idx),
             )
         conn.execute(
             "UPDATE ingestions SET job_status='pending', domain=? WHERE id=?",
             ((domain or "").strip(), ingestion_id),
         )
 
-    background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor, set(split_group))
+    background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor)
     return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
 
 
@@ -822,10 +894,16 @@ def import_pdf_delete(request: Request, ingestion_id: str):
             raise HTTPException(status_code=409, detail="Cannot delete while processing is in progress.")
 
         file_path = ing["file_path"] or ""
+        # Only delete the file on disk if no other ingestion shares the same path
+        other_refs = conn.execute(
+            "SELECT COUNT(*) AS n FROM ingestions WHERE file_path=? AND id!=?",
+            (file_path, ingestion_id),
+        ).fetchone()["n"] if file_path else 1
         # chunks are deleted via ON DELETE CASCADE from ingestion_chunks FK
         conn.execute("DELETE FROM ingestions WHERE id=?", (ingestion_id,))
+        conn.commit()
 
-    if file_path and os.path.isfile(file_path):
+    if other_refs == 0 and file_path and os.path.isfile(file_path):
         try:
             os.remove(file_path)
         except OSError:
@@ -840,8 +918,8 @@ def import_pdf_download(request: Request, ingestion_id: str):
     actor = request.state.user
     with db() as conn:
         ing = conn.execute(
-            "SELECT file_path, filename FROM ingestions WHERE id=? AND created_by=?",
-            (ingestion_id, actor),
+            "SELECT file_path, filename FROM ingestions WHERE id=?",
+            (ingestion_id,),
         ).fetchone()
     if not ing:
         raise HTTPException(404)
@@ -962,9 +1040,11 @@ def import_pdf_review(request: Request, ingestion_id: str):
         for t in tasks:
             if not isinstance(t, dict):
                 continue
-            title = str(t.get("title", "")).strip()
+            title = str(t.get("title", "")).strip() or str(t.get("procedure_name", "")).strip()
             if not title:
                 continue
+            if not t.get("title"):
+                t = {**t, "title": title}
             candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
 
     # Dedupe within candidates by fingerprint
@@ -1078,9 +1158,10 @@ def _commit_schema10_payload(
     tasks_created = 0
     for item in task_records:
         t = item["task"]
-        title = str(t.get("title", "")).strip()
+        procedure_name = str(t.get("procedure_name", "")).strip()
+        title = str(t.get("title", "")).strip() or procedure_name
         outcome = str(t.get("outcome", "")).strip()
-        procedure_name = str(t.get("procedure_name", "")).strip() or title
+        procedure_name = procedure_name or title
         facts = t.get("facts") or []
         concepts = t.get("concepts") or []
         deps = t.get("dependencies") or []

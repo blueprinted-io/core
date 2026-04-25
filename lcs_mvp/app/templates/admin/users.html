@@ -1,10 +1,35 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Users</h1>
-<p class="muted">Local demo auth. Admin-only. Passwords are shown for convenience in this MVP.</p>
+
+{% set created = request.query_params.get('created') %}
+{% set reset = request.query_params.get('reset') %}
+{% set temp_pw = request.query_params.get('temp_pw') %}
+
+{% if created and temp_pw %}
+  <div class="callout" style="border-left:4px solid #14532d; margin-bottom:16px">
+    <b>User <code>{{ created }}</code> created.</b>
+    <div style="margin-top:8px">Temporary password — share this with the user and ask them to change it after first login. <b>It will not be shown again.</b></div>
+    <div style="margin-top:10px; display:flex; align-items:center; gap:10px">
+      <code id="temp-pw-box" style="font-size:1.1em; background:var(--bg); padding:6px 12px; border-radius:6px; border:1px solid var(--border); letter-spacing:0.04em">{{ temp_pw }}</code>
+      <button type="button" class="btn secondary" onclick="navigator.clipboard.writeText('{{ temp_pw }}').then(()=>{this.textContent='Copied!'})">Copy</button>
+    </div>
+  </div>
+{% endif %}
+
+{% if reset and temp_pw %}
+  <div class="callout warn" style="margin-bottom:16px">
+    <b>Password reset for <code>{{ reset }}</code>.</b> All existing sessions have been revoked.
+    <div style="margin-top:8px">New temporary password — share with the user. <b>It will not be shown again.</b></div>
+    <div style="margin-top:10px; display:flex; align-items:center; gap:10px">
+      <code id="temp-pw-box" style="font-size:1.1em; background:var(--bg); padding:6px 12px; border-radius:6px; border:1px solid var(--border); letter-spacing:0.04em">{{ temp_pw }}</code>
+      <button type="button" class="btn secondary" onclick="navigator.clipboard.writeText('{{ temp_pw }}').then(()=>{this.textContent='Copied!'})">Copy</button>
+    </div>
+  </div>
+{% endif %}
 
 {% if error %}
-  <div class="card" style="border-left:4px solid #b91c1c">
+  <div class="card" style="border-left:4px solid #b91c1c; margin-bottom:16px">
     <b>Error</b>
     <div class="muted">{{ error }}</div>
   </div>
@@ -12,7 +37,8 @@
 
 <div class="card" style="margin-bottom:16px">
   <h2 style="margin-top:0">Create user</h2>
-  <form method="post" action="/admin/users/create" class="grid" style="grid-template-columns: 1fr 180px 1fr 140px; gap: 12px; align-items:end">
+  <p class="muted" style="margin-top:0">A temporary password will be generated and shown once after creation.</p>
+  <form method="post" action="/admin/users/create" class="grid" style="grid-template-columns: 1fr 200px 140px; gap: 12px; align-items:end">
     <div>
       <label>Username</label>
       <input name="username" placeholder="bking" required />
@@ -20,14 +46,10 @@
     <div>
       <label>Role</label>
       <select name="role" required>
-        {% for r in ['viewer','author','reviewer','audit','admin'] %}
+        {% for r in ['viewer','contributor','assessment_author','content_publisher','audit','admin'] %}
           <option value="{{ r }}">{{ r }}</option>
         {% endfor %}
       </select>
-    </div>
-    <div>
-      <label>Password (demo)</label>
-      <input name="password" placeholder="password5" required />
     </div>
     <div>
       <button class="btn" type="submit">Create</button>
@@ -41,12 +63,11 @@
   <table class="table">
     <thead>
       <tr>
-        <th>username</th>
-        <th>role</th>
-        <th>domains</th>
-        <th>password</th>
-        <th>status</th>
-        <th style="width: 360px">actions</th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Domains</th>
+        <th>Status</th>
+        <th style="width:320px">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -61,7 +82,6 @@
             <span class="muted">(none)</span>
           {% endif %}
         </td>
-        <td><code>{{ u.demo_password }}</code></td>
         <td>
           {% if u.disabled_at %}
             <span class="badge" style="background:#3f3f46;color:#fff;border-color:rgba(255,255,255,.12)">disabled</span>
@@ -70,42 +90,46 @@
           {% endif %}
         </td>
         <td>
-          <form method="post" action="/admin/users/domains" style="display:inline">
-            <input type="hidden" name="username" value="{{ u.username }}" />
-            <button class="btn secondary" type="submit" {% if u.role in ('viewer', 'audit', 'content_publisher') %}disabled title="This role has implicit cross-domain visibility and cannot be assigned domains"{% endif %}>Edit domains</button>
-          </form>
+          <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center">
+            <form method="post" action="/admin/users/domains" style="display:contents">
+              <input type="hidden" name="username" value="{{ u.username }}" />
+              <button class="btn secondary" type="submit"
+                      {% if u.role in ('viewer', 'audit', 'content_publisher') %}disabled title="This role has implicit cross-domain visibility"{% endif %}>Domains</button>
+            </form>
 
-          <form method="post" action="/admin/users/reset" style="display:inline">
-            <input type="hidden" name="username" value="{{ u.username }}" />
-            <input type="hidden" name="password" value="{{ u.demo_password }}" />
-            <button class="btn secondary" type="submit">Reset pw</button>
-          </form>
+            <form method="post" action="/admin/users/reset" style="display:contents"
+                  onsubmit="return confirm('Reset password for {{ u.username }}? Their current sessions will be revoked.')">
+              <input type="hidden" name="username" value="{{ u.username }}" />
+              <button class="btn secondary" type="submit">Reset password</button>
+            </form>
 
-          {% if not u.disabled_at %}
-          <form method="post" action="/admin/users/disable" style="display:inline">
-            <input type="hidden" name="username" value="{{ u.username }}" />
-            <button class="btn secondary" type="submit">Disable</button>
-          </form>
-          {% else %}
-          <form method="post" action="/admin/users/enable" style="display:inline">
-            <input type="hidden" name="username" value="{{ u.username }}" />
-            <button class="btn secondary" type="submit">Enable</button>
-          </form>
-          {% endif %}
+            {% if not u.disabled_at %}
+            <form method="post" action="/admin/users/disable" style="display:contents">
+              <input type="hidden" name="username" value="{{ u.username }}" />
+              <button class="btn secondary" type="submit">Disable</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/users/enable" style="display:contents">
+              <input type="hidden" name="username" value="{{ u.username }}" />
+              <button class="btn secondary" type="submit">Enable</button>
+            </form>
+            {% endif %}
 
-          {% if request.state.user != u.username %}
-          <form method="post" action="/admin/users/delete" style="display:inline" onsubmit="return confirm('Delete user {{ u.username }}?')">
-            <input type="hidden" name="username" value="{{ u.username }}" />
-            <button class="btn secondary" type="submit">Delete</button>
-          </form>
-          {% endif %}
+            {% if request.state.user != u.username %}
+            <form method="post" action="/admin/users/delete" style="display:contents"
+                  onsubmit="return confirm('Delete user {{ u.username }}?')">
+              <input type="hidden" name="username" value="{{ u.username }}" />
+              <button class="btn secondary" type="submit">Delete</button>
+            </form>
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 
-  <p class="muted" style="margin-top:12px">Notes: deleting a user revokes their sessions. You cannot delete the currently logged-in user.</p>
+  <p class="muted" style="margin-top:12px">Users change their own password via their profile page. Deleting a user revokes their sessions. You cannot delete the currently logged-in user.</p>
 </div>
 
 {% endblock %}

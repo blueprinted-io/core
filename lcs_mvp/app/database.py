@@ -528,6 +528,8 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN triage_confidence REAL")
         if "triage_reason" not in chunk_cols:
             conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN triage_reason TEXT")
+        if "task_group" not in chunk_cols:
+            conn.execute("ALTER TABLE ingestion_chunks ADD COLUMN task_group INTEGER")
 
         # ingestions: overall async job state + stored file path for deletion
         rows = conn.execute("PRAGMA table_info(ingestions)").fetchall()

@@ -57,7 +57,7 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for item in raw:
             if isinstance(item, str):
-                out.append({"text": item, "completion": "", "actions": [], "notes": "", "screenshot": None})
+                out.append({"text": item, "completion": "", "actions": [], "notes": "", "screenshots": []})
             elif isinstance(item, dict):
                 actions_raw = item.get("actions")
                 actions: list[str] = []
@@ -68,14 +68,21 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
                     actions = [ln.strip() for ln in actions_raw.splitlines() if ln.strip()]
 
                 notes = str(item.get("notes", "") or "").strip()
-                screenshot = str(item.get("screenshot", "") or "").strip() or None
+                screenshots_raw = item.get("screenshots")
+                screenshot_old = str(item.get("screenshot", "") or "").strip() or None
+                if isinstance(screenshots_raw, list):
+                    screenshots = [s for s in (str(x).strip() for x in screenshots_raw) if s]
+                elif screenshot_old:
+                    screenshots = [screenshot_old]
+                else:
+                    screenshots = []
                 out.append(
                     {
                         "text": str(item.get("text", "")),
                         "completion": str(item.get("completion", "")),
                         "actions": actions,
                         "notes": notes,
-                        "screenshot": screenshot,
+                        "screenshots": screenshots,
                     }
                 )
         # Drop empty rows
@@ -171,20 +178,25 @@ def _zip_steps(
     step_completion: list[str],
     step_actions: list[str],
     step_notes: list[str] | None = None,
-    step_screenshot: list[str] | None = None,
+    step_screenshots_json: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    import json as _json
     out: list[dict[str, Any]] = []
-    for t, c, a, n, sc in itertools.zip_longest(
-        step_text, step_completion, step_actions, step_notes or [], step_screenshot or [], fillvalue=""
+    for t, c, a, n, ssj in itertools.zip_longest(
+        step_text, step_completion, step_actions, step_notes or [], step_screenshots_json or [], fillvalue=""
     ):
         actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
+        try:
+            screenshots = [s for s in _json.loads(ssj or "[]") if isinstance(s, str) and s.strip()]
+        except Exception:
+            screenshots = []
         out.append(
             {
                 "text": (t or "").strip(),
                 "completion": (c or "").strip(),
                 "actions": actions,
                 "notes": (n or "").strip(),
-                "screenshot": (sc or "").strip() or None,
+                "screenshots": screenshots,
             }
         )
     # Drop empty rows.
