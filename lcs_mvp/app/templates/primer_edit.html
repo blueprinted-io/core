@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if mode=='new' %}New Primer{% else %}Revise from Primer v{{ primer.version }} (creates new version){% endif %}</h1>
+
+<form method="post" action="{% if mode=='new' %}/primers/new{% else %}/primers/{{ primer.record_id }}/{{ primer.version }}/save{% endif %}">
+
+  <label>Title</label>
+  <input name="title" value="{{ primer.title if primer else '' }}" required placeholder="e.g. Backup Job Types and Their Trade-offs" />
+
+  <label>Summary <span class="muted" style="font-weight:normal">(one sentence — what does this primer explain?)</span></label>
+  <textarea name="summary" rows="2" required placeholder="Explains the mechanics and trade-offs between active full, incremental, and synthetic full backup job types.">{{ primer.summary if primer else '' }}</textarea>
+
+  <label>Domain</label>
+  <select name="domain">
+    <option value="" {% if not primer or not primer.domain %}selected{% endif %}>(unassigned)</option>
+    {% for d in domains %}
+      <option value="{{ d }}" {% if primer and primer.domain == d %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <div class="muted" style="margin-top:6px">Domain is required to submit. Authors can only submit records for domains they hold.</div>
+
+  <label>Explanation <span class="muted" style="font-weight:normal">(Markdown supported)</span></label>
+  <textarea name="explanation" rows="20" required placeholder="The full conceptual content. Explain what it is, how it works, trade-offs between alternatives, and when you would choose each option. Use ## headings and bullet lists freely.">{{ primer.explanation if primer else '' }}</textarea>
+
+  <label>Analogies <span class="muted" style="font-weight:normal">(optional — Markdown supported)</span></label>
+  <textarea name="analogies" rows="5" placeholder="Optional: analogies or comparisons that clarify the concept. These are surfaced separately from the main explanation.">{{ primer.analogies if primer and primer.analogies else '' }}</textarea>
+
+  <label>Change note {% if mode!='new' %}(required){% else %}(not applicable for new primers){% endif %}</label>
+  {% if mode=='new' %}
+    <input name="change_note" value="" style="display:none" />
+    <p class="muted" style="margin-top:0">Change notes are required when creating a new version of an existing primer.</p>
+  {% else %}
+    <input name="change_note" value="" required placeholder="Required: why are you changing this?" />
+  {% endif %}
+
+  <button class="btn" type="submit">Save</button>
+  {% if mode!='new' %}
+    <a class="btn secondary" href="/primers/{{ primer.record_id }}/{{ primer.version }}">Cancel</a>
+  {% else %}
+    <a class="btn secondary" href="/primers">Cancel</a>
+  {% endif %}
+</form>
+{% endblock %}

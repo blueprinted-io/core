@@ -23,17 +23,19 @@
   </div>
 {% endif %}
 
-{% if not candidates %}
+{% if not all_candidates %}
   <div class="callout warn">
     No candidates were produced for this run.
   </div>
-{% else %}
+{% endif %}
+
+{% if all_candidates %}
 <form method="post" action="/import/pdf/commit" class="card">
   <input type="hidden" name="ingestion_id" value="{{ ingestion.id }}" />
 
   <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px">
-    <h2 style="margin:0">Task candidates</h2>
-    <p class="muted" style="margin:0">Select items to create as <b>draft</b>. Click a title to preview content. Possible duplicates are allowed but flagged.</p>
+    <h2 style="margin:0">Candidates</h2>
+    <p class="muted" style="margin:0">Select items to create as <b>draft</b>. Click a title to preview content. Possible duplicates are flagged.</p>
   </div>
 
   <table class="table">
@@ -48,7 +50,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for c in candidates %}
+      {% for c in all_candidates %}
       <tr>
         <td style="vertical-align:top; padding-top:10px">
           <input type="checkbox" name="candidate_id" value="{{ c.id }}" class="candidate-cb" />
@@ -57,65 +59,87 @@
           <details>
             <summary style="cursor:pointer; font-weight:500; list-style:none; display:flex; align-items:center; gap:6px">
               <span style="font-size:0.75em; color:var(--muted); flex-shrink:0">▶</span>
+              {% if c.kind == 'primer' %}
+                <span class="badge" style="font-size:0.75em; background:var(--teal,#0d9488); color:#fff; flex-shrink:0">PRIMER</span>
+              {% else %}
+                <span class="badge" style="font-size:0.75em; background:var(--primary,#2563eb); color:#fff; flex-shrink:0">TASK</span>
+              {% endif %}
               {{ c.title }}
-              {% if not c.task.steps %}<span class="badge badge-warn" style="margin-left:4px; font-size:0.75em; font-weight:normal">no steps — will be skipped</span>{% endif %}
+              {% if c.kind == 'task' and not c.task.steps %}
+                <span class="badge badge-warn" style="margin-left:4px; font-size:0.75em; font-weight:normal">no steps — will be skipped</span>
+              {% endif %}
             </summary>
             <div style="margin-top:10px; padding:10px 12px; background:var(--panel,#f8f8f8); border-radius:4px; font-size:0.875em">
 
-              {% if c.task.outcome %}
-                <p style="margin:0 0 8px"><b>Outcome:</b> {{ c.task.outcome }}</p>
-              {% endif %}
-
-              {% if c.task.software_name or c.task.software_version %}
-                <p style="margin:0 0 8px" class="muted">
-                  {% if c.task.software_name %}<b>Product:</b> {{ c.task.software_name }}{% endif %}
-                  {% if c.task.software_version %} · <b>Version:</b> {{ c.task.software_version }}{% endif %}
-                </p>
-              {% endif %}
-
-              {% if c.task.facts %}
-                <p style="margin:0 0 4px"><b>Facts</b></p>
-                <ul style="margin:0 0 8px; padding-left:18px">
-                  {% if c.task.facts is string %}
-                    <li>{{ c.task.facts }}</li>
-                  {% else %}
-                    {% for f in c.task.facts %}<li>{{ f }}</li>{% endfor %}
-                  {% endif %}
-                </ul>
-              {% endif %}
-
-              {% if c.task.concepts %}
-                <p style="margin:0 0 4px"><b>Concepts</b></p>
-                {% if c.task.concepts is string %}
-                  <p style="margin:0 0 8px">{{ c.task.concepts }}</p>
-                {% else %}
-                  {% for con in c.task.concepts %}
-                    <p style="margin:0 0 8px">{{ con }}</p>
-                  {% endfor %}
+              {% if c.kind == 'primer' %}
+                {% if c.primer.summary %}
+                  <p style="margin:0 0 8px"><b>Summary:</b> {{ c.primer.summary }}</p>
                 {% endif %}
-              {% endif %}
+                {% if c.primer.explanation %}
+                  <p style="margin:0 0 4px"><b>Explanation</b></p>
+                  <div style="white-space:pre-wrap">{{ c.primer.explanation[:800] }}{% if c.primer.explanation|length > 800 %}…{% endif %}</div>
+                {% endif %}
+                {% if c.primer.analogies %}
+                  <p style="margin:8px 0 4px"><b>Analogies</b></p>
+                  <div style="white-space:pre-wrap">{{ c.primer.analogies }}</div>
+                {% endif %}
 
-              {% if c.task.dependencies %}
-                <p style="margin:0 0 4px"><b>Dependencies</b></p>
-                <ul style="margin:0 0 8px; padding-left:18px">
-                  {% if c.task.dependencies is string %}
-                    <li>{{ c.task.dependencies }}</li>
+              {% else %}
+                {% if c.task.outcome %}
+                  <p style="margin:0 0 8px"><b>Outcome:</b> {{ c.task.outcome }}</p>
+                {% endif %}
+
+                {% if c.task.software_name or c.task.software_version %}
+                  <p style="margin:0 0 8px" class="muted">
+                    {% if c.task.software_name %}<b>Product:</b> {{ c.task.software_name }}{% endif %}
+                    {% if c.task.software_version %} · <b>Version:</b> {{ c.task.software_version }}{% endif %}
+                  </p>
+                {% endif %}
+
+                {% if c.task.facts %}
+                  <p style="margin:0 0 4px"><b>Facts</b></p>
+                  <ul style="margin:0 0 8px; padding-left:18px">
+                    {% if c.task.facts is string %}
+                      <li>{{ c.task.facts }}</li>
+                    {% else %}
+                      {% for f in c.task.facts %}<li>{{ f }}</li>{% endfor %}
+                    {% endif %}
+                  </ul>
+                {% endif %}
+
+                {% if c.task.concepts %}
+                  <p style="margin:0 0 4px"><b>Concepts</b></p>
+                  {% if c.task.concepts is string %}
+                    <p style="margin:0 0 8px">{{ c.task.concepts }}</p>
                   {% else %}
-                    {% for d in c.task.dependencies %}<li>{{ d }}</li>{% endfor %}
+                    {% for con in c.task.concepts %}
+                      <p style="margin:0 0 8px">{{ con }}</p>
+                    {% endfor %}
                   {% endif %}
-                </ul>
-              {% endif %}
+                {% endif %}
 
-              {% if c.task.steps %}
-                <p style="margin:0 0 6px"><b>Steps ({{ c.task.steps | length }})</b></p>
-                <ol style="margin:0; padding-left:18px">
-                  {% for st in c.task.steps %}
-                    <li style="margin-bottom:4px">
-                      {{ st.text }}
-                      {% if st.completion %}<span class="muted"> → {{ st.completion }}</span>{% endif %}
-                    </li>
-                  {% endfor %}
-                </ol>
+                {% if c.task.dependencies %}
+                  <p style="margin:0 0 4px"><b>Dependencies</b></p>
+                  <ul style="margin:0 0 8px; padding-left:18px">
+                    {% if c.task.dependencies is string %}
+                      <li>{{ c.task.dependencies }}</li>
+                    {% else %}
+                      {% for d in c.task.dependencies %}<li>{{ d }}</li>{% endfor %}
+                    {% endif %}
+                  </ul>
+                {% endif %}
+
+                {% if c.task.steps %}
+                  <p style="margin:0 0 6px"><b>Steps ({{ c.task.steps | length }})</b></p>
+                  <ol style="margin:0; padding-left:18px">
+                    {% for st in c.task.steps %}
+                      <li style="margin-bottom:4px">
+                        {{ st.text }}
+                        {% if st.completion %}<span class="muted"> → {{ st.completion }}</span>{% endif %}
+                      </li>
+                    {% endfor %}
+                  </ol>
+                {% endif %}
               {% endif %}
 
             </div>
@@ -123,7 +147,7 @@
         </td>
         <td class="muted" style="vertical-align:top; padding-top:10px">{{ c.pages }}</td>
         <td style="vertical-align:top; padding-top:10px">
-          {% if c.dup_matches %}
+          {% if c.kind == 'task' and c.dup_matches %}
             {% for m in c.dup_matches %}
               <div class="muted" style="font-size:0.85em">{{ m.kind }}: <code>{{ m.record_id[:8] }}…</code> ({{ m.score }})</div>
             {% endfor %}
@@ -137,7 +161,7 @@
   </table>
 
   <div style="margin-top:14px">
-    <button class="btn" type="submit">Create selected drafts</button>
+    <button class="btn" type="submit" id="commit-btn">Create selected drafts</button>
     <a class="btn secondary" href="/import/pdf">Back</a>
   </div>
 </form>
@@ -151,7 +175,6 @@
         cb.checked = selectAll.checked;
       });
     });
-    // Keep select-all in sync when individual boxes change
     document.querySelectorAll('.candidate-cb').forEach(function (cb) {
       cb.addEventListener('change', function () {
         var all = document.querySelectorAll('.candidate-cb');
@@ -162,12 +185,30 @@
     });
   }
 
-  // Rotate the ▶ arrow when a details element opens
   document.querySelectorAll('details').forEach(function (el) {
     el.addEventListener('toggle', function () {
       var arrow = el.querySelector('summary span');
       if (arrow) arrow.textContent = el.open ? '▼' : '▶';
     });
   });
+
+  var commitBtn = document.getElementById('commit-btn');
+  if (commitBtn) {
+    commitBtn.closest('form').addEventListener('submit', function () {
+      var hasPrimers = Array.from(document.querySelectorAll('.candidate-cb:checked')).some(function (cb) {
+        return cb.closest('tr').querySelector('.badge') && cb.closest('tr').querySelector('.badge').textContent.trim() === 'PRIMER';
+      });
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+      var detail = hasPrimers
+        ? 'Creating records and generating level variants for primers.<br>This may take a minute.'
+        : 'Creating draft records…';
+      overlay.innerHTML = '<div style="background:var(--panel,#fff);padding:32px 40px;border-radius:10px;text-align:center;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.25)">'
+        + '<div style="font-size:1.1em;font-weight:600;margin-bottom:10px">Committing drafts…</div>'
+        + '<div style="color:var(--muted,#6b7280);font-size:0.9em;line-height:1.6">' + detail + '</div>'
+        + '</div>';
+      document.body.appendChild(overlay);
+    });
+  }
 </script>
 {% endblock %}

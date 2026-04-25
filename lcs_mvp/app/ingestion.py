@@ -609,10 +609,11 @@ def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
 
 _TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly one of:
 - "task": describes one or more concrete procedures an operator would perform (including sections that describe multiple related procedures — these will be extracted as separate tasks)
-- "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable procedural content
+- "primer": conceptual or explanatory material — how something works, why it behaves that way, trade-off analysis, or guidance on when to choose one approach over another. No imperative steps; declarative, not instructional.
+- "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable content
 
 Return JSON only — no markdown, no commentary:
-{"type": "task", "confidence": 0.0, "reason": "one sentence"}"""
+{"type": "task|primer|ignore", "confidence": 0.0, "reason": "one sentence"}"""
 
 _EXTRACT_TASK_SYSTEM = """You are extracting structured task records from a section of technical documentation.
 
@@ -692,7 +693,7 @@ def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dic
         # "workflow" was a legacy category — treat as "task" for backwards compatibility
         if chunk_type == "workflow":
             chunk_type = "task"
-        elif chunk_type not in ("task", "ignore"):
+        elif chunk_type not in ("task", "primer", "ignore"):
             chunk_type = "ignore"
         logger.debug("Triage '%s' → %s (confidence=%.2f)", section_title[:60], chunk_type, float(result.get("confidence", 0.5)))
         return {
@@ -758,4 +759,74 @@ def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) 
     if not isinstance(result.get("tasks"), list):
         result["tasks"] = []
     logger.info("Extracted %d task(s) from '%s'", len(result["tasks"]), section_title[:80])
+    return result
+
+
+_EXTRACT_PRIMER_SYSTEM = """You are extracting structured primer records from conceptual technical documentation.
+
+A primer is a standalone conceptual document that explains *why* and *how* — not *what to do*.
+
+## Fields
+
+title: Concise noun phrase naming the concept. 5–12 words.
+summary: One sentence in active voice: what this primer explains and why it matters.
+explanation: The full conceptual content. Include: what the thing is, how it works, trade-offs between alternatives, conditions under which you'd choose each option. Preserve the source structure. Use rich markdown throughout: ## headings for major sections, ### for sub-sections, **bold** for key terms on first use, bullet and numbered lists, and code blocks for syntax or command examples. Do not include step-by-step procedures. This field will be rendered as HTML so markdown formatting is important.
+analogies: Optional. If the source contains analogies or comparisons that aid understanding, extract them here. null if none.
+software_name: The product/technology this primer is about, as named in the source. null if not determinable.
+software_version: Version string if stated in the source. null if not determinable.
+
+## Output rules
+1. Output valid JSON only. No preamble, no markdown, no code fences.
+2. Every field must be present, even if null or empty string.
+3. Do not invent content not present in the source.
+
+{"primers":[{"title":"...","summary":"...","explanation":"...","analogies":null,"software_name":"...","software_version":null}]}"""
+
+
+_LEVEL_DEFINITIONS: dict[str, str] = {
+    "100": "Awareness: What it is, why it matters, how the main components fit together at a high level. Professional, technical register. Use the product/technology name directly rather than pronouns. Accessible but not dumbed down.",
+    "200": "Foundation: How it works, key concepts, common scenarios. For a practitioner starting to use it.",
+    "300": "Applied: Trade-offs, edge cases, when to choose each approach. For an experienced practitioner.",
+    "400": "Mastery: Architectural implications, failure modes, advanced analysis. For someone making critical decisions.",
+}
+
+_GENERATE_SINGLE_LEVEL_SYSTEM = """You are rewriting a technical primer at a specified depth level.
+
+Rewrite the provided content at the requested level. Preserve the topic and factual accuracy.
+Adjust depth, vocabulary, assumed knowledge, and emphasis to match the target level.
+
+Output valid JSON only. No preamble, no markdown fences.
+{"title": "...", "summary": "...", "explanation": "...", "analogies": null}"""
+
+
+def _llm_generate_all_levels(explanation: str, title: str, cfg: dict) -> dict[str, Any]:
+    """Generate all four level variants from source content. Returns {"100": {...}, ...}."""
+    results: dict[str, Any] = {}
+    for level_key, level_def in _LEVEL_DEFINITIONS.items():
+        user_msg = (
+            f"TARGET LEVEL: {level_key} — {level_def}\n\n"
+            f"TITLE: {title}\n\n"
+            f"SOURCE CONTENT:\n{explanation}"
+        )
+        raw = _llm_chat([
+            {"role": "system", "content": _GENERATE_SINGLE_LEVEL_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ], cfg)
+        parsed = _parse_llm_json(raw, f"level {level_key}", int(cfg.get("llm_max_tokens") or 2000))
+        results[level_key] = parsed
+    return results
+
+
+def _llm_extract_primer_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Extract primer records from a conceptual chunk."""
+    logger.info("Extracting primers from '%s'", section_title[:80])
+    user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
+    raw = _llm_chat([
+        {"role": "system", "content": _EXTRACT_PRIMER_SYSTEM},
+        {"role": "user", "content": user_msg},
+    ], cfg)
+    result = _parse_llm_json(raw, section_title, int(cfg.get("llm_max_tokens") or 2000))
+    if not isinstance(result.get("primers"), list):
+        result["primers"] = []
+    logger.info("Extracted %d primer(s) from '%s'", len(result["primers"]), section_title[:80])
     return result

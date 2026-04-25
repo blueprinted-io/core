@@ -156,7 +156,8 @@ def workflow_new_form(request: Request):
         request,
         "workflow_edit.html",
         {"mode": "new", "workflow": None,
-         "confirmed_tasks_json": ct_json, "refs_text_json": json.dumps("")},
+         "confirmed_tasks_json": ct_json, "refs_text_json": json.dumps(""),
+         "confirmed_primers": [], "attached_primers": []},
     )
 
 
@@ -299,6 +300,22 @@ def workflow_view(request: Request, record_id: str, version: int):
         if wf["status"] == "returned":
             return_note = _fetch_return_note(conn, "workflow", record_id, version)
 
+        # Attached primers — resolved to latest confirmed version
+        attached_primers = conn.execute(
+            """
+            SELECT p.record_id, p.title, p.summary, p.status, p.version, p.domain
+            FROM workflow_primer_refs wpr
+            JOIN primers p ON p.record_id = wpr.primer_record_id
+            WHERE wpr.workflow_record_id = ?
+              AND p.version = (
+                SELECT MAX(p2.version) FROM primers p2
+                WHERE p2.record_id = p.record_id AND p2.status = 'confirmed'
+              )
+            ORDER BY p.title
+            """,
+            (record_id,),
+        ).fetchall()
+
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
@@ -316,6 +333,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             "task_version_changes": task_version_changes,
             "force_action": force_action,
             "return_note": return_note,
+            "attached_primers": [dict(p) for p in attached_primers],
         },
     )
 
@@ -351,6 +369,32 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
         ).fetchall()
         ct_json = _confirmed_tasks_json(conn)
 
+        # Confirmed primers (for attach picker)
+        confirmed_primer_rows = conn.execute(
+            """
+            SELECT p.record_id, p.title, p.summary, p.domain, p.version
+            FROM primers p
+            WHERE p.status = 'confirmed'
+              AND p.version = (SELECT MAX(p2.version) FROM primers p2 WHERE p2.record_id = p.record_id AND p2.status = 'confirmed')
+            ORDER BY p.title
+            """
+        ).fetchall()
+        confirmed_primers = [dict(r) for r in confirmed_primer_rows]
+
+        # Currently attached primers
+        attached_primer_rows = conn.execute(
+            """
+            SELECT p.record_id, p.title, p.summary, p.domain, p.version
+            FROM workflow_primer_refs wpr
+            JOIN primers p ON p.record_id = wpr.primer_record_id
+            WHERE wpr.workflow_record_id = ?
+              AND p.version = (SELECT MAX(p2.version) FROM primers p2 WHERE p2.record_id = p.record_id AND p2.status = 'confirmed')
+            ORDER BY p.title
+            """,
+            (record_id,),
+        ).fetchall()
+        attached_primers = [dict(r) for r in attached_primer_rows]
+
     refs_text = "\n".join([f"{r['task_record_id']}@{r['task_version']}" for r in refs])
     return templates.TemplateResponse(
         request,
@@ -360,6 +404,8 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
             "workflow": dict(wf),
             "confirmed_tasks_json": ct_json,
             "refs_text_json": json.dumps(refs_text),
+            "confirmed_primers": confirmed_primers,
+            "attached_primers": attached_primers,
         },
     )
 
@@ -662,6 +708,55 @@ def workflow_retire(request: Request, record_id: str, version: int, note: str = 
 
     audit("workflow", record_id, version, "retire", actor, note=(note or "retired with no replacement"))
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
+
+
+@router.post("/workflows/{record_id}/primers/attach")
+def workflow_attach_primer(request: Request, record_id: str, primer_record_id: str = Form(...)):
+    require(request.state.role, "workflow:revise")
+    actor = request.state.user
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT record_id FROM workflows WHERE record_id=? LIMIT 1", (record_id,)
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        # Primer must have a confirmed version
+        confirmed = conn.execute(
+            "SELECT record_id FROM primers WHERE record_id=? AND status='confirmed' LIMIT 1",
+            (primer_record_id,),
+        ).fetchone()
+        if not confirmed:
+            raise HTTPException(status_code=400, detail="Primer must be confirmed before attaching to a workflow")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by)
+            VALUES (?,?,?,?)
+            """,
+            (record_id, primer_record_id, utc_now_iso(), actor),
+        )
+    # Redirect back to the latest version of the workflow
+    with db() as conn:
+        latest = conn.execute(
+            "SELECT MAX(version) AS v FROM workflows WHERE record_id=?", (record_id,)
+        ).fetchone()
+    latest_v = int(latest["v"]) if latest and latest["v"] else 1
+    return RedirectResponse(url=f"/workflows/{record_id}/{latest_v}", status_code=303)
+
+
+@router.post("/workflows/{record_id}/primers/detach")
+def workflow_detach_primer(request: Request, record_id: str, primer_record_id: str = Form(...)):
+    require(request.state.role, "workflow:revise")
+    with db() as conn:
+        conn.execute(
+            "DELETE FROM workflow_primer_refs WHERE workflow_record_id=? AND primer_record_id=?",
+            (record_id, primer_record_id),
+        )
+    with db() as conn:
+        latest = conn.execute(
+            "SELECT MAX(version) AS v FROM workflows WHERE record_id=?", (record_id,)
+        ).fetchone()
+    latest_v = int(latest["v"]) if latest and latest["v"] else 1
+    return RedirectResponse(url=f"/workflows/{record_id}/{latest_v}", status_code=303)
 
 
 @router.post("/workflows/{record_id}/delete")

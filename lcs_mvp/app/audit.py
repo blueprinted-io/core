@@ -12,7 +12,7 @@ from . import achievements as _ach
 # Versioned-table registry
 # ---------------------------------------------------------------------------
 
-_VERSIONED_TABLES = frozenset({"tasks", "workflows", "assessment_items"})
+_VERSIONED_TABLES = frozenset({"tasks", "workflows", "assessment_items", "primers"})
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1>Primers</h1>
+    <p class="muted">Standalone conceptual documents — the analytical knowledge that makes practitioners competent, not just procedurally capable.</p>
+  </div>
+  <div class="row-right">
+    {% if can(request.state.role, 'primer:create') %}
+      <a class="btn" href="/primers/new">New Primer</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card stack-sm">
+  <div class="section-header">Filters</div>
+  <div class="filters">
+    <a href="/primers" class="pill {{ '' if status else 'active' }}">All</a>
+    <a href="/primers?status=draft" class="pill {{ 'active' if status=='draft' else '' }}">Draft</a>
+    <a href="/primers?status=submitted" class="pill {{ 'active' if status=='submitted' else '' }}">Submitted</a>
+    <a href="/primers?status=returned" class="pill {{ 'active' if status=='returned' else '' }}">Returned</a>
+    <a href="/primers?status=confirmed" class="pill {{ 'active' if status=='confirmed' else '' }}">Confirmed</a>
+    <a href="/primers?status=deprecated" class="pill {{ 'active' if status=='deprecated' else '' }}">Superseded</a>
+
+    <form method="get" action="/primers" class="search">
+      {% if status %}<input type="hidden" name="status" value="{{ status }}" />{% endif %}
+      <select name="domain">
+        <option value="">All domains</option>
+        {% for d in domains or [] %}
+          <option value="{{ d }}" {% if domain == d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="q" value="{{ q or '' }}" placeholder="Search title…" />
+      <button class="btn" type="submit">Apply</button>
+    </form>
+  </div>
+</div>
+
+{% if items %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th style="width:80px">Version</th>
+      <th style="width:110px">Status</th>
+      <th style="width:120px">Domain</th>
+      <th style="width:100px">Workflows</th>
+      <th style="width:100px">Signals</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td>
+        <a href="/primers/{{ item.record_id }}/{{ item.latest_version }}">{{ item.title }}</a>
+        <div class="muted" style="font-size:0.82em; margin-top:2px">{{ item.summary }}</div>
+        {% if item.has_levels %}<span class="badge" style="font-size:0.72em; margin-top:3px; display:inline-block">levels</span>{% endif %}
+      </td>
+      <td class="muted">v{{ item.latest_version }}</td>
+      <td><span class="badge badge-{{ item.status }}">{{ item.status }}</span></td>
+      <td>{% if item.domain %}<code>{{ item.domain }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="muted">{% if item.workflow_count %}{{ item.workflow_count }}{% else %}—{% endif %}</td>
+      <td>
+        {% if item.needs_review_flag %}<span class="badge badge-submitted" style="font-size:0.75em">needs review</span>{% endif %}
+        {% if item.has_return_note %}<span class="badge" style="font-size:0.75em">returned</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="card">
+  <p class="muted">No primers found{% if status %} with status <b>{{ status }}</b>{% endif %}{% if q %} matching <b>{{ q }}</b>{% endif %}.</p>
+  {% if can(request.state.role, 'primer:create') %}
+    <a class="btn" href="/primers/new">Create the first Primer</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

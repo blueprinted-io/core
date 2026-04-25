@@ -17,9 +17,10 @@ from pydantic import BaseModel
 
 from ..database import (
     db, utc_now_iso, _active_domains, _user_has_domain, _user_id,
-    _workflow_domains, workflow_readiness, enforce_workflow_ref_rules,
+    _workflow_domains, workflow_readiness, enforce_workflow_ref_rules, _get_llm_config,
 )
 from ..audit import audit, get_latest_version, _normalize_domains, _fetch_return_note
+from ..ingestion import _llm_generate_all_levels
 from ..linting import _normalize_steps, _validate_steps_required
 from ..auth import require
 from ..utils import _json_dump, _json_load
@@ -1486,3 +1487,311 @@ def api_db_state(request: Request):
             for r in confirmed_tasks
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Primers API
+# ---------------------------------------------------------------------------
+
+class PrimerCreateBody(BaseModel):
+    title: str
+    summary: str
+    explanation: str
+    analogies: str = ""
+    domain: str = ""
+
+
+class PrimerReviseBody(BaseModel):
+    title: str
+    summary: str
+    explanation: str
+    analogies: str = ""
+    domain: str = ""
+    change_note: str
+
+
+class PrimerReturnBody(BaseModel):
+    note: str
+    severity: str = "warning"
+
+
+def _primer_row_to_dict(r: Any) -> dict[str, Any]:
+    d = dict(r)
+    d["media"] = _json_load(d.pop("media_json", None)) or []
+    d["levels"] = _json_load(d.pop("levels_json", None)) or {}
+    return d
+
+
+@router.get("/primers")
+def api_primers_list(
+    request: Request,
+    status: str | None = None,
+    domain: str | None = None,
+    q: str | None = None,
+):
+    q_norm = (q or "").strip().lower()
+    domain_norm = (domain or "").strip().lower() or None
+
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT record_id, MAX(version) AS latest_version FROM primers GROUP BY record_id ORDER BY record_id"
+        ).fetchall()
+        items = []
+        for r in rows:
+            rid = r["record_id"]
+            latest_v = int(r["latest_version"])
+            p = conn.execute(
+                "SELECT record_id, version, status, title, summary, domain, levels_json FROM primers WHERE record_id=? AND version=?",
+                (rid, latest_v),
+            ).fetchone()
+            if not p:
+                continue
+            if status and p["status"] != status:
+                continue
+            if domain_norm and (p["domain"] or "").strip().lower() != domain_norm:
+                continue
+            if q_norm and q_norm not in (p["title"] or "").lower():
+                continue
+            items.append({
+                "record_id": p["record_id"],
+                "version": int(p["version"]),
+                "status": p["status"],
+                "title": p["title"],
+                "summary": p["summary"],
+                "domain": p["domain"] or "",
+                "has_levels": bool(p["levels_json"]),
+            })
+    return {"primers": items}
+
+
+@router.get("/primers/{record_id}/{version}")
+def api_primer_detail(request: Request, record_id: str, version: int):
+    with db() as conn:
+        p = conn.execute(
+            "SELECT * FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not p:
+            raise HTTPException(404)
+        return _primer_row_to_dict(p)
+
+
+@router.post("/primers", status_code=201)
+def api_primer_create(request: Request, body: PrimerCreateBody):
+    require(request.state.role, "primer:create")
+    actor = request.state.user
+    record_id = str(uuid.uuid4())
+    now = utc_now_iso()
+    with db() as conn:
+        conn.execute(
+            """
+            INSERT INTO primers(
+              record_id, version, status, title, summary, explanation, analogies,
+              media_json, domain,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                record_id, 1, "draft",
+                body.title.strip(), body.summary.strip(), body.explanation.strip(),
+                body.analogies.strip() or None, "[]", body.domain.strip().lower() or "",
+                now, now, actor, actor, None, None, None, 0, None,
+            ),
+        )
+        audit("primer", record_id, 1, "create", actor, conn=conn)
+    return {"record_id": record_id, "version": 1, "status": "draft"}
+
+
+@router.post("/primers/{record_id}/{version}/revise", status_code=201)
+def api_primer_revise(request: Request, record_id: str, version: int, body: PrimerReviseBody):
+    require(request.state.role, "primer:revise")
+    actor = request.state.user
+    note = (body.change_note or "").strip()
+    if not note:
+        raise HTTPException(status_code=400, detail="change_note is required")
+    now = utc_now_iso()
+    with db() as conn:
+        src = conn.execute(
+            "SELECT * FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not src:
+            raise HTTPException(404)
+        levels_json_val = src["levels_json"] if "levels_json" in src.keys() else None
+        latest_v = get_latest_version(conn, "primers", record_id) or version
+        new_v = latest_v + 1
+        conn.execute(
+            """
+            INSERT INTO primers(
+              record_id, version, status, title, summary, explanation, analogies,
+              media_json, domain, levels_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                record_id, new_v, "draft",
+                body.title.strip(), body.summary.strip(), body.explanation.strip(),
+                body.analogies.strip() or None, src["media_json"] or "[]",
+                body.domain.strip().lower() or "", levels_json_val,
+                now, now, actor, actor, None, None, note,
+                int(src["needs_review_flag"]), src["needs_review_note"],
+            ),
+        )
+        audit("primer", record_id, new_v, "new_version", actor, note=f"from v{version}: {note}", conn=conn)
+    return {"record_id": record_id, "version": new_v, "status": "draft"}
+
+
+@router.post("/primers/{record_id}/{version}/generate-all-levels", status_code=200)
+def api_primer_generate_all_levels(request: Request, record_id: str, version: int):
+    require(request.state.role, "primer:create")
+    actor = request.state.user
+    with db() as conn:
+        src = conn.execute(
+            "SELECT * FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not src:
+            raise HTTPException(404)
+        cfg = _get_llm_config(conn)
+    levels = _llm_generate_all_levels(src["explanation"], src["title"], cfg)
+    with db() as conn:
+        conn.execute(
+            "UPDATE primers SET levels_json=?, updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (_json_dump(levels), utc_now_iso(), actor, record_id, version),
+        )
+        audit("primer", record_id, version, "generate_levels", actor, conn=conn)
+    return {"record_id": record_id, "version": version, "levels": levels}
+
+
+@router.post("/primers/{record_id}/{version}/submit")
+def api_primer_submit(request: Request, record_id: str, version: int):
+    require(request.state.role, "primer:submit")
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, domain FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "draft":
+            raise HTTPException(409, detail="Only draft primers can be submitted")
+        if not row["domain"]:
+            raise HTTPException(400, detail="A domain must be set before submitting")
+        if not _user_has_domain(conn, actor, row["domain"]):
+            raise HTTPException(403, detail=f"You are not authorised for domain '{row['domain']}'")
+        conn.execute(
+            "UPDATE primers SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+        audit("primer", record_id, version, "submit", actor, conn=conn)
+    return {"status": "submitted"}
+
+
+@router.post("/primers/{record_id}/{version}/confirm")
+def api_primer_confirm(request: Request, record_id: str, version: int):
+    require(request.state.role, "primer:confirm")
+    actor = request.state.user
+    now = utc_now_iso()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status, created_by, domain FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(409, detail="Only submitted primers can be confirmed")
+        if request.state.role == "contributor" and row["created_by"] == actor:
+            raise HTTPException(403, detail="Contributors cannot confirm content they created.")
+        if row["domain"] and not _user_has_domain(conn, actor, row["domain"]):
+            raise HTTPException(403, detail=f"Not authorised for domain '{row['domain']}'")
+        conn.execute(
+            "UPDATE primers SET status='deprecated', updated_at=?, updated_by=? WHERE record_id=? AND status='confirmed'",
+            (now, actor, record_id),
+        )
+        conn.execute(
+            "UPDATE primers SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (now, actor, now, actor, record_id, version),
+        )
+        audit("primer", record_id, version, "confirm", actor, conn=conn)
+    return {"status": "confirmed"}
+
+
+@router.post("/primers/{record_id}/{version}/return")
+def api_primer_return(request: Request, record_id: str, version: int, body: PrimerReturnBody):
+    require(request.state.role, "primer:confirm")
+    actor = request.state.user
+    msg = (body.note or "").strip()
+    if not msg:
+        raise HTTPException(400, detail="Return note is required")
+    sev = (body.severity or "warning").lower()
+    if sev not in ("info", "warning", "critical"):
+        sev = "warning"
+    with db() as conn:
+        row = conn.execute(
+            "SELECT status FROM primers WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        if row["status"] != "submitted":
+            raise HTTPException(409, detail="Only submitted primers can be returned")
+        conn.execute(
+            "UPDATE primers SET status='returned', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
+            (utc_now_iso(), actor, record_id, version),
+        )
+        audit("primer", record_id, version, "return_for_changes", actor, note=f"[{sev}] {msg}", conn=conn)
+    return {"status": "returned"}
+
+
+@router.get("/workflows/{record_id}/primers")
+def api_workflow_primers(request: Request, record_id: str):
+    with db() as conn:
+        wf = conn.execute("SELECT record_id FROM workflows WHERE record_id=? LIMIT 1", (record_id,)).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        rows = conn.execute(
+            """
+            SELECT p.record_id, p.title, p.summary, p.status, p.version, p.domain
+            FROM workflow_primer_refs wpr
+            JOIN primers p ON p.record_id = wpr.primer_record_id
+            WHERE wpr.workflow_record_id = ?
+              AND p.version = (SELECT MAX(p2.version) FROM primers p2 WHERE p2.record_id = p.record_id AND p2.status = 'confirmed')
+            ORDER BY p.title
+            """,
+            (record_id,),
+        ).fetchall()
+    return {"primers": [dict(r) for r in rows]}
+
+
+class WorkflowPrimerAttachBody(BaseModel):
+    primer_record_id: str
+
+
+@router.post("/workflows/{record_id}/primers")
+def api_workflow_attach_primer(request: Request, record_id: str, body: WorkflowPrimerAttachBody):
+    require(request.state.role, "workflow:revise")
+    actor = request.state.user
+    with db() as conn:
+        wf = conn.execute("SELECT record_id FROM workflows WHERE record_id=? LIMIT 1", (record_id,)).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        confirmed = conn.execute(
+            "SELECT record_id FROM primers WHERE record_id=? AND status='confirmed' LIMIT 1",
+            (body.primer_record_id,),
+        ).fetchone()
+        if not confirmed:
+            raise HTTPException(400, detail="Primer must be confirmed before attaching")
+        conn.execute(
+            "INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by) VALUES (?,?,?,?)",
+            (record_id, body.primer_record_id, utc_now_iso(), actor),
+        )
+    return {"attached": True}
+
+
+@router.delete("/workflows/{record_id}/primers/{primer_record_id}")
+def api_workflow_detach_primer(request: Request, record_id: str, primer_record_id: str):
+    require(request.state.role, "workflow:revise")
+    with db() as conn:
+        conn.execute(
+            "DELETE FROM workflow_primer_refs WHERE workflow_record_id=? AND primer_record_id=?",
+            (record_id, primer_record_id),
+        )
+    return {"detached": True}

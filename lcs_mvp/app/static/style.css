@@ -1227,6 +1227,24 @@ body.spa-v1 .pressure-green{background:rgba(34,197,94,.12);color:#166534;border-
 body.spa-v1 .pressure-amber{background:rgba(245,158,11,.14);color:#92400e;border-color:rgba(245,158,11,.35)}
 body.spa-v1 .pressure-red{background:rgba(239,68,68,.14);color:#991b1b;border-color:rgba(239,68,68,.35)}
 
+.prose-md h1,.prose-md h2,.prose-md h3,.prose-md h4{font-weight:600;letter-spacing:normal;text-transform:none;color:var(--ink);margin:1em 0 .4em}
+.prose-md h1{font-size:1.25em}
+.prose-md h2{font-size:1.1em}
+.prose-md h3{font-size:1em}
+.prose-md h4{font-size:.95em}
+.prose-md p{margin:.6em 0}
+.prose-md ul,.prose-md ol{margin:.5em 0;padding-left:1.5em}
+.prose-md li{margin:.25em 0}
+.prose-md code{font-family:monospace;font-size:.88em;background:var(--code-bg,#f1f5f9);padding:1px 5px;border-radius:3px}
+.prose-md pre{background:var(--code-bg,#f1f5f9);padding:10px 14px;border-radius:6px;overflow-x:auto;margin:.75em 0}
+.prose-md pre code{background:none;padding:0;font-size:.85em}
+.prose-md table{border-collapse:collapse;width:100%;margin:.75em 0}
+.prose-md th,.prose-md td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+.prose-md th{background:var(--panel);font-weight:600}
+.prose-md blockquote{border-left:3px solid var(--border);margin:.75em 0;padding:.25em .75em;color:var(--muted)}
+.prose-md>*:first-child{margin-top:0}
+.prose-md>*:last-child{margin-bottom:0}
+
 body.spa-v1 .detail-layout{
   display:grid;
   grid-template-columns:minmax(0,1fr) 320px;

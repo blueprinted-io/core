@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ primer.title }}</h1>
+    <p class="muted">Primer · Version <code>{{ primer.version }}</code></p>
+  </div>
+  <div class="row-right">
+    <span class="badge badge-{{ primer.status }}">{{ primer.status }}</span>
+  </div>
+</div>
+
+<div class="detail-layout">
+  <section class="detail-main">
+    {% if force_action %}
+      <div class="callout" style="border-left:4px solid var(--danger);background:color-mix(in oklab,var(--danger) 8%,var(--panel))">
+        <b>Admin override — {{ force_action.action | replace('_', ' ') }}</b>
+        <div class="muted" style="margin-top:6px">By {{ force_action.actor }} at {{ force_action.at }}{% if force_action.note %} — {{ force_action.note }}{% endif %}</div>
+        <div style="margin-top:6px;font-size:13px">This record was advanced by an administrator without following the normal review process.</div>
+      </div>
+    {% endif %}
+
+    {% if return_note %}
+      <div class="callout warn">
+        <b>Returned for changes
+          {% if return_note.severity == 'critical' %}<span class="badge badge-danger" style="margin-left:6px">critical</span>
+          {% elif return_note.severity == 'info' %}<span class="badge" style="margin-left:6px">info</span>
+          {% else %}<span class="badge badge-warn" style="margin-left:6px">warning</span>{% endif %}
+        </b>
+        <div class="muted" style="margin-top:6px">By {{ return_note.actor }} at {{ return_note.at }}</div>
+        <div style="margin-top:10px">{{ return_note.note }}</div>
+      </div>
+    {% endif %}
+
+    {% if primer.status == 'draft' and not primer.domain %}
+      <div class="callout warn">
+        <b>Domain not set</b>
+        <div style="margin-top:6px">This primer cannot be submitted for review until a domain is selected. <a href="/primers/{{ primer.record_id }}/{{ primer.version }}/edit">Edit the primer</a> and choose a domain.</div>
+      </div>
+    {% endif %}
+
+    {% if primer.needs_review_flag %}
+      <div class="callout warn">
+        <b>Flagged for review</b>
+        {% if primer.needs_review_note %}
+          <div style="margin-top:6px">{{ primer.needs_review_note }}</div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="card stack-sm">
+      <p><b>Summary:</b> {{ primer.summary }}</p>
+      {% if primer.domain %}
+        <p><b>Domain:</b> <code>{{ primer.domain }}</code></p>
+      {% endif %}
+    </div>
+
+    <div class="card stack-sm">
+      <h3 style="margin-top:0">Explanation</h3>
+      <div class="prose-md" style="font-size:0.95em; line-height:1.65">{{ primer.explanation | md | safe }}</div>
+    </div>
+
+    {% if primer.analogies %}
+    <div class="card stack-sm">
+      <h3 style="margin-top:0">Analogies</h3>
+      <div class="prose-md" style="font-size:0.95em; line-height:1.65">{{ primer.analogies | md | safe }}</div>
+    </div>
+    {% endif %}
+
+    {% if levels %}
+    <div class="card stack-sm">
+      <h3 style="margin-top:0">Level variants</h3>
+      <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:10px">
+        {% for lv in ['100','200','300','400'] %}
+          {% if levels[lv] is defined %}
+            <button class="pill level-tab" data-level="{{ lv }}" onclick="showLevel('{{ lv }}')">
+              {{ lv }}{% if lv=='100' %} Awareness{% elif lv=='200' %} Foundation{% elif lv=='300' %} Applied{% elif lv=='400' %} Mastery{% endif %}
+            </button>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% for lv in ['100','200','300','400'] %}
+        {% if levels[lv] is defined %}
+        <div class="level-panel" id="level-{{ lv }}" style="display:none">
+          {% if levels[lv].summary %}
+            <p class="muted" style="font-size:0.9em; margin-bottom:12px">{{ levels[lv].summary }}</p>
+          {% endif %}
+          <div class="prose" style="white-space:pre-wrap; font-size:0.95em; line-height:1.65">{{ levels[lv].explanation }}</div>
+          {% if levels[lv].analogies %}
+            <h4 style="margin-top:14px; margin-bottom:6px">Analogies</h4>
+            <div class="prose" style="white-space:pre-wrap; font-size:0.95em">{{ levels[lv].analogies }}</div>
+          {% endif %}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <script>
+    function showLevel(lv) {
+      document.querySelectorAll('.level-panel').forEach(function(p){ p.style.display='none'; });
+      document.querySelectorAll('.level-tab').forEach(function(b){ b.classList.remove('active'); });
+      document.getElementById('level-'+lv).style.display='block';
+      document.querySelector('[data-level="'+lv+'"]').classList.add('active');
+    }
+    (function(){ var first=document.querySelector('.level-tab'); if(first) showLevel(first.dataset.level); })();
+    </script>
+    {% endif %}
+
+    {% set media_images = primer.media | selectattr('type', 'equalto', 'image') | list %}
+    {% set media_links = primer.media | rejectattr('type', 'equalto', 'image') | list %}
+    {% if media_images or media_links %}
+    <div class="card stack-sm">
+      <h3 style="margin-top:0">Media</h3>
+      {% if media_images %}
+      <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px">
+        {% for asset in media_images %}
+          <a href="{{ asset.url }}" target="_blank" rel="noopener">
+            <img src="{{ asset.url }}" alt="{{ asset.label or 'image' }}"
+                 style="max-width:320px; max-height:240px; border-radius:4px; border:1px solid var(--border); object-fit:contain" />
+          </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if media_links %}
+      <ul style="margin:0">
+        {% for asset in media_links %}
+          <li><a href="{{ asset.url }}" target="_blank" rel="noopener">{{ asset.label or asset.url }}</a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if workflows_using %}
+    <div class="card stack-sm">
+      <h3 style="margin-top:0">Referenced by Workflows</h3>
+      <ul>
+        {% for wf in workflows_using %}
+          <li>
+            <a href="/workflows/{{ wf.record_id }}/{{ wf.version }}">{{ wf.title }}</a>
+            <span class="badge badge-{{ wf.status }}" style="margin-left:6px;font-size:0.78em">{{ wf.status }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if request.state.role == 'admin' %}
+      <details class="card" style="margin-top:14px">
+        <summary><b>Record metadata</b> <span class="muted">(admin only)</span></summary>
+        <div style="margin-top:10px">
+          <p class="muted">record_id=<code>{{ primer.record_id }}</code> · version=<code>{{ primer.version }}</code></p>
+          <p class="muted">created_by={{ primer.created_by }} · created_at={{ primer.created_at }}</p>
+          <p class="muted">updated_by={{ primer.updated_by }} · updated_at={{ primer.updated_at }}</p>
+          {% if primer.reviewed_by %}
+            <p class="muted">reviewed_by={{ primer.reviewed_by }} · reviewed_at={{ primer.reviewed_at }}</p>
+          {% endif %}
+          {% if primer.change_note %}
+            <p class="muted">change_note={{ primer.change_note }}</p>
+          {% endif %}
+        </div>
+      </details>
+    {% endif %}
+  </section>
+
+  <aside class="detail-actions card">
+    <div class="detail-actions-title">Actions</div>
+
+    {% if all_versions | length > 1 %}
+    <div style="margin-bottom:10px">
+      <div class="muted" style="font-size:0.82em; margin-bottom:4px">Versions</div>
+      {% for v in all_versions %}
+        <div style="font-size:0.85em">
+          {% if v.version == primer.version %}
+            <b>v{{ v.version }}</b> <span class="badge badge-{{ v.status }}" style="font-size:0.75em">{{ v.status }}</span>
+          {% else %}
+            <a href="/primers/{{ primer.record_id }}/{{ v.version }}">v{{ v.version }}</a>
+            <span class="badge badge-{{ v.status }}" style="font-size:0.75em">{{ v.status }}</span>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if can(request.state.role, 'primer:revise') %}
+      <a class="btn" href="/primers/{{ primer.record_id }}/{{ primer.version }}/edit">Revise</a>
+    {% endif %}
+
+    {% if primer.status == 'draft' and can(request.state.role, 'primer:submit') %}
+    <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/submit">
+      <button class="btn" type="submit">Submit for review</button>
+    </form>
+    {% endif %}
+
+    {% if primer.status == 'submitted' and can(request.state.role, 'primer:confirm') %}
+    <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/confirm">
+      <button class="btn" type="submit">Confirm (reviewer)</button>
+    </form>
+
+    <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/return" class="card detail-inline-card">
+      <div class="muted" style="margin-bottom:6px"><b>Return for changes</b></div>
+      <label>Severity</label>
+      <select name="severity">
+        <option value="info">Info — minor suggestion</option>
+        <option value="warning" selected>Warning — must address</option>
+        <option value="critical">Critical — significant issue</option>
+      </select>
+      <textarea name="note" rows="3" placeholder="What must change before confirmation?" required style="margin-top:8px"></textarea>
+      <div style="margin-top:8px">
+        <button class="btn" type="submit">Return</button>
+      </div>
+    </form>
+    {% endif %}
+
+    {% if request.state.role == 'admin' %}
+      <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/force-submit">
+        <button class="btn secondary" type="submit">Force submit</button>
+      </form>
+      <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/force-confirm">
+        <button class="btn secondary" type="submit">Force confirm</button>
+      </form>
+    {% endif %}
+
+    {% if primer.status in ('draft', 'returned') and can(request.state.role, 'primer:create') %}
+    <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/generate-all-levels"
+          id="generate-levels-form">
+      <button class="btn secondary" type="submit" id="generate-levels-btn">
+        {% if levels %}Regenerate levels{% else %}Generate levels{% endif %}
+      </button>
+    </form>
+    {% endif %}
+
+    {% if request.state.role == 'admin' or (request.state.role == 'contributor' and primer.created_by == request.state.user and primer.status in ('draft', 'submitted', 'returned')) %}
+      <form method="post" action="/primers/{{ primer.record_id }}/delete"
+            onsubmit="return confirm('Permanently delete all versions of this primer? This cannot be undone.')">
+        <button class="btn secondary" type="submit" style="color:var(--red,#b91c1c)">Delete primer</button>
+      </form>
+    {% endif %}
+  </aside>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('generate-levels-form');
+  if (!form) return;
+  form.addEventListener('submit', function () {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+    overlay.innerHTML = '<div style="background:var(--panel,#fff);padding:32px 40px;border-radius:10px;text-align:center;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,0.25)">'
+      + '<div style="font-size:1.1em;font-weight:600;margin-bottom:10px">Generating level variants…</div>'
+      + '<div style="color:var(--muted,#6b7280);font-size:0.9em;line-height:1.5">Making four LLM calls — one per level.<br>This usually takes 20–40 seconds.</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+  });
+})();
+</script>
+{% endblock %}

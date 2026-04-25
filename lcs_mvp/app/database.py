@@ -158,7 +158,7 @@ def db() -> sqlite3.Connection:
 # Schema helpers
 # ---------------------------------------------------------------------------
 
-_KNOWN_TABLES = frozenset({"tasks", "workflows", "assessment_items", "users", "domains", "audit_log"})
+_KNOWN_TABLES = frozenset({"tasks", "workflows", "primers", "assessment_items", "users", "domains", "audit_log"})
 
 
 def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
@@ -284,6 +284,41 @@ def init_db_path(db_path: str) -> None:
               FOREIGN KEY (task_record_id, task_version)
                 REFERENCES tasks(record_id, version)
                 ON DELETE RESTRICT
+            );
+
+            CREATE TABLE IF NOT EXISTS primers (
+              record_id TEXT NOT NULL,
+              version INTEGER NOT NULL,
+              status TEXT NOT NULL,
+
+              title TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              explanation TEXT NOT NULL,
+              analogies TEXT,
+              media_json TEXT NOT NULL DEFAULT '[]',
+
+              domain TEXT NOT NULL DEFAULT '',
+
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              updated_by TEXT NOT NULL,
+              reviewed_at TEXT,
+              reviewed_by TEXT,
+              change_note TEXT,
+
+              needs_review_flag INTEGER NOT NULL DEFAULT 0,
+              needs_review_note TEXT,
+
+              PRIMARY KEY (record_id, version)
+            );
+
+            CREATE TABLE IF NOT EXISTS workflow_primer_refs (
+              workflow_record_id TEXT NOT NULL,
+              primer_record_id TEXT NOT NULL,
+              attached_at TEXT NOT NULL,
+              attached_by TEXT NOT NULL,
+              PRIMARY KEY (workflow_record_id, primer_record_id)
             );
 
             -- ---- Assessments (MVP) ----
@@ -438,6 +473,7 @@ def init_db_path(db_path: str) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
+            CREATE INDEX IF NOT EXISTS idx_primers_status ON primers(status);
 
             -- ---- Gamification ----
             CREATE TABLE IF NOT EXISTS achievements (
@@ -540,6 +576,42 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE ingestions ADD COLUMN file_path TEXT")
         if "domain" not in ingestion_cols:
             conn.execute("ALTER TABLE ingestions ADD COLUMN domain TEXT NOT NULL DEFAULT ''")
+
+        # primers + workflow_primer_refs (added when Primers feature was introduced)
+        existing_tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "primers" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE primers (
+                  record_id TEXT NOT NULL, version INTEGER NOT NULL, status TEXT NOT NULL,
+                  title TEXT NOT NULL, summary TEXT NOT NULL, explanation TEXT NOT NULL,
+                  analogies TEXT, media_json TEXT NOT NULL DEFAULT '[]',
+                  domain TEXT NOT NULL DEFAULT '',
+                  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                  created_by TEXT NOT NULL, updated_by TEXT NOT NULL,
+                  reviewed_at TEXT, reviewed_by TEXT, change_note TEXT,
+                  needs_review_flag INTEGER NOT NULL DEFAULT 0, needs_review_note TEXT,
+                  PRIMARY KEY (record_id, version)
+                )
+            """)
+            conn.execute("CREATE INDEX idx_primers_status ON primers(status)")
+        if "workflow_primer_refs" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE workflow_primer_refs (
+                  workflow_record_id TEXT NOT NULL, primer_record_id TEXT NOT NULL,
+                  attached_at TEXT NOT NULL, attached_by TEXT NOT NULL,
+                  PRIMARY KEY (workflow_record_id, primer_record_id)
+                )
+            """)
+
+        # Primer level / concept grouping columns (legacy — kept in schema, no longer used)
+        if not _column_exists(conn, "primers", "level"):
+            conn.execute("ALTER TABLE primers ADD COLUMN level INTEGER DEFAULT NULL")
+        if not _column_exists(conn, "primers", "concept_id"):
+            conn.execute("ALTER TABLE primers ADD COLUMN concept_id TEXT DEFAULT NULL")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_primers_concept ON primers(concept_id)")
+        # Primer levels JSON — all four level variants stored on the parent record
+        if not _column_exists(conn, "primers", "levels_json"):
+            conn.execute("ALTER TABLE primers ADD COLUMN levels_json TEXT DEFAULT NULL")
 
         # Contributor role migration: collapse legacy author/reviewer into contributor
         conn.execute("UPDATE users SET role='contributor' WHERE role IN ('author', 'reviewer')")

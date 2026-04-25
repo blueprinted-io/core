@@ -22,7 +22,8 @@ from ..ingestion import (
     _llm_probe, _llm_chat,
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
     _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
-    _llm_triage_chunk, _llm_extract_task_chunk, _extract_and_match_images,
+    _llm_triage_chunk, _llm_extract_task_chunk, _llm_extract_primer_chunk, _extract_and_match_images,
+    _llm_generate_all_levels,
 )
 from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
@@ -509,11 +510,31 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
         for ch in chunks:
             grp = ch["task_group"] if ch["task_group"] is not None else int(ch["chunk_index"])
             group_buckets[grp].append(ch)
-        # Within each bucket, lowest chunk_index is lead; rest are children (in order)
+        # Within each bucket, lowest chunk_index is lead; rest are children (in order).
+        # Primers and tasks can never share a group — eject incompatible children as
+        # standalone extractions so they are never silently absorbed into the wrong record type.
+        _INCOMPATIBLE = {("primer", "task"), ("task", "primer")}
         groups = []
         for grp_id in sorted(group_buckets.keys()):
             bucket = sorted(group_buckets[grp_id], key=lambda c: int(c["chunk_index"]))
-            groups.append((bucket[0], bucket[1:]))
+            lead = bucket[0]
+            lead_type = (lead["chunk_type"] or "task").lower()
+            compatible: list = []
+            ejected: list = []
+            for child in bucket[1:]:
+                child_type = (child["chunk_type"] or "task").lower()
+                if (lead_type, child_type) in _INCOMPATIBLE:
+                    ejected.append(child)
+                else:
+                    compatible.append(child)
+            if ejected:
+                logger.info(
+                    "Splitting %d incompatible child chunk(s) from %s lead (chunk %d, ingestion=%s)",
+                    len(ejected), lead_type, int(lead["chunk_index"]), ingestion_id[:8],
+                )
+            groups.append((lead, compatible))
+            for orphan in ejected:
+                groups.append((orphan, []))
         logger.info(
             "Extraction started ingestion=%s chunks=%d groups=%d user=%s",
             ingestion_id[:8], len(chunks), len(groups), username,
@@ -549,7 +570,11 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
                 child_indices = []
 
             try:
-                data = _llm_extract_task_chunk(extract_text, section_title, cfg)
+                chunk_type_val = (lead["chunk_type"] or "task").lower()
+                if chunk_type_val == "primer":
+                    data = _llm_extract_primer_chunk(extract_text, section_title, cfg)
+                else:
+                    data = _llm_extract_task_chunk(extract_text, section_title, cfg)
 
                 # Attach section page ranges so image extraction at commit time can
                 # use page number → section title → step matching instead of OCR heuristics
@@ -781,7 +806,7 @@ def import_pdf_queue(
         group_map = dict(zip(chunk_index, chunk_group))
         for idx in chunk_index:
             ct = (type_map.get(idx) or "task").strip().lower()
-            if ct not in ("task", "workflow"):
+            if ct not in ("task", "primer", "workflow"):
                 ct = "task"
             grp = group_map.get(idx)
             conn.execute(
@@ -1025,6 +1050,7 @@ def import_pdf_review(request: Request, ingestion_id: str):
                 })
 
     candidates: list[dict[str, Any]] = []
+    primer_candidates: list[dict[str, Any]] = []
 
     for cr in chunk_rows:
         if not cr["llm_result_json"]:
@@ -1033,19 +1059,40 @@ def import_pdf_review(request: Request, ingestion_id: str):
             data = json.loads(cr["llm_result_json"])
         except Exception:
             continue
-        tasks = data.get("tasks") if isinstance(data, dict) else []
-        if not isinstance(tasks, list):
-            tasks = []
 
-        for t in tasks:
-            if not isinstance(t, dict):
-                continue
-            title = str(t.get("title", "")).strip() or str(t.get("procedure_name", "")).strip()
-            if not title:
-                continue
-            if not t.get("title"):
-                t = {**t, "title": title}
-            candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
+        cr_chunk_type = (cr["chunk_type"] or "task").lower()
+
+        if cr_chunk_type == "primer":
+            primers = data.get("primers") if isinstance(data, dict) else []
+            if not isinstance(primers, list):
+                primers = []
+            for p in primers:
+                if not isinstance(p, dict):
+                    continue
+                title = str(p.get("title", "")).strip() or str(p.get("summary", "")).strip()
+                if not title:
+                    continue
+                fp = _sha256_bytes(f"primer:{title}:{cr['chunk_index']}".encode())[:16]
+                primer_candidates.append({
+                    "id": fp,
+                    "title": title,
+                    "chunk_index": int(cr["chunk_index"]),
+                    "pages": _json_load(cr["pages_json"]) or [],
+                    "primer": p,
+                })
+        else:
+            tasks = data.get("tasks") if isinstance(data, dict) else []
+            if not isinstance(tasks, list):
+                tasks = []
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                title = str(t.get("title", "")).strip() or str(t.get("procedure_name", "")).strip()
+                if not title:
+                    continue
+                if not t.get("title"):
+                    t = {**t, "title": title}
+                candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
 
     # Dedupe within candidates by fingerprint
     out: list[dict[str, Any]] = []
@@ -1082,12 +1129,19 @@ def import_pdf_review(request: Request, ingestion_id: str):
 
     skipped_note = f"{errored} section(s) could not be processed (timeout or error)." if errored else ""
 
+    # Merge tasks and primers into a single document-order list for the combined table
+    all_candidates: list[dict[str, Any]] = (
+        [{**c, "kind": "task"} for c in flagged]
+        + [{**c, "kind": "primer"} for c in primer_candidates]
+    )
+    all_candidates.sort(key=lambda x: (x["chunk_index"], x.get("title", "")))
+
     return templates.TemplateResponse(
         request,
         "import_pdf_preview.html",
         {
             "ingestion": dict(ing),
-            "candidates": flagged,
+            "all_candidates": all_candidates,
             "error": None,
             "skipped_note": skipped_note,
             "done": True,
@@ -1104,17 +1158,18 @@ def _commit_schema10_payload(
     domain: str,
     actor: str,
     pdf_path: str = "",
-) -> int:
+) -> tuple[int, int]:
     """Assemble and commit a schema 1.0 payload from done chunks.
 
-    Merges task lists across chunks and inserts them as draft tasks.
-    Returns tasks_created count.
+    Merges task lists across chunks and inserts them as draft tasks/primers.
+    Returns (tasks_created, primers_created) count.
     """
     now = utc_now_iso()
     initial_status = _import_initial_status(conn)
 
-    # Collect selected tasks from all chunks, preserving chunk order
+    # Collect selected tasks and primers from all chunks, preserving chunk order
     all_task_items: list[dict[str, Any]] = []
+    all_primer_items: list[dict[str, Any]] = []
 
     seen_fp: set[str] = set()
     for cr in chunk_rows:
@@ -1124,30 +1179,46 @@ def _commit_schema10_payload(
             data = json.loads(cr["llm_result_json"])
         except Exception:
             continue
-        tasks = data.get("tasks") if isinstance(data, dict) else []
-        if not isinstance(tasks, list):
-            tasks = []
 
         chunk_idx = int(cr["chunk_index"])
         pages = _json_load(cr["pages_json"]) or []
-        section_ranges = data.get("_section_ranges") if isinstance(data, dict) else None
+        cr_chunk_type = (cr["chunk_type"] if "chunk_type" in cr.keys() else None or "task").lower()
 
-        for t in tasks:
-            if not isinstance(t, dict):
-                continue
-            fp = _task_fingerprint(t)
-            cid = _sha256_bytes((fp + str(chunk_idx)).encode("utf-8"))[:16]
-            if cid not in candidate_id:
-                continue
-            if fp in seen_fp:
-                continue
-            seen_fp.add(fp)
-            all_task_items.append({
-                "task": t,
-                "pages": pages,
-                "chunk_index": chunk_idx,
-                "section_ranges": section_ranges,
-            })
+        if cr_chunk_type == "primer":
+            primers = data.get("primers") if isinstance(data, dict) else []
+            if not isinstance(primers, list):
+                primers = []
+            for p in primers:
+                if not isinstance(p, dict):
+                    continue
+                title = str(p.get("title", "")).strip() or str(p.get("summary", "")).strip()
+                if not title:
+                    continue
+                cid = _sha256_bytes(f"primer:{title}:{chunk_idx}".encode())[:16]
+                if cid not in candidate_id:
+                    continue
+                all_primer_items.append({"primer": p, "pages": pages, "chunk_index": chunk_idx})
+        else:
+            section_ranges = data.get("_section_ranges") if isinstance(data, dict) else None
+            tasks = data.get("tasks") if isinstance(data, dict) else []
+            if not isinstance(tasks, list):
+                tasks = []
+            for t in tasks:
+                if not isinstance(t, dict):
+                    continue
+                fp = _task_fingerprint(t)
+                cid = _sha256_bytes((fp + str(chunk_idx)).encode("utf-8"))[:16]
+                if cid not in candidate_id:
+                    continue
+                if fp in seen_fp:
+                    continue
+                seen_fp.add(fp)
+                all_task_items.append({
+                    "task": t,
+                    "pages": pages,
+                    "chunk_index": chunk_idx,
+                    "section_ranges": section_ranges,
+                })
 
     task_records: list[dict[str, Any]] = []
     for item in all_task_items:
@@ -1223,7 +1294,60 @@ def _commit_schema10_payload(
         audit("task", item["record_id"], 1, "create", actor, note="import:pdf", conn=conn)
         tasks_created += 1
 
-    return tasks_created
+    # Insert primers
+    primers_created = 0
+    primer_cfg = _get_llm_config(conn) if all_primer_items else None
+    for item in all_primer_items:
+        p = item["primer"]
+        title = str(p.get("title", "")).strip() or str(p.get("summary", "")).strip()
+        summary = str(p.get("summary", "")).strip() or title
+        explanation = str(p.get("explanation", "")).strip()
+        if not explanation:
+            logger.warning("Skipping primer '%s' during commit: no explanation", title[:80])
+            continue
+        analogies = str(p.get("analogies", "") or "").strip() or None
+        record_id = str(uuid.uuid4())
+
+        # Extract images from primer pages (all images become media assets — no step matching)
+        media_assets: list[dict] = [{
+            "url": f"ingestion:{ingestion_id}",
+            "type": "link",
+            "label": f"source_pdf:{filename} pages:{item['pages']}",
+        }]
+        if pdf_path:
+            page_nums = [pg for pg in (item["pages"] if isinstance(item["pages"], list) else []) if isinstance(pg, int)]
+            _, img_assets = _extract_and_match_images(pdf_path, page_nums, [], record_id)
+            media_assets.extend(img_assets)
+
+        # Generate all four levels from source content
+        levels_json_val: str | None = None
+        if primer_cfg:
+            try:
+                levels = _llm_generate_all_levels(explanation, title, primer_cfg)
+                levels_json_val = _json_dump(levels)
+            except Exception as exc:
+                logger.warning("Level generation failed for primer '%s': %s", title[:60], exc)
+
+        conn.execute(
+            """INSERT INTO primers(
+              record_id, version, status, title, summary, explanation, analogies,
+              media_json, domain, levels_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                record_id, 1, initial_status,
+                title, summary, explanation, analogies,
+                _json_dump(media_assets), domain, levels_json_val,
+                now, now, actor, actor,
+                None, None, f"import:pdf ingestion={ingestion_id}",
+                1, "AI-imported: check for accuracy",
+            ),
+        )
+        audit("primer", record_id, 1, "create", actor, note="import:pdf", conn=conn)
+        primers_created += 1
+
+    return tasks_created, primers_created
 
 
 @router.post("/import/pdf/commit")
@@ -1252,12 +1376,14 @@ def import_pdf_commit(
         domain = (ing["domain"] or "").strip() if "domain" in ing.keys() else ""
         pdf_path = (ing["file_path"] or "") if "file_path" in ing.keys() else ""
 
-        _commit_schema10_payload(
+        tasks_created, primers_created = _commit_schema10_payload(
             conn, chunk_rows, candidate_id,
             ingestion_id, ing["filename"] or "", domain, actor,
             pdf_path=pdf_path,
         )
 
+    if primers_created and not tasks_created:
+        return RedirectResponse(url="/primers?status=draft", status_code=303)
     return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
 
@@ -1385,17 +1511,22 @@ def import_json_run(
 
     tasks_in: list[dict[str, Any]] = []
     workflows_in: list[dict[str, Any]] = []
+    primers_in: list[dict[str, Any]] = []
 
     if isinstance(payload, dict):
         if isinstance(payload.get("tasks"), list):
             tasks_in = [x for x in payload.get("tasks") if isinstance(x, dict)]
         if isinstance(payload.get("workflows"), list):
             workflows_in = [x for x in payload.get("workflows") if isinstance(x, dict)]
+        if isinstance(payload.get("primers"), list):
+            primers_in = [x for x in payload.get("primers") if isinstance(x, dict)]
         # Allow single objects
         if payload.get("type") == "task":
             tasks_in = [payload]
         if payload.get("type") == "workflow":
             workflows_in = [payload]
+        if payload.get("type") == "primer":
+            primers_in = [payload]
     elif isinstance(payload, list):
         # list of heterogeneous objects
         for x in payload:
@@ -1403,17 +1534,20 @@ def import_json_run(
                 continue
             if x.get("type") == "workflow":
                 workflows_in.append(x)
+            elif x.get("type") == "primer":
+                primers_in.append(x)
             else:
                 # default to task
                 tasks_in.append(x)
     else:
         raise HTTPException(status_code=400, detail="Import JSON must be an object or a list")
 
-    if not tasks_in and not workflows_in:
-        raise HTTPException(status_code=400, detail="No tasks/workflows found in uploaded JSON")
+    if not tasks_in and not workflows_in and not primers_in:
+        raise HTTPException(status_code=400, detail="No tasks/workflows/primers found in uploaded JSON")
 
     created_task_ids: list[str] = []
     created_workflow_ids: list[str] = []
+    created_primer_ids: list[str] = []
     now = utc_now_iso()
 
     with db() as conn:
@@ -1538,7 +1672,64 @@ def import_json_run(
             audit("workflow", item["record_id"], item["version"], "create", actor, note="import:json")
             created_workflow_ids.append(item["record_id"])
 
+        # primers
+        for p in primers_in:
+            title = str(p.get("title", "")).strip()
+            summary = str(p.get("summary", "")).strip()
+            explanation = str(p.get("explanation", "")).strip()
+            if not title:
+                raise HTTPException(status_code=400, detail="Primer import: title is required")
+            if not summary:
+                raise HTTPException(status_code=400, detail=f"Primer import '{title}': summary is required")
+            if not explanation:
+                raise HTTPException(status_code=400, detail=f"Primer import '{title}': explanation is required")
+
+            record_id = str(p.get("record_id") or "").strip() or str(uuid.uuid4())
+            version = int(p.get("version") or 1)
+
+            exists = conn.execute(
+                "SELECT 1 FROM primers WHERE record_id=? AND version=?", (record_id, version)
+            ).fetchone()
+            if exists:
+                raise HTTPException(status_code=409, detail=f"Primer import conflict: {record_id}@{version} already exists")
+
+            analogies = str(p.get("analogies", "") or "").strip() or None
+            domain = str(p.get("domain", "") or "").strip().lower()
+
+            # Generate all four levels from source content (non-fatal)
+            levels_json_val: str | None = None
+            try:
+                json_cfg = _get_llm_config(conn)
+                levels = _llm_generate_all_levels(explanation, title, json_cfg)
+                levels_json_val = _json_dump(levels)
+            except Exception as exc:
+                logger.warning("Level generation failed for JSON primer '%s': %s", title[:60], exc)
+
+            conn.execute(
+                """
+                INSERT INTO primers(
+                  record_id, version, status, title, summary, explanation, analogies,
+                  media_json, domain, levels_json,
+                  created_at, updated_at, created_by, updated_by,
+                  reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    record_id, version, initial_status,
+                    title, summary, explanation, analogies,
+                    "[]", domain, levels_json_val,
+                    now, now, actor, actor,
+                    None, None, actor_note.strip() or "Imported from JSON",
+                    1 if bool(p.get("needs_review_flag")) else 0,
+                    str(p.get("needs_review_note")) if p.get("needs_review_note") else None,
+                ),
+            )
+            audit("primer", record_id, version, "create", actor, note="import:json")
+            created_primer_ids.append(record_id)
+
     # Redirect to something sensible
+    if created_primer_ids and not created_task_ids and not created_workflow_ids:
+        return RedirectResponse(url="/primers?status=draft", status_code=303)
     if created_workflow_ids and not created_task_ids:
         return RedirectResponse(url="/workflows", status_code=303)
     return RedirectResponse(url="/tasks?status=draft", status_code=303)

@@ -69,7 +69,7 @@ PHASE1_OPERATIONAL_DOMAINS = [
 
 STALENESS_DAYS = 90   # confirmed content not reviewed within this threshold is considered stale
 SESSION_TTL_HOURS = int(os.environ.get("LCS_SESSION_TTL_HOURS", "24"))
-STATIC_ASSET_VERSION = "69"   # bump on each deploy to bust cached JS/CSS
+STATIC_ASSET_VERSION = "70"   # bump on each deploy to bust cached JS/CSS
 
 # ---------------------------------------------------------------------------
 # Jinja2 templates singleton (shared across all route modules)
@@ -77,3 +77,10 @@ STATIC_ASSET_VERSION = "69"   # bump on each deploy to bust cached JS/CSS
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+import mistune as _mistune
+_md_renderer = _mistune.create_markdown(
+    plugins=["table", "strikethrough"],
+    escape=True,
+)
+templates.env.filters["md"] = _md_renderer

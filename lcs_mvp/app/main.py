@@ -59,6 +59,7 @@ from .routes import assessments as assessments_routes
 from .routes import imports as imports_routes
 from .routes import exports as exports_routes
 from .routes import api as api_routes
+from .routes import primers as primers_routes
 
 # ---------------------------------------------------------------------------
 # Re-exports for test and external compatibility
@@ -173,7 +174,7 @@ templates.env.globals["asset_v"] = STATIC_ASSET_VERSION
 for _r in (
     auth_routes, admin_routes, home_routes, tasks_routes,
     workflows_routes, assessments_routes, imports_routes, exports_routes,
-    api_routes,
+    api_routes, primers_routes,
 ):
     app.include_router(_r.router)
 

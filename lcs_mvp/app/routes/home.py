@@ -323,6 +323,12 @@ def pulse(request: Request):
             for r in conn.execute("SELECT status, COUNT(*) AS c FROM assessment_items GROUP BY status").fetchall()
         }
 
+        # Primer counts
+        primer_counts = {
+            r["status"]: int(r["c"])
+            for r in conn.execute("SELECT status, COUNT(*) AS c FROM primers GROUP BY status").fetchall()
+        }
+
         last_audit = conn.execute("SELECT at, actor, action FROM audit_log ORDER BY at DESC LIMIT 1").fetchone()
 
     return {
@@ -340,6 +346,11 @@ def pulse(request: Request):
             "draft": as_counts.get("draft", 0),
             "submitted": as_counts.get("submitted", 0),
             "confirmed": as_counts.get("confirmed", 0),
+        },
+        "primers": {
+            "draft": primer_counts.get("draft", 0),
+            "submitted": primer_counts.get("submitted", 0),
+            "confirmed": primer_counts.get("confirmed", 0),
         },
         "review": {
             "pending": reviewer_pending,

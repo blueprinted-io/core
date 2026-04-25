@@ -9,7 +9,7 @@
   <div class="spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary,#2563eb);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0"></div>
   <div>
     <div style="font-weight:600">Analysing sections…</div>
-    <div class="muted" style="font-size:0.85em; margin-top:2px">Classifying each section as task, workflow, or ignore. This page will update automatically.</div>
+    <div class="muted" style="font-size:0.85em; margin-top:2px">Classifying each section as task, primer, or ignore. This page will update automatically.</div>
   </div>
 </div>
 <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
@@ -26,7 +26,7 @@
 {# ── Triage review ── #}
 <div class="callout">
   Review the AI classification for each section. Override any misclassified sections, then choose a domain and run extraction.
-  Sections marked <b>ignore</b> will be excluded. Use the <b>Task group</b> column to control merging — sections sharing a group are extracted as one task. Change a section to <b>New group</b> to split it out, or assign it the same group number as another section to merge them together.
+  Sections marked <b>ignore</b> will be excluded. <b>Primer</b> sections produce conceptual Primer drafts; <b>task</b> sections produce procedural Task drafts. Use the <b>Task group</b> column to control merging — sections sharing a group are extracted as one task. Change a section to <b>New group</b> to split it out, or assign it the same group number as another section to merge them together.
 </div>
 
 <form method="post" action="/import/pdf/queue/{{ ingestion_id }}">
@@ -81,6 +81,8 @@
           <td style="padding:8px 12px; vertical-align:top">
             {% if s.chunk_type == 'task' %}
               <span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">task</span>
+            {% elif s.chunk_type == 'primer' %}
+              <span style="background:#ccfbf1;color:#0f766e;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">primer</span>
             {% elif s.chunk_type == 'workflow' %}
               <span style="background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:99px;font-size:0.78em;font-weight:600">workflow</span>
             {% elif s.chunk_type == 'ignore' %}
@@ -95,6 +97,7 @@
           <td style="padding:8px 12px; vertical-align:top">
             <select name="chunk_type" class="triage-type-select" style="font-size:0.85em; padding:3px 6px">
               <option value="task" {% if s.chunk_type == 'task' %}selected{% endif %}>task</option>
+              <option value="primer" {% if s.chunk_type == 'primer' %}selected{% endif %}>primer</option>
               <option value="workflow" {% if s.chunk_type == 'workflow' %}selected{% endif %}>workflow</option>
               <option value="ignore" {% if s.chunk_type == 'ignore' %}selected{% endif %}>ignore</option>
             </select>
@@ -213,7 +216,7 @@ function rebuildAllSelects() {
 }
 
 (function () {
-  // Keep type selects in sync with checkbox state (ignore → uncheck; task/workflow → check)
+  // Keep type selects in sync with checkbox state (ignore → uncheck; task/primer/workflow → check)
   document.querySelectorAll('.triage-type-select').forEach(function (sel) {
     var row = sel.closest('.triage-row');
     var check = row ? row.querySelector('.triage-check') : null;
