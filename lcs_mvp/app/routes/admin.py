@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..config import DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, DATA_DIR, templates
+from ..config import DB_KEY_BLANK, DB_KEY_COOKIE, DB_KEY_DEBIAN, DATA_DIR, UPLOADS_DIR, EXPORTS_DIR, templates
+from ..config import TASK_IMAGES_DIR
 from ..database import (
     db, utc_now_iso,
     _active_domains, _available_db_keys, _create_custom_db_profile,
@@ -508,6 +510,122 @@ def _read_log_tail(log_path: str, lines: int, level_filter: str) -> list[dict]:
     return entries  # already newest-first
 
 
+# ---------------------------------------------------------------------------
+# Admin task edit (in-place metadata UPDATE, no new version)
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/tasks/{record_id}/{version}/edit", response_class=HTMLResponse)
+def admin_task_edit_form(request: Request, record_id: str, version: int):
+    require_admin(request)
+    with db() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        domains = _active_domains(conn)
+    return templates.TemplateResponse(
+        request,
+        "admin/task_edit.html",
+        {"task": dict(row), "domains": domains},
+    )
+
+
+@router.post("/admin/tasks/{record_id}/{version}/edit")
+def admin_task_edit_save(
+    request: Request,
+    record_id: str,
+    version: int,
+    title: str = Form(...),
+    outcome: str = Form(...),
+    procedure_name: str = Form(""),
+    domain: str = Form(""),
+    software_name: str = Form(""),
+    software_version: str = Form(""),
+    needs_review_flag: bool = Form(False),
+    needs_review_note: str = Form(""),
+    irreversible_flag: bool = Form(False),
+):
+    require_admin(request)
+    actor = request.state.user
+    with db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not row:
+            raise HTTPException(404)
+        conn.execute(
+            """
+            UPDATE tasks SET
+                title=?, outcome=?, procedure_name=?, domain=?,
+                software_name=?, software_version=?,
+                needs_review_flag=?, needs_review_note=?,
+                irreversible_flag=?,
+                updated_at=?, updated_by=?
+            WHERE record_id=? AND version=?
+            """,
+            (
+                title.strip(),
+                outcome.strip(),
+                procedure_name.strip(),
+                (domain or "").strip().lower(),
+                software_name.strip() or None,
+                software_version.strip() or None,
+                1 if needs_review_flag else 0,
+                needs_review_note.strip() or None,
+                1 if irreversible_flag else 0,
+                utc_now_iso(),
+                actor,
+                record_id,
+                version,
+            ),
+        )
+    audit("task", record_id, version, "admin_edit", actor, note="in-place metadata edit")
+    return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Admin bulk delete
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/tasks/bulk-delete")
+def admin_tasks_bulk_delete(
+    request: Request,
+    task_ids: list[str] = Form([]),
+    confirm_text: str = Form(""),
+):
+    require_admin(request)
+    if confirm_text != "DELETE":
+        raise HTTPException(status_code=400, detail="Confirmation text must be exactly 'DELETE'")
+    if not task_ids:
+        raise HTTPException(status_code=400, detail="No tasks selected")
+
+    actor = request.state.user
+    deleted = 0
+    with db() as conn:
+        for tid in task_ids:
+            parts = tid.split("::", 1)
+            if len(parts) != 2:
+                continue
+            rid, ver_str = parts
+            try:
+                ver = int(ver_str)
+            except ValueError:
+                continue
+            conn.execute(
+                "DELETE FROM workflow_task_refs WHERE task_record_id=? AND task_version=?",
+                (rid, ver),
+            )
+            conn.execute(
+                "DELETE FROM tasks WHERE record_id=? AND version=?",
+                (rid, ver),
+            )
+            audit("task", rid, ver, "delete", actor, note="admin bulk delete", conn=conn)
+            deleted += 1
+
+    return RedirectResponse(url=f"/tasks?deleted={deleted}", status_code=303)
+
+
 @router.get("/admin/logs", response_class=HTMLResponse)
 def admin_logs(
     request: Request,
@@ -529,5 +647,106 @@ def admin_logs(
             "level": level.upper(),
             "log_path": log_path,
             "log_exists": os.path.exists(log_path),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# System status / disk space
+# ---------------------------------------------------------------------------
+
+def _dir_size(path: str) -> tuple[int, int]:
+    """Return (total_bytes, file_count) for a directory tree. Returns (0, 0) if missing."""
+    total = count = 0
+    if not os.path.isdir(path):
+        return 0, 0
+    for dirpath, _, files in os.walk(path):
+        for fname in files:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, fname))
+                count += 1
+            except OSError:
+                pass
+    return total, count
+
+
+def _fmt_bytes(n: int) -> str:
+    if n >= 1_073_741_824:
+        return f"{n / 1_073_741_824:.2f} GB"
+    if n >= 1_048_576:
+        return f"{n / 1_048_576:.1f} MB"
+    if n >= 1024:
+        return f"{n / 1024:.0f} KB"
+    return f"{n} B"
+
+
+@router.get("/admin/system", response_class=HTMLResponse)
+def admin_system(request: Request):
+    require_admin(request)
+
+    # Partition stats
+    try:
+        usage = shutil.disk_usage(DATA_DIR)
+        disk_total = usage.total
+        disk_used = usage.used
+        disk_free = usage.free
+        disk_pct = round(disk_used / disk_total * 100, 1) if disk_total else 0
+        disk_warn = disk_free < 1_073_741_824 or disk_pct > 90  # < 1 GB or > 90%
+    except Exception:
+        disk_total = disk_used = disk_free = 0
+        disk_pct = 0
+        disk_warn = False
+
+    # Per-directory breakdown
+    db_bytes = db_count = 0
+    for fname in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR) else []:
+        if fname.endswith(".db"):
+            try:
+                db_bytes += os.path.getsize(os.path.join(DATA_DIR, fname))
+                db_count += 1
+            except OSError:
+                pass
+
+    log_bytes = 0
+    for fname in os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR) else []:
+        if fname.startswith("app.log"):
+            try:
+                log_bytes += os.path.getsize(os.path.join(DATA_DIR, fname))
+            except OSError:
+                pass
+
+    uploads_bytes, uploads_count = _dir_size(UPLOADS_DIR)
+    exports_bytes, exports_count = _dir_size(EXPORTS_DIR)
+    images_bytes, images_count = _dir_size(TASK_IMAGES_DIR)
+
+    dirs = [
+        {"name": "Databases (.db)", "path": DATA_DIR + "/*.db", "size": _fmt_bytes(db_bytes), "count": db_count},
+        {"name": "Uploaded PDFs", "path": UPLOADS_DIR, "size": _fmt_bytes(uploads_bytes), "count": uploads_count},
+        {"name": "Exports", "path": EXPORTS_DIR, "size": _fmt_bytes(exports_bytes), "count": exports_count},
+        {"name": "Task images", "path": TASK_IMAGES_DIR, "size": _fmt_bytes(images_bytes), "count": images_count},
+        {"name": "App logs", "path": DATA_DIR + "/app.log*", "size": _fmt_bytes(log_bytes), "count": None},
+    ]
+
+    # DB record counts
+    record_counts: list[dict[str, Any]] = []
+    try:
+        with db() as conn:
+            for label, table in [("Tasks", "tasks"), ("Workflows", "workflows"), ("Ingestions", "ingestions")]:
+                n = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+                record_counts.append({"label": label, "count": n})
+    except Exception:
+        pass
+
+    return templates.TemplateResponse(
+        request,
+        "admin/system.html",
+        {
+            "disk_total": _fmt_bytes(disk_total),
+            "disk_used": _fmt_bytes(disk_used),
+            "disk_free": _fmt_bytes(disk_free),
+            "disk_pct": disk_pct,
+            "disk_warn": disk_warn,
+            "dirs": dirs,
+            "record_counts": record_counts,
         },
     )

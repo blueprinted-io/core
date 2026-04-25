@@ -26,8 +26,8 @@
 
   <h2>How it works</h2>
   <ol>
-    <li><b>Ingest source inputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Technical documentation, learning content, and knowledge-base material are brought into the system.</span></li>
-    <li><b>Structure and validate with humans-in-the-loop</b><br><span class="muted">Authors and reviewers create and govern Tasks and Workflows, with explicit review gates.</span></li>
+    <li><b>Ingest source inputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Technical documentation is processed by AI to extract task candidates. Ingestion produces tasks only — workflows are never generated automatically.</span></li>
+    <li><b>Structure and validate with humans-in-the-loop</b><br><span class="muted">Authors review AI-extracted task candidates and confirm them. Reviewers confirm tasks through the review queue. Authors then compose confirmed tasks into Workflows using the authoring UI.</span></li>
     <li><b>Deliver controlled outputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Confirmed records drive content output, assessments, and assurance evidence.</span></li>
   </ol>
 </div>
@@ -63,6 +63,7 @@
   <ul>
     <li>Workflows contain <b>Tasks</b>, not low-level steps.</li>
     <li>The Workflow objective defines the business outcome for the set of Tasks.</li>
+    <li>Workflows are always <b>human-composed</b>. They are never generated automatically during ingestion — a workflow expresses an expert's judgment about how tasks should be sequenced for a specific operational context.</li>
   </ul>
 
   <h3>Step</h3>

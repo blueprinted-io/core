@@ -23,7 +23,7 @@
   </div>
 {% endif %}
 
-{% if not candidates and not workflows %}
+{% if not candidates %}
   <div class="callout warn">
     No candidates were produced for this run.
   </div>
@@ -135,29 +135,6 @@
       {% endfor %}
     </tbody>
   </table>
-
-  {% if workflows %}
-  <h2 style="margin-top:24px">Workflow candidates</h2>
-  <p class="muted">Workflows extracted from workflow-type sections will be committed automatically alongside their tasks.</p>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Title</th>
-        <th>Objective</th>
-        <th>Tasks</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for w in workflows %}
-      <tr>
-        <td style="font-weight:500">{{ w.title }}</td>
-        <td class="muted">{{ w.objective }}</td>
-        <td class="muted">{{ w.task_titles | join(', ') }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
 
   <div style="margin-top:14px">
     <button class="btn" type="submit">Create selected drafts</button>

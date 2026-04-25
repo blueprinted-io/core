@@ -437,6 +437,16 @@ in the system, not a topic, not a lesson, and not a collection of
 loosely related steps.
 Workflows contain tasks only; they do not contain other workflows.
 
+**Workflows are human-authored only.** No workflow is ever created by
+automated ingestion. The ingestion pipeline produces task candidates;
+humans compose those tasks into workflows using the authoring UI. This
+is intentional — a workflow expresses an expert's judgment about how
+tasks should be sequenced for a specific operational context. That
+judgment cannot be extracted from documentation by an LLM. Technical
+documentation describes *what* procedures exist; it does not express
+*how* those procedures should be combined and sequenced for a given
+operational outcome. That composition is always a human act.
+
 **Authoring rule:** a Workflow in **draft** or **submitted** state may reference Task versions in **draft**, **submitted**, or **confirmed** state.
 
 **Authority rule:** a Workflow may transition to **confirmed** only if every referenced Task version is **confirmed**.

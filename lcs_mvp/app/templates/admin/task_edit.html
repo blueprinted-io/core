@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Admin Edit</h1>
+    <p class="muted">{{ task.title }}</p>
+  </div>
+</div>
+
+<div class="callout" style="border-left-color:var(--danger,#dc2626)">
+  <b>Admin direct edit</b> — changes take effect immediately without creating a new version. The task's status and version number are unchanged.
+</div>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="row" style="gap:24px; font-size:0.875em; color:var(--muted,#6b7280)">
+    <span>record_id: <code>{{ task.record_id }}</code></span>
+    <span>version: <code>{{ task.version }}</code></span>
+    <span>status: <span class="badge badge-{{ task.status }}">{{ task.status }}</span></span>
+  </div>
+</div>
+
+<form method="post" action="/admin/tasks/{{ task.record_id }}/{{ task.version }}/edit">
+  <div class="card stack-sm" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Content</h2>
+
+    <label>Title <span class="muted">(required)</span></label>
+    <input type="text" name="title" value="{{ task.title or '' }}" required />
+
+    <label>Outcome <span class="muted">(required)</span></label>
+    <input type="text" name="outcome" value="{{ task.outcome or '' }}" required />
+
+    <label>Procedure name</label>
+    <input type="text" name="procedure_name" value="{{ task.procedure_name or '' }}" />
+  </div>
+
+  <div class="card stack-sm" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Classification</h2>
+
+    <label>Domain</label>
+    <select name="domain">
+      <option value="">— none —</option>
+      {% for d in domains %}
+        <option value="{{ d }}" {% if task.domain == d %}selected{% endif %}>{{ d }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="row" style="gap:16px">
+      <div style="flex:1">
+        <label>Software name</label>
+        <input type="text" name="software_name" value="{{ task.software_name or '' }}" placeholder="e.g. Veeam Agent for Windows" />
+      </div>
+      <div style="flex:1">
+        <label>Software version</label>
+        <input type="text" name="software_version" value="{{ task.software_version or '' }}" placeholder="e.g. 6.2" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card stack-sm" style="margin-bottom:16px">
+    <h2 style="margin-top:0">Flags</h2>
+
+    <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer">
+      <input type="checkbox" name="irreversible_flag" value="true" {% if task.irreversible_flag %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
+      <span>
+        <strong>Irreversible</strong>
+        <span class="muted" style="display:block; font-size:0.875em">Steps in this task cannot be undone once performed.</span>
+      </span>
+    </label>
+
+    <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; margin-top:10px">
+      <input type="checkbox" name="needs_review_flag" value="true" {% if task.needs_review_flag %}checked{% endif %} style="margin-top:3px; flex-shrink:0; width:auto" />
+      <span>
+        <strong>Flagged for review</strong>
+        <span class="muted" style="display:block; font-size:0.875em">Surfaces a warning banner on the task view and in workflow output.</span>
+      </span>
+    </label>
+
+    <label style="margin-top:10px">Review note <span class="muted">(optional, shown when flag is set)</span></label>
+    <textarea name="needs_review_note" rows="2" placeholder="Reason this task is flagged…">{{ task.needs_review_note or '' }}</textarea>
+  </div>
+
+  <div class="row" style="gap:12px; align-items:center">
+    <button class="btn" type="submit">Save changes</button>
+    <a class="btn secondary" href="/tasks/{{ task.record_id }}/{{ task.version }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

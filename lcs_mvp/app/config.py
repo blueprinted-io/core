@@ -26,6 +26,7 @@ DB_OLD_DEBIAN_PATH = os.path.join(DATA_DIR, "lcs_debian.db")
 DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
+TASK_IMAGES_DIR = os.path.join(DATA_DIR, "task_images")
 
 # ---------------------------------------------------------------------------
 # Database key / profile constants

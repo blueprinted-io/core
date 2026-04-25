@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>System</h1>
+    <p class="muted">Disk usage and record counts for the current database profile.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/admin/system">Refresh</a>
+  </div>
+</div>
+
+{% if disk_warn %}
+<div class="callout danger" style="margin-bottom:16px">
+  <b>Low disk space</b> — {{ disk_free }} free ({{ 100 - disk_pct }}% remaining). Consider removing old exports, uploaded PDFs, or task images.
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Disk partition</h2>
+  <div class="row" style="gap:24px; margin-bottom:10px; font-size:0.9em">
+    <span><b>Total:</b> {{ disk_total }}</span>
+    <span><b>Used:</b> {{ disk_used }}</span>
+    <span><b>Free:</b> {{ disk_free }}</span>
+  </div>
+  <div style="background:var(--border,#e5e7eb); border-radius:4px; height:12px; overflow:hidden">
+    <div style="height:100%; width:{{ disk_pct }}%; background:{{ 'var(--danger,#dc2626)' if disk_pct > 90 else 'var(--primary,#2563eb)' }}; transition:width 0.3s"></div>
+  </div>
+  <div class="muted" style="font-size:0.82em; margin-top:6px">{{ disk_pct }}% used</div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <h2 style="margin-top:0">Data directory breakdown</h2>
+  <table class="table" style="margin:0">
+    <thead>
+      <tr>
+        <th>Location</th>
+        <th style="width:120px; text-align:right">Size</th>
+        <th style="width:100px; text-align:right">Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in dirs %}
+      <tr>
+        <td>
+          <div style="font-weight:500">{{ d.name }}</div>
+          <div class="muted" style="font-size:0.78em">{{ d.path }}</div>
+        </td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ d.size }}</td>
+        <td style="text-align:right" class="muted">
+          {% if d.count is not none %}{{ d.count }}{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Database records</h2>
+  <table class="table" style="margin:0">
+    <thead>
+      <tr>
+        <th>Entity</th>
+        <th style="width:120px; text-align:right">Count</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in record_counts %}
+      <tr>
+        <td>{{ r.label }}</td>
+        <td style="text-align:right; font-variant-numeric:tabular-nums">{{ r.count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

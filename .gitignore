@@ -13,6 +13,7 @@ lcs_mvp/data/*.db-shm
 lcs_mvp/data/*.db-wal
 lcs_mvp/data/exports/
 lcs_mvp/data/uploads/
+lcs_mvp/data/task_images/
 
 # Local working notes (not for version control)
 .openclaw-notes.md

@@ -258,6 +258,12 @@ and version/status metadata).
 
 ## MVP Definitions (Lockdown)
 
+### Import Paths
+
+**PDF ingestion** processes technical documentation through an LLM pipeline and produces task candidates only. Workflows are never generated during PDF ingestion — they are always human-composed in the authoring UI after tasks have been confirmed.
+
+**JSON import** accepts human-crafted JSON payloads. This path supports both tasks and workflows because the JSON is authored by a human who has already made the compositional judgments that the LLM cannot.
+
 ### JSON Import Schema (Summary)
 
 The system accepts validated JSON for Tasks and Workflows. JSON maps
@@ -271,7 +277,7 @@ Minimum JSON structure:
 - Task: title, outcome, facts[], concepts[], procedure_name, steps[],
   dependencies[], irreversible_flag, task_assets[]
 
-- Workflow: title, objective, tasks[]
+- Workflow: title, objective, tasks[] (human-authored JSON only — never produced by the PDF ingestion pipeline)
 
 ### Steps Storage (MVP)
 
