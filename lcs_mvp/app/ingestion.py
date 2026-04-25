@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from typing import Any
 
@@ -153,6 +154,245 @@ def _chunk_by_structure(
         chunks.extend(sub)
 
     return chunks
+
+
+# ---------------------------------------------------------------------------
+# PDF image extraction
+# ---------------------------------------------------------------------------
+
+_IMG_MIN_BYTES = 5_000   # skip tiny icons
+_IMG_MIN_PX = 80         # skip narrow/short decorative images
+
+def _extract_pdf_images(pdf_path: str, pages: list[int], task_record_id: str) -> list[dict[str, Any]]:
+    """Extract qualifying embedded images from the given PDF page numbers.
+
+    Images smaller than _IMG_MIN_BYTES or narrower/shorter than _IMG_MIN_PX
+    are discarded. Identical images (same SHA-256) are stored once.
+    Returns a list of asset dicts to append to task_assets_json.
+    """
+    try:
+        import fitz  # PyMuPDF
+        from .config import TASK_IMAGES_DIR
+    except ImportError:
+        logger.warning("PyMuPDF not installed — skipping image extraction for task %s", task_record_id[:8])
+        return []
+
+    assets: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+
+    out_dir = os.path.join(TASK_IMAGES_DIR, task_record_id)
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as exc:
+        logger.warning("Could not open PDF for image extraction (%s): %s", pdf_path, exc)
+        return []
+
+    try:
+        for page_num in pages:
+            page_idx = page_num - 1  # fitz is 0-indexed
+            if page_idx < 0 or page_idx >= len(doc):
+                continue
+            page = doc[page_idx]
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                try:
+                    img = doc.extract_image(xref)
+                except Exception:
+                    continue
+
+                img_bytes = img.get("image") or b""
+                if len(img_bytes) < _IMG_MIN_BYTES:
+                    continue
+                width = img.get("width", 0)
+                height = img.get("height", 0)
+                if width < _IMG_MIN_PX or height < _IMG_MIN_PX:
+                    continue
+
+                digest = hashlib.sha256(img_bytes).hexdigest()
+                if digest in seen_hashes:
+                    continue
+                seen_hashes.add(digest)
+
+                ext = img.get("ext", "png")
+                filename = f"{digest[:16]}.{ext}"
+
+                os.makedirs(out_dir, exist_ok=True)
+                img_path = os.path.join(out_dir, filename)
+                if not os.path.exists(img_path):
+                    with open(img_path, "wb") as f:
+                        f.write(img_bytes)
+
+                assets.append({
+                    "url": f"/task-images/{task_record_id}/{filename}",
+                    "type": "image",
+                    "label": f"page {page_num}",
+                })
+    except Exception as exc:
+        logger.warning("Image extraction failed for task %s: %s", task_record_id[:8], exc)
+    finally:
+        doc.close()
+
+    if assets:
+        logger.info("Extracted %d image(s) for task %s", len(assets), task_record_id[:8])
+    return assets
+
+
+def _extract_and_match_images(
+    pdf_path: str,
+    pages: list[int],
+    steps: list[dict[str, Any]],
+    task_record_id: str,
+    section_ranges: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Extract images and match each one to the nearest step above it.
+
+    Matching strategy (in priority order):
+    1. Section-range matching: if section_ranges is provided (merged multi-section
+       chunks), map image page → section title → best-matching step. This is reliable
+       because section titles are structurally defined, not OCR-guessed.
+    2. Positional text-block fallback: find the nearest text block above the image
+       on the same page and fuzzy-match to a step.
+
+    Returns (updated_steps, unmatched_assets).
+    Failure never blocks the caller — returns (original_steps, []) on error.
+    """
+    import difflib
+
+    try:
+        import fitz  # PyMuPDF
+        from .config import TASK_IMAGES_DIR
+    except ImportError:
+        logger.warning("PyMuPDF not installed — skipping image extraction for task %s", task_record_id[:8])
+        return steps, []
+
+    out_dir = os.path.join(TASK_IMAGES_DIR, task_record_id)
+    seen_hashes: set[str] = set()
+    unmatched: list[dict[str, Any]] = []
+
+    steps_out = [dict(s) for s in steps]
+    step_texts = [(i, (s.get("text") or "").strip().lower()) for i, s in enumerate(steps_out)]
+
+    # Build page → section_title lookup from section_ranges
+    page_to_section: dict[int, str] = {}
+    if section_ranges:
+        for sr in section_ranges:
+            title = (sr.get("title") or "").strip().lower()
+            for p in (sr.get("pages") or []):
+                if isinstance(p, int):
+                    page_to_section[p] = title
+
+    def _best_step_match(candidate_text: str) -> tuple[int, float]:
+        """Return (step_index, ratio) for the best-matching step, or (-1, 0)."""
+        best_idx, best_ratio = -1, 0.0
+        for i, st_text in step_texts:
+            if not st_text:
+                continue
+            ratio = difflib.SequenceMatcher(None, st_text, candidate_text).ratio()
+            if ratio > best_ratio:
+                best_ratio, best_idx = ratio, i
+        return best_idx, best_ratio
+
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as exc:
+        logger.warning("Could not open PDF for image extraction (%s): %s", pdf_path, exc)
+        return steps, []
+
+    try:
+        for page_num in pages:
+            page_idx = page_num - 1
+            if page_idx < 0 or page_idx >= len(doc):
+                continue
+            page = doc[page_idx]
+
+            text_blocks = [b for b in page.get_text("blocks") if b[6] == 0]
+
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                try:
+                    img = doc.extract_image(xref)
+                except Exception:
+                    continue
+
+                img_bytes = img.get("image") or b""
+                if len(img_bytes) < _IMG_MIN_BYTES:
+                    continue
+                width = img.get("width", 0)
+                height = img.get("height", 0)
+                if width < _IMG_MIN_PX or height < _IMG_MIN_PX:
+                    continue
+
+                digest = hashlib.sha256(img_bytes).hexdigest()
+                if digest in seen_hashes:
+                    continue
+                seen_hashes.add(digest)
+
+                ext = img.get("ext", "png")
+                filename = f"{digest[:16]}.{ext}"
+                url = f"/task-images/{task_record_id}/{filename}"
+
+                os.makedirs(out_dir, exist_ok=True)
+                img_path = os.path.join(out_dir, filename)
+                if not os.path.exists(img_path):
+                    with open(img_path, "wb") as f:
+                        f.write(img_bytes)
+
+                matched = False
+
+                # Strategy 1: section-range matching (page → section title → step)
+                if page_num in page_to_section and step_texts:
+                    section_title = page_to_section[page_num]
+                    best_idx, best_ratio = _best_step_match(section_title)
+                    # Lower threshold here — section titles are authoritative
+                    if best_ratio >= 0.20 and best_idx >= 0:
+                        if not steps_out[best_idx].get("screenshot"):
+                            steps_out[best_idx]["screenshot"] = url
+                            matched = True
+
+                # Strategy 2: positional text-block fallback
+                if not matched and step_texts:
+                    try:
+                        rects = page.get_image_rects(xref)
+                        img_y = rects[0].y0 if rects else None
+                    except Exception:
+                        img_y = None
+
+                    if img_y is not None:
+                        above = [b for b in text_blocks if b[3] < img_y]
+                        if above:
+                            nearest_block = max(above, key=lambda b: b[3])
+                            block_text = (nearest_block[4] or "").strip().lower()
+                            best_idx, best_ratio = _best_step_match(block_text)
+                            if best_ratio >= 0.35 and best_idx >= 0:
+                                if not steps_out[best_idx].get("screenshot"):
+                                    steps_out[best_idx]["screenshot"] = url
+                                    matched = True
+
+                if not matched:
+                    unmatched.append({
+                        "url": url,
+                        "type": "image",
+                        "label": f"page {page_num}",
+                    })
+
+    except Exception as exc:
+        logger.warning("Image extraction failed for task %s: %s", task_record_id[:8], exc)
+        doc.close()
+        return steps, []
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+    matched_count = sum(1 for s in steps_out if s.get("screenshot"))
+    if matched_count or unmatched:
+        logger.info(
+            "Extracted images for task %s: %d matched to steps, %d unmatched",
+            task_record_id[:8], matched_count, len(unmatched),
+        )
+    return steps_out, unmatched
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +606,7 @@ def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
 # ---------------------------------------------------------------------------
 
 _TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly one of:
-- "task": describes one or more concrete procedures an operator would perform
-- "workflow": describes a sequence of multiple distinct procedures achieving a larger outcome
+- "task": describes one or more concrete procedures an operator would perform (including sections that describe multiple related procedures — these will be extracted as separate tasks)
 - "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable procedural content
 
 Return JSON only — no markdown, no commentary:
@@ -420,55 +659,11 @@ steps: Each step is a single physical or digital action.
 
 ## Example
 
-{"tasks":[{"id":"T001","title":"Install the iSCSI initiator utilities","outcome":"The open-iscsi package is installed and the iscsid service is running on the Ubuntu machine.","software_name":"open-iscsi","software_version":null,"procedure_name":"Install open-iscsi via apt","facts":["open-iscsi is the Linux iSCSI initiator stack — the complete set of kernel modules and userspace tools that allow a Linux machine to discover, connect to, and maintain sessions with iSCSI targets.","iscsid is the iSCSI daemon process; it runs in the background and manages all active iSCSI sessions on the local machine.","iscsiadm is the command-line management interface for iSCSI on Linux; it is installed as part of open-iscsi and is used for all subsequent iSCSI configuration and discovery operations."],"concepts":["Without open-iscsi installed, a Linux machine cannot participate in iSCSI at all — there is no driver to make connections, no daemon to manage sessions, and no tooling to configure targets. This is not a general statement about what iSCSI is; it is the specific reason this installation task must come first in any iSCSI workflow: every subsequent task (discovery, login, persistence, mounting) depends on this stack being present and running. Skipping or deferring this task makes all other iSCSI tasks impossible to perform."],"dependencies":["Ubuntu machine is accessible with sudo privileges.","Machine has internet or local repository access."],"irreversible":false,"steps":[{"text":"Update the package index.","completion":"Completes without error.","actions":["sudo apt update"],"notes":null},{"text":"Install the open-iscsi package.","completion":"Completes without error, confirming open-iscsi and iscsiadm are installed.","actions":["sudo apt install open-iscsi"],"notes":"If open-iscsi is already installed, apt will report 'open-iscsi is already the newest version' and no further action is required."},{"text":"Enable the iscsid service to start on boot.","completion":"Returns a symlink confirmation line.","actions":["sudo systemctl enable iscsid"],"notes":"On some Ubuntu versions, open-iscsi enables iscsid automatically on installation — if so, this command returns without output and no further action is needed."},{"text":"Start the iscsid service.","completion":"Returns to prompt without error.","actions":["sudo systemctl start iscsid"],"notes":null},{"text":"Confirm the service is active.","completion":"Output shows Active: active (running).","actions":["sudo systemctl status iscsid"],"notes":"On some minimal Ubuntu installations the service may show as 'inactive (dead)' immediately after install — if so, repeat the start command and check again."}]}],"workflows":[]}"""
-
-_EXTRACT_WORKFLOW_SYSTEM = """You are extracting structured task records from a section of technical documentation. This section describes a workflow — a sequence of multiple distinct tasks achieving a larger outcome.
-
-## Field definitions
-
-outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
-
-facts: Background knowledge the learner needs about the subject matter before they can make sense of this task. The "what" — what are the components involved, what do they do, what are they for. This is not technical reference data (commands and port numbers belong in steps); it is the definitional understanding a learner needs so they are not confused about what they are working with. Can be short for simple tasks, long for complex ones. Write each as a complete sentence.
-  Good: "Veeam Agent for Microsoft Windows is a backup agent installed locally on each Windows machine that Veeam will protect." / "iscsid is the iSCSI daemon that manages active iSCSI sessions on the local machine."
-  Bad: "The default iSCSI port is 3260." (technical trivia, not definitional knowledge) / "Run sudo apt install open-iscsi." (belongs in steps)
-
-concepts: The specific reason THIS task must be performed — not a general description of the technology. Every task in a product has a different concept; if the concept you write could apply equally to a different task in the same product, it is too generic and must be rewritten. Ask: what specifically breaks, fails, or cannot happen if this particular task is skipped? Write in plain English. A substantive explanation of one or two paragraphs is expected; do not summarise to a single line. Implementation details and "by the way" information belong in step notes, not here.
-
-dependencies: Specific preconditions that must be true before the operator can start. Full sentences.
-
-software_name: The name of the software product this content relates to, as it appears in the source document. null if not determinable.
-
-software_version: The version of that software this content was written for, exactly as it appears in the source document. null if the document does not state a version.
-
-procedure_name: A short imperative phrase naming the method used, distinct from the task title.
-
-irreversible: true only if completing this task produces changes that are difficult or impossible to undo without significant additional work or data loss risk.
-
-steps: Each step is a single physical or digital action.
-  - Start with a concrete verb: open, close, press, click, run, record, insert, remove, verify, enter, select.
-  - Do NOT start with abstract verbs: configure, manage, set up, ensure, handle, prepare, edit.
-  - One action only. If the step contains "and", "then", or "also", split it into two consecutive steps.
-  - text: the instruction itself.
-  - completion: observable confirmation the step is done. Specific — not "Step is complete." or "Done."
-  - actions: array of substeps — menu paths, CLI commands, keyboard shortcuts. [] if self-explanatory.
-  - notes: edge cases or conditional caveats from the source text. null if none.
-
-workflow objective: The measurable end state the whole sequence achieves. Distinct from any single task outcome — describes what has been accomplished when all tasks are done.
-
-## Output rules
-
-1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
-2. Assign each task a sequential ID starting at T001 (T001, T002, T003...). Never skip or reuse IDs.
-3. Every field must be present in every object, even if null, false, or []. Never omit a field.
-4. Do not invent content. Extract only what is present in the source text.
-5. In workflow task_order, copy task IDs exactly as assigned in this response (e.g. "T001"). Do not use task titles.
-6. Only propose a workflow if the section explicitly describes a sequence or grouping of multiple distinct tasks.
-
-Return JSON with this structure: {"tasks":[{"id":"T001","title":"...","outcome":"...","software_name":null,"software_version":null,"procedure_name":"...","facts":[],"concepts":[],"dependencies":[],"irreversible":false,"steps":[{"text":"...","completion":"...","actions":[],"notes":null}]}],"workflows":[{"title":"...","objective":"...","task_order":["T001","T002"]}]}"""
+{"tasks":[{"id":"T001","title":"Install the iSCSI initiator utilities","outcome":"The open-iscsi package is installed and the iscsid service is running on the Ubuntu machine.","software_name":"open-iscsi","software_version":null,"procedure_name":"Install open-iscsi via apt","facts":["open-iscsi is the Linux iSCSI initiator stack — the complete set of kernel modules and userspace tools that allow a Linux machine to discover, connect to, and maintain sessions with iSCSI targets.","iscsid is the iSCSI daemon process; it runs in the background and manages all active iSCSI sessions on the local machine.","iscsiadm is the command-line management interface for iSCSI on Linux; it is installed as part of open-iscsi and is used for all subsequent iSCSI configuration and discovery operations."],"concepts":["Without open-iscsi installed, a Linux machine cannot participate in iSCSI at all — there is no driver to make connections, no daemon to manage sessions, and no tooling to configure targets. This is not a general statement about what iSCSI is; it is the specific reason this installation task must come first in any iSCSI workflow: every subsequent task (discovery, login, persistence, mounting) depends on this stack being present and running. Skipping or deferring this task makes all other iSCSI tasks impossible to perform."],"dependencies":["Ubuntu machine is accessible with sudo privileges.","Machine has internet or local repository access."],"irreversible":false,"steps":[{"text":"Update the package index.","completion":"Completes without error.","actions":["sudo apt update"],"notes":null},{"text":"Install the open-iscsi package.","completion":"Completes without error, confirming open-iscsi and iscsiadm are installed.","actions":["sudo apt install open-iscsi"],"notes":"If open-iscsi is already installed, apt will report 'open-iscsi is already the newest version' and no further action is required."},{"text":"Enable the iscsid service to start on boot.","completion":"Returns a symlink confirmation line.","actions":["sudo systemctl enable iscsid"],"notes":"On some Ubuntu versions, open-iscsi enables iscsid automatically on installation — if so, this command returns without output and no further action is needed."},{"text":"Start the iscsid service.","completion":"Returns to prompt without error.","actions":["sudo systemctl start iscsid"],"notes":null},{"text":"Confirm the service is active.","completion":"Output shows Active: active (running).","actions":["sudo systemctl status iscsid"],"notes":"On some minimal Ubuntu installations the service may show as 'inactive (dead)' immediately after install — if so, repeat the start command and check again."}]}]}"""
 
 
 def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
-    """Classify a chunk as task/workflow/ignore. Skips LLM for sparse chunks."""
+    """Classify a chunk as task/ignore. Skips LLM for sparse chunks."""
     stripped = (text or "").strip()
     if len(stripped) < 100:
         return {"type": "ignore", "confidence": 1.0, "reason": "sparse section"}
@@ -488,7 +683,10 @@ def _llm_triage_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dic
             raw = re.sub(r"\n?```$", "", raw)
         result = json.loads(raw)
         chunk_type = str(result.get("type", "ignore")).lower()
-        if chunk_type not in ("task", "workflow", "ignore"):
+        # "workflow" was a legacy category — treat as "task" for backwards compatibility
+        if chunk_type == "workflow":
+            chunk_type = "task"
+        elif chunk_type not in ("task", "ignore"):
             chunk_type = "ignore"
         logger.debug("Triage '%s' → %s (confidence=%.2f)", section_title[:60], chunk_type, float(result.get("confidence", 0.5)))
         return {
@@ -543,7 +741,7 @@ def _parse_llm_json(raw: str, section_title: str, max_tokens: int) -> dict[str, 
 
 
 def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
-    """Extract schema 1.0 task fragment from a task-type chunk."""
+    """Extract schema 1.0 task fragment from a chunk. Always returns tasks only."""
     logger.info("Extracting tasks from '%s'", section_title[:80])
     user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
     raw = _llm_chat([
@@ -553,24 +751,5 @@ def _llm_extract_task_chunk(text: str, section_title: str, cfg: dict[str, Any]) 
     result = _parse_llm_json(raw, section_title, int(cfg.get("llm_max_tokens") or 2000))
     if not isinstance(result.get("tasks"), list):
         result["tasks"] = []
-    if not isinstance(result.get("workflows"), list):
-        result["workflows"] = []
     logger.info("Extracted %d task(s) from '%s'", len(result["tasks"]), section_title[:80])
-    return result
-
-
-def _llm_extract_workflow_chunk(text: str, section_title: str, cfg: dict[str, Any]) -> dict[str, Any]:
-    """Extract schema 1.0 task+workflow fragment from a workflow-type chunk."""
-    logger.info("Extracting workflow from '%s'", section_title[:80])
-    user_msg = f"SECTION: {section_title}\n\nSOURCE TEXT:\n{(text or '').strip()}"
-    raw = _llm_chat([
-        {"role": "system", "content": _EXTRACT_WORKFLOW_SYSTEM},
-        {"role": "user", "content": user_msg},
-    ], cfg)
-    result = _parse_llm_json(raw, section_title, int(cfg.get("llm_max_tokens") or 2000))
-    if not isinstance(result.get("tasks"), list):
-        result["tasks"] = []
-    if not isinstance(result.get("workflows"), list):
-        result["workflows"] = []
-    logger.info("Extracted %d task(s) + %d workflow(s) from '%s'", len(result["tasks"]), len(result["workflows"]), section_title[:80])
     return result

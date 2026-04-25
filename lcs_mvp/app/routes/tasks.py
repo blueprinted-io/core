@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
-from ..config import templates
+from ..config import templates, TASK_IMAGES_DIR
 from ..database import db, utc_now_iso, _active_domains, _user_has_domain
 from ..audit import audit, _fetch_return_note, _fetch_force_action, get_latest_version
 from ..linting import lint_steps, _normalize_steps, _zip_steps, _validate_steps_required
@@ -18,7 +19,7 @@ router = APIRouter()
 
 
 @router.get("/tasks", response_class=HTMLResponse)
-def tasks_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None, sn: str | None = None, sv: str | None = None):
+def tasks_list(request: Request, status: str | None = None, q: str | None = None, domain: str | None = None, tag: str | None = None, sn: str | None = None, sv: str | None = None, deleted: int | None = None):
     q_norm = (q or "").strip().lower()
     domain_norm = (domain or "").strip().lower() or None
     tag_norm = (tag or "").strip().lower() or None
@@ -121,6 +122,7 @@ def tasks_list(request: Request, status: str | None = None, q: str | None = None
             "tags": sorted(all_tags),
             "software_names": sorted(all_sns),
             "software_versions": sorted(all_svs),
+            "deleted": deleted,
         },
     )
 
@@ -133,7 +135,7 @@ def task_new_form(request: Request):
     return templates.TemplateResponse(
         request,
         "task_edit.html",
-        {"mode": "new", "task": None, "warnings": [], "domains": domains},
+        {"mode": "new", "task": None, "warnings": [], "domains": domains, "task_images": []},
     )
 
 
@@ -155,6 +157,7 @@ def task_create(
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
     step_notes: list[str] = Form([]),
+    step_screenshot: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
 ):
     require(request.state.role, "task:create")
@@ -168,7 +171,7 @@ def task_create(
     # Phase 1: tasks are intentionally tagless (workflow-only tags model).
     tags_list: list[str] = []
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshot)
     _validate_steps_required(steps_list)
 
     warnings = lint_steps(steps_list)
@@ -241,6 +244,7 @@ def task_view(request: Request, record_id: str, version: int):
     task["facts"] = _json_load(task["facts_json"])
     task["concepts"] = _json_load(task["concepts_json"])
     task["dependencies"] = _json_load(task["dependencies_json"])
+    task["assets"] = _json_load(task.get("task_assets_json") or "[]") or []
 
     raw_steps = _json_load(task["steps_json"])
     task["steps"] = _normalize_steps(raw_steps)
@@ -286,6 +290,11 @@ def task_view(request: Request, record_id: str, version: int):
     with db() as conn:
         force_action = _fetch_force_action(conn, "task", record_id, version)
 
+    # Check for unassigned screenshots (blocks confirmation)
+    image_urls = {a["url"] for a in task["assets"] if a.get("type") == "image"}
+    assigned_urls = {s.get("screenshot") for s in task["steps"] if s.get("screenshot")}
+    unassigned_images = len(image_urls - assigned_urls)
+
     return templates.TemplateResponse(
         request,
         "task_view.html",
@@ -295,6 +304,7 @@ def task_view(request: Request, record_id: str, version: int):
             "return_note": return_note,
             "workflows_using": workflows_using,
             "force_action": force_action,
+            "unassigned_images": unassigned_images,
         },
     )
 
@@ -333,13 +343,16 @@ def task_edit_form(request: Request, record_id: str, version: int):
 
     warnings = lint_steps(task["steps"])
 
+    assets = _json_load(task.get("task_assets_json") or "[]") or []
+    task_images = [a for a in assets if a.get("type") == "image"]
+
     with db() as conn:
         domains = _active_domains(conn)
 
     return templates.TemplateResponse(
         request,
         "task_edit.html",
-        {"mode": "edit", "task": task, "warnings": warnings, "domains": domains},
+        {"mode": "edit", "task": task, "warnings": warnings, "domains": domains, "task_images": task_images},
     )
 
 
@@ -363,6 +376,8 @@ def task_save(
     step_completion: list[str] = Form([]),
     step_actions: list[str] = Form([]),
     step_notes: list[str] = Form([]),
+    step_screenshot: list[str] = Form([]),
+    kept_image: list[str] = Form([]),
     irreversible_flag: bool = Form(False),
     change_note: str = Form(""),
 ):
@@ -379,7 +394,7 @@ def task_save(
     # Phase 1: tasks are intentionally tagless (workflow-only tags model).
     tags_list: list[str] = []
     meta_obj = parse_meta(meta)
-    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes)
+    steps_list = _zip_steps(step_text, step_completion, step_actions, step_notes, step_screenshot)
     _validate_steps_required(steps_list)
 
     note = change_note.strip()
@@ -408,6 +423,12 @@ def task_save(
         new_v = latest_v + 1
         now = utc_now_iso()
 
+        # Filter assets: keep non-image assets always; keep image assets only if
+        # the user left them in the pool (kept_image) or assigned to a step.
+        kept_set = set(kept_image) | {s for s in step_screenshot if s}
+        src_assets = _json_load((src["task_assets_json"] if "task_assets_json" in src.keys() else None) or "[]") or []
+        new_assets = [a for a in src_assets if a.get("type") != "image" or a.get("url") in kept_set]
+
         conn.execute(
             """
             INSERT INTO tasks(
@@ -433,7 +454,7 @@ def task_save(
                 _json_dump(steps_list),
                 _json_dump(deps_list),
                 1 if irreversible_flag else 0,
-                src["task_assets_json"],
+                _json_dump(new_assets),
                 (domain or "").strip().lower(),
                 software_name.strip() or None,
                 software_version.strip() or None,
@@ -623,7 +644,8 @@ def task_confirm(request: Request, record_id: str, version: int):
     actor = request.state.user
     with db() as conn:
         row = conn.execute(
-            "SELECT status, domain, created_by FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+            "SELECT status, domain, created_by, steps_json, task_assets_json FROM tasks WHERE record_id=? AND version=?",
+            (record_id, version),
         ).fetchone()
         if not row:
             raise HTTPException(404)
@@ -637,6 +659,22 @@ def task_confirm(request: Request, record_id: str, version: int):
             raise HTTPException(status_code=409, detail="Cannot confirm task: domain is required")
         if not _user_has_domain(conn, actor, domain):
             raise HTTPException(status_code=403, detail=f"Forbidden: you are not authorized to confirm domain '{domain}'")
+
+        # Gate: if the task has image assets, all of them must be assigned to a step
+        assets = _json_load((row["task_assets_json"] if "task_assets_json" in row.keys() else None) or "[]") or []
+        image_urls = {a["url"] for a in assets if a.get("type") == "image"}
+        if image_urls:
+            steps = _normalize_steps(_json_load((row["steps_json"] if "steps_json" in row.keys() else None) or "[]") or [])
+            assigned_urls = {s["screenshot"] for s in steps if s.get("screenshot")}
+            unassigned = image_urls - assigned_urls
+            if unassigned:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Cannot confirm: {len(unassigned)} screenshot(s) are not assigned to any step. "
+                        "Edit the task and drag each screenshot to its step before confirming."
+                    ),
+                )
 
         # Deprecate any previously confirmed version
         conn.execute(
@@ -898,3 +936,21 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
                         """,
                         (wf_record_id, new_wf_version, ref_record_id, ref_version, order_idx)
                     )
+
+
+# ---------------------------------------------------------------------------
+# Task image serving (auth-gated)
+# ---------------------------------------------------------------------------
+
+@router.get("/task-images/{record_id}/{filename}")
+def task_image(request: Request, record_id: str, filename: str):
+    """Serve an extracted task image. Requires an authenticated session."""
+    if not request.state.user:
+        raise HTTPException(status_code=401)
+    # Sanitise — only allow safe filenames (no path traversal)
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400)
+    img_path = os.path.join(TASK_IMAGES_DIR, record_id, filename)
+    if not os.path.isfile(img_path):
+        raise HTTPException(status_code=404)
+    return FileResponse(img_path)

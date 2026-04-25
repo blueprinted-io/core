@@ -57,7 +57,7 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         for item in raw:
             if isinstance(item, str):
-                out.append({"text": item, "completion": "", "actions": [], "notes": ""})
+                out.append({"text": item, "completion": "", "actions": [], "notes": "", "screenshot": None})
             elif isinstance(item, dict):
                 actions_raw = item.get("actions")
                 actions: list[str] = []
@@ -68,12 +68,14 @@ def _normalize_steps(raw: Any) -> list[dict[str, Any]]:
                     actions = [ln.strip() for ln in actions_raw.splitlines() if ln.strip()]
 
                 notes = str(item.get("notes", "") or "").strip()
+                screenshot = str(item.get("screenshot", "") or "").strip() or None
                 out.append(
                     {
                         "text": str(item.get("text", "")),
                         "completion": str(item.get("completion", "")),
                         "actions": actions,
                         "notes": notes,
+                        "screenshot": screenshot,
                     }
                 )
         # Drop empty rows
@@ -169,9 +171,12 @@ def _zip_steps(
     step_completion: list[str],
     step_actions: list[str],
     step_notes: list[str] | None = None,
+    step_screenshot: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    for t, c, a, n in itertools.zip_longest(step_text, step_completion, step_actions, step_notes or [], fillvalue=""):
+    for t, c, a, n, sc in itertools.zip_longest(
+        step_text, step_completion, step_actions, step_notes or [], step_screenshot or [], fillvalue=""
+    ):
         actions = [ln.strip() for ln in (a or "").splitlines() if ln.strip()]
         out.append(
             {
@@ -179,6 +184,7 @@ def _zip_steps(
                 "completion": (c or "").strip(),
                 "actions": actions,
                 "notes": (n or "").strip(),
+                "screenshot": (sc or "").strip() or None,
             }
         )
     # Drop empty rows.

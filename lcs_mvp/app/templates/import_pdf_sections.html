@@ -234,7 +234,48 @@ function expandToLevel(targetLevel) {
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 
+function syncParents(changedRow) {
+  // Walk up the tree and sync each ancestor's checkbox/indeterminate state
+  const rows = allRows();
+  const idx = rows.indexOf(changedRow);
+  const changedLevel = rowLevel(changedRow);
+  for (let i = idx - 1; i >= 0; i--) {
+    const ancestorRow = rows[i];
+    const ancestorLevel = rowLevel(ancestorRow);
+    if (ancestorLevel >= changedLevel) continue; // not a parent
+    if (!ancestorRow.classList.contains('is-group')) continue;
+    const desc = descendants(ancestorRow);
+    const boxes = leafCheckboxes(desc);
+    if (!boxes.length) continue;
+    const allChecked = boxes.every(b => b.checked);
+    const anyChecked = boxes.some(b => b.checked);
+    const parentCb = ancestorRow.querySelector('input[name="chunk_index"]');
+    if (parentCb) {
+      parentCb.checked = allChecked;
+      parentCb.indeterminate = !allChecked && anyChecked;
+    }
+    // Only need to walk up until we find the direct parent at one level up
+    if (ancestorLevel === changedLevel - 1) break;
+  }
+}
+
 function onLeafChange(checkbox) {
+  const row = checkbox.closest('tr');
+  if (row && row.classList.contains('is-group')) {
+    // Cascade to all descendants
+    const newState = checkbox.checked;
+    checkbox.indeterminate = false;
+    leafCheckboxes(descendants(row)).forEach(cb => {
+      cb.checked = newState;
+      cb.indeterminate = false;
+    });
+    // If checking, also expand the tree so the user can see what got selected
+    if (newState) {
+      const btn = row.querySelector('.expand-btn');
+      if (btn && btn.textContent.trim() === '▶') toggleExpand(btn);
+    }
+  }
+  if (row) syncParents(row);
   updateCount();
 }
 
@@ -242,29 +283,6 @@ function toggleAll(state) {
   document.querySelectorAll('input[name="chunk_index"]').forEach(b => b.checked = state);
   updateCount();
 }
-
-/**
- * Select / deselect all leaf chunks that are descendants of the clicked group row.
- * Called by the group-level "select branch" button if we add one — currently wired
- * to the group row's own checkbox click so users can select the chunk AND its children.
- */
-function selectBranch(groupChunk, state) {
-  const groupRow = document.querySelector('tr[data-chunk="' + groupChunk + '"]');
-  leafCheckboxes(descendants(groupRow)).forEach(cb => cb.checked = state);
-  updateCount();
-}
-
-// Right-click / long-press on a group checkbox selects the whole branch.
-// Regular click on any checkbox just selects that one chunk (leaf behaviour).
-document.querySelectorAll('tr.is-group input[name="chunk_index"]').forEach(cb => {
-  cb.addEventListener('contextmenu', function(e) {
-    e.preventDefault();
-    const chunk = this.closest('tr').dataset.chunk;
-    const newState = !this.checked;
-    this.checked = newState;
-    selectBranch(chunk, newState);
-  });
-});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 updateCount();

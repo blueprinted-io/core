@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
+
+{% if deleted %}
+<div class="callout" style="border-left-color:var(--green,#16a34a); margin-bottom:16px">
+  {{ deleted }} task version{{ 's' if deleted != 1 else '' }} deleted.
+</div>
+{% endif %}
+
 <div class="page-header">
   <div>
     <h1>Tasks</h1>
@@ -65,9 +72,19 @@
 </div>
 
 {% if items %}
+
+{% if request.state.role == 'admin' %}
+<div class="row" style="margin-bottom:8px; gap:10px; align-items:center">
+  <button id="bulk-delete-btn" class="btn secondary" style="color:var(--red,#b91c1c)" disabled onclick="openBulkModal()">Delete selected (0)</button>
+</div>
+{% endif %}
+
 <table class="table">
   <thead>
     <tr>
+      {% if request.state.role == 'admin' %}
+      <th style="width:36px; text-align:center"><input type="checkbox" id="select-all-cb" title="Select all" onchange="toggleSelectAll(this)"></th>
+      {% endif %}
       <th>Title</th>
       <th>Ver</th>
       <th>Status</th>
@@ -79,6 +96,11 @@
   <tbody>
   {% for it in items %}
     <tr>
+      {% if request.state.role == 'admin' %}
+      <td style="text-align:center; padding:6px 4px">
+        <input type="checkbox" class="bulk-cb" value="{{ it.record_id }}::{{ it.latest_version }}" onchange="updateBulkBtn()">
+      </td>
+      {% endif %}
       <td>
         <a href="/tasks/{{ it.record_id }}/{{ it.latest_version }}">{{ it.title }}</a>
         {% if request.state.role == 'admin' %}
@@ -113,6 +135,84 @@
   {% endfor %}
   </tbody>
 </table>
+
+{% if request.state.role == 'admin' %}
+{# ── Bulk delete modal ── #}
+<div id="bulk-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center">
+  <div class="card" style="max-width:420px; width:90%; padding:24px">
+    <h2 style="margin-top:0; color:var(--red,#b91c1c)">Delete tasks</h2>
+    <p>You are about to permanently delete <strong id="modal-count">0</strong> task version(s). This cannot be undone.</p>
+    <label>Type <code>DELETE</code> to confirm</label>
+    <input type="text" id="confirm-input" placeholder="DELETE" oninput="onConfirmInput()" style="margin-top:6px" autocomplete="off">
+    <div class="row" style="margin-top:16px; gap:10px">
+      <button id="confirm-delete-btn" class="btn" style="color:var(--red,#b91c1c)" disabled onclick="submitBulkDelete()">Confirm delete</button>
+      <button class="btn secondary" onclick="closeBulkModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{# Hidden form submitted by JS #}
+<form id="bulk-delete-form" method="post" action="/admin/tasks/bulk-delete" style="display:none">
+  <input type="hidden" name="confirm_text" value="DELETE">
+  <div id="bulk-hidden-inputs"></div>
+</form>
+
+<script>
+function selectedCheckboxes() {
+  return Array.from(document.querySelectorAll('.bulk-cb:checked'));
+}
+
+function updateBulkBtn() {
+  const n = selectedCheckboxes().length;
+  const btn = document.getElementById('bulk-delete-btn');
+  btn.disabled = n === 0;
+  btn.textContent = 'Delete selected (' + n + ')';
+  const allCb = document.getElementById('select-all-cb');
+  const total = document.querySelectorAll('.bulk-cb').length;
+  allCb.indeterminate = n > 0 && n < total;
+  allCb.checked = n === total && total > 0;
+}
+
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.bulk-cb').forEach(b => b.checked = cb.checked);
+  updateBulkBtn();
+}
+
+function openBulkModal() {
+  const n = selectedCheckboxes().length;
+  document.getElementById('modal-count').textContent = n;
+  document.getElementById('confirm-input').value = '';
+  document.getElementById('confirm-delete-btn').disabled = true;
+  document.getElementById('bulk-modal').style.display = 'flex';
+}
+
+function closeBulkModal() {
+  document.getElementById('bulk-modal').style.display = 'none';
+}
+
+function onConfirmInput() {
+  const val = document.getElementById('confirm-input').value;
+  document.getElementById('confirm-delete-btn').disabled = val !== 'DELETE';
+}
+
+function submitBulkDelete() {
+  const container = document.getElementById('bulk-hidden-inputs');
+  container.innerHTML = '';
+  selectedCheckboxes().forEach(cb => {
+    const inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'task_ids';
+    inp.value = cb.value;
+    container.appendChild(inp);
+  });
+  document.getElementById('bulk-delete-form').submit();
+}
+
+document.getElementById('bulk-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeBulkModal();
+});
+</script>
+{% endif %}
 {% else %}
 <div class="card">
   <h2>No tasks found</h2>

@@ -32,6 +32,13 @@
       </div>
     {% endif %}
 
+    {% if task.status == 'draft' and not task.domain %}
+      <div class="callout warn">
+        <b>Domain not set</b>
+        <div style="margin-top:6px">This task cannot be submitted for review until a domain is selected. <a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and choose a domain.</div>
+      </div>
+    {% endif %}
+
     {% if task.needs_review_flag %}
       <div class="callout warn">
         <b>Flagged for review</b>
@@ -95,10 +102,11 @@
       <table class="table">
         <thead>
           <tr>
-            <th style="width:34%">Step</th>
-            <th style="width:22%">Actions</th>
-            <th style="width:22%">Notes</th>
-            <th style="width:22%">Completion</th>
+            <th style="width:28%">Step</th>
+            <th style="width:18%">Actions</th>
+            <th style="width:18%">Notes</th>
+            <th style="width:18%">Completion</th>
+            <th style="width:18%">Screenshot</th>
           </tr>
         </thead>
         <tbody>
@@ -120,10 +128,33 @@
               <td>
                 {% if st.completion %}{{ st.completion }}{% else %}<span class="muted">—</span>{% endif %}
               </td>
+              <td>
+                {% if st.screenshot %}
+                <a href="{{ st.screenshot }}" target="_blank" rel="noopener">
+                  <img src="{{ st.screenshot }}" alt="step screenshot"
+                       style="max-width:160px; max-height:120px; border:1px solid var(--border); border-radius:3px; object-fit:contain; display:block">
+                </a>
+                {% else %}
+                <span class="muted">—</span>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+
+      {% set images = task.assets | selectattr("type", "equalto", "image") | list %}
+      {% if images %}
+      <h3>Screenshots</h3>
+      <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:8px; margin-bottom:8px">
+        {% for img in images %}
+        <a href="{{ img.url }}" target="_blank" rel="noopener">
+          <img src="{{ img.url }}" alt="{{ img.label }}"
+               style="max-width:320px; max-height:240px; border:1px solid var(--border); border-radius:4px; object-fit:contain; display:block">
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
 
       {% if request.state.role == 'admin' %}
         <details class="card" style="margin-top:14px">
@@ -165,9 +196,16 @@
     {% endif %}
 
     {% if task.status == 'submitted' and can(request.state.role, 'task:confirm') %}
+    {% if unassigned_images %}
+    <div class="callout warn" style="font-size:0.85em">
+      <b>{{ unassigned_images }} screenshot{{ 's' if unassigned_images != 1 else '' }} not assigned to a step.</b>
+      <div style="margin-top:4px"><a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and drag each screenshot to its step before confirming.</div>
+    </div>
+    {% else %}
     <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/confirm">
       <button class="btn" type="submit">Confirm (reviewer)</button>
     </form>
+    {% endif %}
 
     <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/return" class="card detail-inline-card">
       <div class="muted" style="margin-bottom:6px"><b>Return for changes</b> (requires a note)</div>
@@ -195,6 +233,7 @@
     {% endif %}
 
     {% if request.state.role == 'admin' %}
+      <a class="btn secondary" href="/admin/tasks/{{ task.record_id }}/{{ task.version }}/edit">Admin edit</a>
       <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
         <button class="btn secondary" type="submit">Force submit</button>
       </form>

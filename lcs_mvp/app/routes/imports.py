@@ -22,7 +22,7 @@ from ..ingestion import (
     _llm_probe, _llm_chat,
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
     _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
-    _llm_triage_chunk, _llm_extract_task_chunk, _llm_extract_workflow_chunk,
+    _llm_triage_chunk, _llm_extract_task_chunk, _extract_and_match_images,
 )
 from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
@@ -68,7 +68,7 @@ def import_pdf_form(request: Request):
         ).fetchall()
 
         ingestions = []
-        done_statuses = ("'done'", "'error'", "'timeout'", "'skipped'")
+        done_statuses = ("'done'", "'error'", "'timeout'", "'skipped'", "'merged'")
         for r in rows:
             ing = dict(r)
             counts = conn.execute(
@@ -365,7 +365,57 @@ def _run_triage_background(ingestion_id: str, db_path: str, username: str) -> No
         conn.close()
 
 
-def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) -> None:
+def _group_chunks_by_hierarchy(chunks: list, split_groups: set[int] | None = None) -> list[tuple]:
+    """Group consecutive chunks into (lead, [children]) pairs based on section_level.
+
+    A chunk is a child of the immediately preceding chunk at a lower section_level.
+    All descendants are absorbed: children of children are included in the same group.
+    Chunks at the same level as the lead start a new group.
+
+    If a lead's chunk_index is in split_groups, it is not merged with its children —
+    the lead and each child are each returned as independent (chunk, []) groups.
+    """
+    split_groups = split_groups or set()
+    groups: list[tuple] = []
+    i = 0
+    while i < len(chunks):
+        lead = chunks[i]
+        lead_level = int(lead["section_level"] or 0)
+        lead_idx = int(lead["chunk_index"])
+        children = []
+        j = i + 1
+        while j < len(chunks):
+            child_level = int(chunks[j]["section_level"] or 0)
+            if child_level > lead_level:
+                children.append(chunks[j])
+                j += 1
+            else:
+                break
+        if lead_idx in split_groups and children:
+            # User chose to split: each section becomes its own task
+            groups.append((lead, []))
+            for child in children:
+                groups.append((child, []))
+        else:
+            groups.append((lead, children))
+        i = j  # skip past any children
+    return groups
+
+
+def _merge_chunk_texts(lead, children: list) -> str:
+    """Concatenate lead + child texts with section headers for LLM context."""
+    parts = []
+    lead_title = (lead["section_title"] or "").strip()
+    lead_text = (lead["text"] or "").strip()
+    parts.append(f"# {lead_title}\n\n{lead_text}" if lead_title else lead_text)
+    for child in children:
+        child_title = (child["section_title"] or "").strip()
+        child_text = (child["text"] or "").strip()
+        parts.append(f"## {child_title}\n\n{child_text}" if child_title else child_text)
+    return "\n\n---\n\n".join(p for p in parts if p)
+
+
+def _run_ingestion_background(ingestion_id: str, db_path: str, username: str, split_groups: set[int] | None = None) -> None:
     """Background task: LLM-processes all queued chunks using type-aware schema 1.0 prompts."""
     conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
@@ -382,35 +432,70 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
         conn.commit()
 
         chunks = conn.execute(
-            "SELECT chunk_index, pages_json, text, section_title, chunk_type FROM ingestion_chunks "
+            "SELECT chunk_index, pages_json, text, section_title, chunk_type, section_level FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 AND chunk_status='queued' ORDER BY chunk_index ASC",
             (ingestion_id,),
         ).fetchall()
 
-        logger.info("Extraction started ingestion=%s chunks=%d user=%s", ingestion_id[:8], len(chunks), username)
+        groups = _group_chunks_by_hierarchy(list(chunks), split_groups=split_groups)
+        logger.info(
+            "Extraction started ingestion=%s chunks=%d groups=%d user=%s",
+            ingestion_id[:8], len(chunks), len(groups), username,
+        )
         done = errors = 0
-        for cr in chunks:
-            chunk_index = int(cr["chunk_index"])
+        for lead, children in groups:
+            chunk_index = int(lead["chunk_index"])
+            section_title = (lead["section_title"] or "").strip()
+
+            # Mark lead as processing
             conn.execute(
                 "UPDATE ingestion_chunks SET chunk_status='processing' WHERE ingestion_id=? AND chunk_index=?",
                 (ingestion_id, chunk_index),
             )
             conn.commit()
 
-            section_title = (cr["section_title"] or "").strip()
-            chunk_type = (cr["chunk_type"] or "task").strip()
+            # Build merged text and page list when children are present
+            if children:
+                extract_text = _merge_chunk_texts(lead, children)
+                merged_pages = sorted(set(
+                    p for row in [lead] + children
+                    for p in (_json_load(row["pages_json"]) or [])
+                    if isinstance(p, int)
+                ))
+                child_indices = [int(c["chunk_index"]) for c in children]
+                logger.info(
+                    "Merging %d child chunk(s) into chunk %d (ingestion=%s)",
+                    len(children), chunk_index, ingestion_id[:8],
+                )
+            else:
+                extract_text = lead["text"] or ""
+                merged_pages = None
+                child_indices = []
 
             try:
-                if chunk_type == "workflow":
-                    data = _llm_extract_workflow_chunk(cr["text"] or "", section_title, cfg)
-                else:
-                    data = _llm_extract_task_chunk(cr["text"] or "", section_title, cfg)
+                data = _llm_extract_task_chunk(extract_text, section_title, cfg)
 
+                # Attach section page ranges so image extraction at commit time can
+                # use page number → section title → step matching instead of OCR heuristics
+                if children:
+                    data["_section_ranges"] = [
+                        {"title": (lead["section_title"] or "").strip(), "pages": _json_load(lead["pages_json"]) or []},
+                        *[{"title": (c["section_title"] or "").strip(), "pages": _json_load(c["pages_json"]) or []} for c in children],
+                    ]
+
+                update_pages = json.dumps(merged_pages) if merged_pages is not None else lead["pages_json"]
                 conn.execute(
-                    "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=? "
+                    "UPDATE ingestion_chunks SET chunk_status='done', llm_result_json=?, pages_json=? "
                     "WHERE ingestion_id=? AND chunk_index=?",
-                    (json.dumps(data), ingestion_id, chunk_index),
+                    (json.dumps(data), update_pages, ingestion_id, chunk_index),
                 )
+                # Mark children as merged so they don't appear as separate candidates
+                for ci in child_indices:
+                    conn.execute(
+                        "UPDATE ingestion_chunks SET chunk_status='merged' "
+                        "WHERE ingestion_id=? AND chunk_index=?",
+                        (ingestion_id, ci),
+                    )
                 done += 1
             except HTTPException as e:
                 status = "timeout" if e.status_code == 504 else "error"
@@ -434,7 +519,7 @@ def _run_ingestion_background(ingestion_id: str, db_path: str, username: str) ->
         unprocessed = conn.execute(
             "SELECT COUNT(*) AS n FROM ingestion_chunks "
             "WHERE ingestion_id=? AND selected=1 "
-            "AND chunk_status NOT IN ('done','error','timeout','skipped')",
+            "AND chunk_status NOT IN ('done','error','timeout','skipped','merged')",
             (ingestion_id,),
         ).fetchone()["n"]
         final_status = "complete" if unprocessed == 0 else "partial"
@@ -534,7 +619,8 @@ def import_pdf_triage_review(request: Request, ingestion_id: str):
         else:
             domains = _user_domains(conn, actor)
 
-    sections = []
+    # Build section list and annotate each child with will_merge=True
+    raw_sections = []
     for r in chunks:
         text = (r["text"] or "").strip()
         word_count = len(text.split())
@@ -542,7 +628,7 @@ def import_pdf_triage_review(request: Request, ingestion_id: str):
         page_label = f"p.{pages[0]}" if len(pages) == 1 else (f"pp.{pages[0]}–{pages[-1]}" if pages else "")
         title = (r["section_title"] or f"Chunk {r['chunk_index'] + 1}").strip()
         conf = r["triage_confidence"]
-        sections.append({
+        raw_sections.append({
             "chunk_index": r["chunk_index"],
             "title": title,
             "page_label": page_label,
@@ -550,7 +636,30 @@ def import_pdf_triage_review(request: Request, ingestion_id: str):
             "chunk_type": r["chunk_type"] or None,
             "confidence": round(float(conf) * 100) if conf is not None else None,
             "reason": r["triage_reason"] or "",
+            "level": int(r["section_level"] or 0),
+            "will_merge": False,
         })
+
+    # Mark child sections that will be merged into their parent at extraction time
+    groups = _group_chunks_by_hierarchy(list(chunks))
+    merged_indices = {int(c["chunk_index"]) for _, children in groups for c in children}
+    parent_of: dict[int, str] = {}
+    parent_idx_of: dict[int, int] = {}
+    parent_child_count: dict[int, int] = {}
+    for lead, children in groups:
+        if children:
+            parent_child_count[int(lead["chunk_index"])] = len(children)
+        for c in children:
+            parent_of[int(c["chunk_index"])] = (lead["section_title"] or "").strip()
+            parent_idx_of[int(c["chunk_index"])] = int(lead["chunk_index"])
+    sections = []
+    for s in raw_sections:
+        s["will_merge"] = s["chunk_index"] in merged_indices
+        s["merge_into"] = parent_of.get(s["chunk_index"], "")
+        s["merge_into_idx"] = parent_idx_of.get(s["chunk_index"], -1)
+        s["is_merge_parent"] = s["chunk_index"] in parent_child_count
+        s["child_count"] = parent_child_count.get(s["chunk_index"], 0)
+        sections.append(s)
 
     return templates.TemplateResponse(
         request,
@@ -574,6 +683,7 @@ def import_pdf_queue(
     chunk_index: list[int] = Form([]),
     chunk_type: list[str] = Form([]),
     domain: str = Form(""),
+    split_group: list[int] = Form([]),
 ):
     """Accept triage overrides + domain, fire extraction background task."""
     require(request.state.role, "import:pdf")
@@ -612,7 +722,7 @@ def import_pdf_queue(
             ((domain or "").strip(), ingestion_id),
         )
 
-    background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor)
+    background_tasks.add_task(_run_ingestion_background, ingestion_id, db_path, actor, set(split_group))
     return RedirectResponse(url=f"/import/pdf/status/{ingestion_id}", status_code=303)
 
 
@@ -660,7 +770,7 @@ def import_pdf_status_json(request: Request, ingestion_id: str):
         ).fetchall()
 
     total = len(chunks)
-    done_statuses = {"done", "error", "timeout", "skipped"}
+    done_statuses = {"done", "error", "timeout", "skipped", "merged"}
     done = sum(1 for c in chunks if c["chunk_status"] in done_statuses)
 
     def _chunk_error(c) -> str | None:
@@ -837,9 +947,6 @@ def import_pdf_review(request: Request, ingestion_id: str):
                 })
 
     candidates: list[dict[str, Any]] = []
-    workflow_candidates: list[dict[str, Any]] = []
-    # Map local chunk T-IDs to candidate titles for workflow display
-    chunk_tid_to_title: dict[str, dict[str, str]] = {}  # chunk_index -> {T001: title}
 
     for cr in chunk_rows:
         if not cr["llm_result_json"]:
@@ -852,38 +959,13 @@ def import_pdf_review(request: Request, ingestion_id: str):
         if not isinstance(tasks, list):
             tasks = []
 
-        local_tid_map: dict[str, str] = {}
         for t in tasks:
             if not isinstance(t, dict):
                 continue
             title = str(t.get("title", "")).strip()
             if not title:
                 continue
-            tid = str(t.get("id", "")).strip()
-            if tid:
-                local_tid_map[tid] = title
             candidates.append({"chunk_index": int(cr["chunk_index"]), "pages": _json_load(cr["pages_json"]) or [], "task": t})
-
-        chunk_tid_to_title[str(cr["chunk_index"])] = local_tid_map
-
-        workflows = data.get("workflows") if isinstance(data, dict) else []
-        if isinstance(workflows, list):
-            for wf in workflows:
-                if not isinstance(wf, dict):
-                    continue
-                wf_title = str(wf.get("title", "")).strip()
-                wf_obj = str(wf.get("objective", "")).strip()
-                task_order = wf.get("task_order") or []
-                if not wf_title or not isinstance(task_order, list):
-                    continue
-                resolved_tasks = [local_tid_map.get(tid, tid) for tid in task_order]
-                workflow_candidates.append({
-                    "title": wf_title,
-                    "objective": wf_obj,
-                    "task_count": len(task_order),
-                    "task_titles": resolved_tasks,
-                    "chunk_index": int(cr["chunk_index"]),
-                })
 
     # Dedupe within candidates by fingerprint
     out: list[dict[str, Any]] = []
@@ -926,7 +1008,6 @@ def import_pdf_review(request: Request, ingestion_id: str):
         {
             "ingestion": dict(ing),
             "candidates": flagged,
-            "workflows": workflow_candidates,
             "error": None,
             "skipped_note": skipped_note,
             "done": True,
@@ -938,26 +1019,22 @@ def _commit_schema10_payload(
     conn,
     chunk_rows,
     candidate_id: list[str],
-    workflow_chunk_indices: list[int],
     ingestion_id: str,
     filename: str,
     domain: str,
     actor: str,
-) -> tuple[int, int]:
+    pdf_path: str = "",
+) -> int:
     """Assemble and commit a schema 1.0 payload from done chunks.
 
-    Merges task lists across chunks, remaps chunk-local T-IDs to globally
-    sequential IDs, inserts tasks then workflows.
-    Returns (tasks_created, workflows_created).
+    Merges task lists across chunks and inserts them as draft tasks.
+    Returns tasks_created count.
     """
     now = utc_now_iso()
     initial_status = _import_initial_status(conn)
 
-    # Phase 1: collect selected tasks from all chunks, preserving chunk order
-    # Each entry: {task_dict, pages, chunk_index, local_tid}
+    # Collect selected tasks from all chunks, preserving chunk order
     all_task_items: list[dict[str, Any]] = []
-    # Also collect workflow stubs keyed by chunk_index for later resolution
-    workflow_stubs: list[dict[str, Any]] = []  # {title, objective, local_task_order, chunk_index}
 
     seen_fp: set[str] = set()
     for cr in chunk_rows:
@@ -973,6 +1050,7 @@ def _commit_schema10_payload(
 
         chunk_idx = int(cr["chunk_index"])
         pages = _json_load(cr["pages_json"]) or []
+        section_ranges = data.get("_section_ranges") if isinstance(data, dict) else None
 
         for t in tasks:
             if not isinstance(t, dict):
@@ -988,46 +1066,16 @@ def _commit_schema10_payload(
                 "task": t,
                 "pages": pages,
                 "chunk_index": chunk_idx,
-                "local_tid": str(t.get("id", "")).strip(),
+                "section_ranges": section_ranges,
             })
-
-        # Collect workflow stubs from workflow-type chunks
-        if chunk_idx in workflow_chunk_indices:
-            wfs = data.get("workflows") if isinstance(data, dict) else []
-            if isinstance(wfs, list):
-                for wf in wfs:
-                    if not isinstance(wf, dict):
-                        continue
-                    wf_title = str(wf.get("title", "")).strip()
-                    wf_obj = str(wf.get("objective", "")).strip()
-                    task_order = wf.get("task_order") or []
-                    if wf_title and isinstance(task_order, list):
-                        workflow_stubs.append({
-                            "title": wf_title,
-                            "objective": wf_obj,
-                            "local_task_order": [str(tid) for tid in task_order],
-                            "chunk_index": chunk_idx,
-                        })
-
-    # Phase 2: assign globally sequential T-IDs and build local→global+record_id map
-    # Key: (chunk_index, local_tid) → (global_tid, record_id)
-    tid_map: dict[tuple[int, str], tuple[str, str]] = {}
-    global_counter = 0
 
     task_records: list[dict[str, Any]] = []
     for item in all_task_items:
-        global_counter += 1
-        global_tid = f"T{global_counter:03d}"
         record_id = str(uuid.uuid4())
-        local_tid = item["local_tid"]
-        chunk_idx = item["chunk_index"]
-        if local_tid:
-            tid_map[(chunk_idx, local_tid)] = (global_tid, record_id)
-        task_records.append({**item, "global_tid": global_tid, "record_id": record_id})
+        task_records.append({**item, "record_id": record_id})
 
-    # Phase 3: insert tasks
+    # Insert tasks
     tasks_created = 0
-    title_to_record: dict[str, tuple[str, int]] = {}  # title -> (record_id, version)
     for item in task_records:
         t = item["task"]
         title = str(t.get("title", "")).strip()
@@ -1055,6 +1103,13 @@ def _commit_schema10_payload(
             "type": "link",
             "label": f"source_pdf:{filename} pages:{item['pages']}",
         }]
+        if pdf_path:
+            page_nums = [p for p in (item["pages"] if isinstance(item["pages"], list) else []) if isinstance(p, int)]
+            steps_norm, img_assets = _extract_and_match_images(
+                pdf_path, page_nums, steps_norm, item["record_id"],
+                section_ranges=item.get("section_ranges"),
+            )
+            assets.extend(img_assets)
 
         conn.execute(
             """INSERT INTO tasks(
@@ -1085,51 +1140,9 @@ def _commit_schema10_payload(
             ),
         )
         audit("task", item["record_id"], 1, "create", actor, note="import:pdf", conn=conn)
-        title_to_record[title] = (item["record_id"], 1)
         tasks_created += 1
 
-    # Phase 4: insert workflows, resolving local T-IDs via tid_map
-    workflows_created = 0
-    for stub in workflow_stubs:
-        wf_rid = str(uuid.uuid4())
-        chunk_idx = stub["chunk_index"]
-
-        # Resolve task_order: local T-IDs → record_ids
-        task_refs: list[tuple[str, int]] = []
-        for local_tid in stub["local_task_order"]:
-            key = (chunk_idx, local_tid)
-            if key in tid_map:
-                _, task_record_id = tid_map[key]
-                task_refs.append((task_record_id, 1))
-
-        if not task_refs:
-            continue
-
-        conn.execute(
-            "INSERT INTO workflows(record_id, version, status, title, objective, domains_json, tags_json, meta_json, "
-            "created_at, updated_at, created_by, updated_by, reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                wf_rid, 1, "draft",
-                stub["title"], stub["objective"],
-                _json_dump([domain] if domain else []),
-                "[]", "{}",
-                now, now, actor, actor,
-                None, None,
-                f"import:pdf ingestion={ingestion_id}",
-                1, "AI-imported: check composition",
-            ),
-        )
-        for order_idx, (task_rid, task_ver) in enumerate(task_refs, start=1):
-            conn.execute(
-                "INSERT INTO workflow_task_refs(workflow_record_id, workflow_version, order_index, task_record_id, task_version) "
-                "VALUES (?,?,?,?,?)",
-                (wf_rid, 1, order_idx, task_rid, task_ver),
-            )
-        audit("workflow", wf_rid, 1, "create", actor, note="import:pdf", conn=conn)
-        workflows_created += 1
-
-    return tasks_created, workflows_created
+    return tasks_created
 
 
 @router.post("/import/pdf/commit")
@@ -1155,17 +1168,16 @@ def import_pdf_commit(
         if not chunk_rows:
             return RedirectResponse(url="/import/pdf", status_code=303)
 
-        workflow_chunk_indices = [
-            int(cr["chunk_index"]) for cr in chunk_rows if (cr["chunk_type"] or "") == "workflow"
-        ]
         domain = (ing["domain"] or "").strip() if "domain" in ing.keys() else ""
+        pdf_path = (ing["file_path"] or "") if "file_path" in ing.keys() else ""
 
-        tasks_n, wfs_n = _commit_schema10_payload(
-            conn, chunk_rows, candidate_id, workflow_chunk_indices,
+        _commit_schema10_payload(
+            conn, chunk_rows, candidate_id,
             ingestion_id, ing["filename"] or "", domain, actor,
+            pdf_path=pdf_path,
         )
 
-    return RedirectResponse(url="/import/pdf", status_code=303)
+    return RedirectResponse(url="/tasks?status=draft", status_code=303)
 
 
 @router.get("/import/json", response_class=HTMLResponse)

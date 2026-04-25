@@ -65,15 +65,33 @@
         {% for s in sections %}
         {% set default_checked = s.chunk_type != 'ignore' %}
         <tr class="triage-row" data-default-type="{{ s.chunk_type or 'task' }}"
+            {% if s.is_merge_parent %}data-parent-chunk="{{ s.chunk_index }}"{% endif %}
+            {% if s.will_merge %}data-merge-parent="{{ s.merge_into_idx }}"{% endif %}
             style="border-bottom:1px solid var(--border); {% if not default_checked %}opacity:0.55{% endif %}">
           <td style="padding:8px 12px; vertical-align:top">
             <input type="checkbox" name="chunk_index" value="{{ s.chunk_index }}"
                    class="triage-check" {% if default_checked %}checked{% endif %} />
           </td>
-          <td style="padding:8px 12px; vertical-align:top">
+          <td style="padding:8px 12px; vertical-align:top; padding-left:calc({{ s.level }} * 18px + 12px)">
             <div style="font-weight:500; font-size:0.9em">{{ s.title }}</div>
             {% if s.page_label %}<div class="muted" style="font-size:0.78em">{{ s.page_label }}</div>{% endif %}
-            {% if s.reason %}
+            {% if s.is_merge_parent %}
+            <div style="font-size:0.75em; margin-top:4px; display:flex; align-items:center; gap:8px; flex-wrap:wrap">
+              <span class="merge-parent-label" style="color:var(--primary,#2563eb)">↳ will merge {{ s.child_count }} section{{ 's' if s.child_count != 1 else '' }} into this task</span>
+              <button type="button" class="btn secondary split-toggle"
+                      style="padding:1px 7px; font-size:0.8em; line-height:1.6"
+                      onclick="toggleSplit(this, {{ s.chunk_index }})">Split into separate tasks</button>
+            </div>
+            {% endif %}
+            {% if s.will_merge %}
+            <div class="merge-label" style="font-size:0.75em; color:var(--primary,#2563eb); margin-top:3px">
+              ↳ will be merged into parent section at extraction
+            </div>
+            <div class="split-label" style="font-size:0.75em; color:#059669; margin-top:3px; display:none">
+              → will extract as a separate task
+            </div>
+            {% endif %}
+            {% if s.reason and not s.will_merge and not s.is_merge_parent %}
             <div class="muted" style="font-size:0.78em; margin-top:3px; font-style:italic">{{ s.reason }}</div>
             {% endif %}
           </td>
@@ -115,6 +133,44 @@
 {% endif %}
 
 <script>
+function toggleSplit(btn, parentChunk) {
+  var parentRow = document.querySelector('tr[data-parent-chunk="' + parentChunk + '"]');
+  if (!parentRow) return;
+  var isSplit = parentRow.dataset.split === '1';
+
+  if (isSplit) {
+    // Revert to merge
+    parentRow.dataset.split = '0';
+    var inp = parentRow.querySelector('.split-group-input');
+    if (inp) inp.remove();
+    btn.textContent = 'Split into separate tasks';
+    parentRow.querySelector('.merge-parent-label').style.color = 'var(--primary,#2563eb)';
+    document.querySelectorAll('tr[data-merge-parent="' + parentChunk + '"]').forEach(function (row) {
+      var ml = row.querySelector('.merge-label');
+      var sl = row.querySelector('.split-label');
+      if (ml) ml.style.display = '';
+      if (sl) sl.style.display = 'none';
+    });
+  } else {
+    // Split
+    parentRow.dataset.split = '1';
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'split_group';
+    inp.value = parentChunk;
+    inp.className = 'split-group-input';
+    parentRow.appendChild(inp);
+    btn.textContent = 'Merge into one task';
+    parentRow.querySelector('.merge-parent-label').style.color = '#059669';
+    document.querySelectorAll('tr[data-merge-parent="' + parentChunk + '"]').forEach(function (row) {
+      var ml = row.querySelector('.merge-label');
+      var sl = row.querySelector('.split-label');
+      if (ml) ml.style.display = 'none';
+      if (sl) sl.style.display = '';
+    });
+  }
+}
+
 (function () {
   // Keep type selects in sync with checkbox state (ignore → uncheck; task/workflow → check)
   document.querySelectorAll('.triage-type-select').forEach(function (sel) {
