@@ -24,6 +24,7 @@ from ..ingestion import (
     _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
     _llm_triage_chunk, _llm_extract_task_chunk, _llm_extract_primer_chunk, _extract_and_match_images,
     _llm_generate_all_levels, _html_fetch_and_chunk,
+    _html_fetch_raw, _html_chunk_from_html, _html_discover_nav, _html_crawl_and_chunk,
 )
 from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
@@ -1497,13 +1498,19 @@ def _parse_workflow_json(obj: dict[str, Any]) -> dict[str, Any]:
 @router.post("/import/json")
 def import_json_run(
     request: Request,
-    upload: UploadFile = File(...),
+    upload: UploadFile | None = File(None),
+    json_text: str = Form(""),
     actor_note: str = Form("Imported from JSON"),
 ):
     require(request.state.role, "import:json")
     actor = request.state.user
 
-    raw = upload.file.read()
+    if upload and upload.filename:
+        raw: str | bytes = upload.file.read()
+    elif json_text.strip():
+        raw = json_text.strip()
+    else:
+        raise HTTPException(status_code=400, detail="Provide a JSON file or paste JSON text.")
     try:
         payload = json.loads(raw)
     except (ValueError, json.JSONDecodeError) as e:
@@ -1607,7 +1614,7 @@ def import_json_run(
                     item["needs_review_note"],
                 ),
             )
-            audit("task", item["record_id"], item["version"], "create", actor, note="import:json")
+            audit("task", item["record_id"], item["version"], "create", actor, note="import:json", conn=conn)
             created_task_ids.append(item["record_id"])
 
         # workflows
@@ -1669,7 +1676,7 @@ def import_json_run(
                     (item["record_id"], item["version"], idx, rid, ver),
                 )
 
-            audit("workflow", item["record_id"], item["version"], "create", actor, note="import:json")
+            audit("workflow", item["record_id"], item["version"], "create", actor, note="import:json", conn=conn)
             created_workflow_ids.append(item["record_id"])
 
         # primers
@@ -1724,7 +1731,7 @@ def import_json_run(
                     str(p.get("needs_review_note")) if p.get("needs_review_note") else None,
                 ),
             )
-            audit("primer", record_id, version, "create", actor, note="import:json")
+            audit("primer", record_id, version, "create", actor, note="import:json", conn=conn)
             created_primer_ids.append(record_id)
 
     # Redirect to something sensible
@@ -1765,47 +1772,139 @@ def import_url_prepare(request: Request, url: str = Form(...)):
             status_code=400,
         )
 
-    raw_bytes, pages, outline = _html_fetch_and_chunk(url)
+    raw_bytes, html_text = _html_fetch_raw(url)
     sha = _sha256_bytes(raw_bytes)
 
-    db_path = DB_PATH_CTX.get()
     with db() as conn:
         existing = conn.execute(
-            "SELECT id FROM ingestions WHERE source_type='url' AND source_sha256=? AND created_by=?",
+            "SELECT id, job_status FROM ingestions WHERE source_type='url' AND source_sha256=? AND created_by=?",
             (sha, actor),
         ).fetchone()
         if existing:
-            return RedirectResponse(url=f"/import/pdf/sections/{existing['id']}", status_code=303)
+            dest = (f"/import/url/nav/{existing['id']}"
+                    if existing["job_status"] == "nav_pending"
+                    else f"/import/pdf/sections/{existing['id']}")
+            return RedirectResponse(url=dest, status_code=303)
 
+        nav_pages = _html_discover_nav(url, html_text)
         ingestion_id = str(uuid.uuid4())
         now = utc_now_iso()
+
+        if nav_pages:
+            conn.execute(
+                "INSERT INTO ingestions(id, source_type, source_sha256, filename, file_path, created_by, created_at, "
+                "status, cursor_chunk, max_tasks_per_run, note, job_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (ingestion_id, "url", sha, url, None, actor, now, "draft", 0, 10, None, "nav_pending"),
+            )
+            for i, p in enumerate(nav_pages):
+                conn.execute(
+                    "INSERT INTO ingestion_nav_pages(id, ingestion_id, url, title, level, order_index, is_root) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), ingestion_id, p["url"], p["title"], p["level"], i, 1 if p["is_root"] else 0),
+                )
+            return RedirectResponse(url=f"/import/url/nav/{ingestion_id}", status_code=303)
+
+        # No nav found — single-page path (existing behaviour)
+        _, pages, outline = _html_chunk_from_html(html_text, url)
         conn.execute(
             "INSERT INTO ingestions(id, source_type, source_sha256, filename, file_path, created_by, created_at, "
             "status, cursor_chunk, max_tasks_per_run, note, job_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (ingestion_id, "url", sha, url, None, actor, now, "draft", 0, 10, None, "pending"),
         )
-
         chunks = _chunk_by_structure(pages, outline) if outline else _chunk_text(pages)
         for idx, chunk in enumerate(chunks):
             conn.execute(
                 "INSERT INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, created_at, "
                 "section_title, selected, chunk_status, section_level) VALUES (?,?,?,?,?,?,?,?,?)",
-                (
-                    ingestion_id, idx,
-                    json.dumps(chunk.get("pages", [])),
-                    chunk.get("text", ""),
-                    now,
-                    chunk.get("section_title", ""),
-                    0,
-                    "pending",
-                    int(chunk.get("section_level", 0)),
-                ),
+                (ingestion_id, idx, json.dumps(chunk.get("pages", [])), chunk.get("text", ""),
+                 now, chunk.get("section_title", ""), 0, "pending", int(chunk.get("section_level", 0))),
             )
-        no_toc = not outline
         conn.execute(
             "UPDATE ingestions SET note=? WHERE id=?",
-            ("no-headings-fallback" if no_toc else None, ingestion_id),
+            ("no-headings-fallback" if not outline else None, ingestion_id),
         )
 
     return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
-    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+
+
+@router.post("/import/url/delete/{ingestion_id}")
+def import_url_delete(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT job_status FROM ingestions WHERE id=? AND created_by=? AND source_type='url'",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(404)
+        if ing["job_status"] in ("running", "chunking", "triaging"):
+            raise HTTPException(status_code=409, detail="Cannot delete while processing is in progress.")
+        # ingestion_chunks and ingestion_nav_pages deleted via ON DELETE CASCADE
+        conn.execute("DELETE FROM ingestions WHERE id=?", (ingestion_id,))
+    return RedirectResponse(url="/import/url", status_code=303)
+
+
+@router.get("/import/url/nav/{ingestion_id}", response_class=HTMLResponse)
+def import_url_nav_form(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT id, filename, job_status FROM ingestions WHERE id=? AND created_by=? AND source_type='url'",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(status_code=404, detail="Import session not found")
+        nav_pages = conn.execute(
+            "SELECT url, title, level, is_root FROM ingestion_nav_pages "
+            "WHERE ingestion_id=? ORDER BY order_index",
+            (ingestion_id,),
+        ).fetchall()
+    return templates.TemplateResponse(request, "import_url_nav.html", {
+        "ing": dict(ing),
+        "nav_pages": [dict(p) for p in nav_pages],
+    })
+
+
+@router.post("/import/url/crawl/{ingestion_id}")
+def import_url_crawl(
+    request: Request,
+    ingestion_id: str,
+    selected_urls: list[str] = Form([]),
+):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    with db() as conn:
+        ing = conn.execute(
+            "SELECT id, job_status FROM ingestions WHERE id=? AND created_by=? AND source_type='url'",
+            (ingestion_id, actor),
+        ).fetchone()
+        if not ing:
+            raise HTTPException(status_code=404, detail="Import session not found")
+        if ing["job_status"] != "nav_pending":
+            return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
+
+    if not selected_urls:
+        raise HTTPException(status_code=400, detail="Select at least one page to import.")
+    selected_urls = selected_urls[:80]
+
+    chunks = _html_crawl_and_chunk(selected_urls)
+
+    now = utc_now_iso()
+    has_titles = any(c.get("section_title") for c in chunks)
+    with db() as conn:
+        for idx, chunk in enumerate(chunks):
+            conn.execute(
+                "INSERT INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, created_at, "
+                "section_title, selected, chunk_status, section_level) VALUES (?,?,?,?,?,?,?,?,?)",
+                (ingestion_id, idx, json.dumps(chunk.get("pages", [])), chunk.get("text", ""),
+                 now, chunk.get("section_title", ""), 0, "pending", int(chunk.get("section_level", 0))),
+            )
+        conn.execute(
+            "UPDATE ingestions SET job_status='pending', note=? WHERE id=?",
+            (None if has_titles else "no-headings-fallback", ingestion_id),
+        )
+
+    return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)

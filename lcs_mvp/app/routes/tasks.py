@@ -5,8 +5,10 @@ import sqlite3
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+import hashlib
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from ..config import templates, TASK_IMAGES_DIR
 from ..database import db, utc_now_iso, _active_domains, _user_has_domain
@@ -943,6 +945,30 @@ def _cascade_workflow_updates(conn: sqlite3.Connection, task_record_id: str, new
 # ---------------------------------------------------------------------------
 # Task image serving (auth-gated)
 # ---------------------------------------------------------------------------
+
+@router.post("/tasks/{record_id}/upload-image")
+def task_upload_image(request: Request, record_id: str, image: UploadFile = File(...)):
+    """AJAX endpoint: upload a screenshot for a task and return its asset URL."""
+    require(request.state.role, "task:revise")
+    ct = (image.content_type or "").lower()
+    if not ct.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+    raw = image.file.read()
+    if len(raw) < 100:
+        raise HTTPException(status_code=400, detail="Image file is too small.")
+    ext_map = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
+    ext = ext_map.get(ct, "png")
+    digest = hashlib.sha256(raw).hexdigest()
+    filename = f"{digest[:16]}.{ext}"
+    out_dir = os.path.join(TASK_IMAGES_DIR, record_id)
+    os.makedirs(out_dir, exist_ok=True)
+    img_path = os.path.join(out_dir, filename)
+    if not os.path.isfile(img_path):
+        with open(img_path, "wb") as f:
+            f.write(raw)
+    label = os.path.splitext(image.filename or "screenshot")[0][:40]
+    return JSONResponse({"url": f"/task-images/{record_id}/{filename}", "label": label})
+
 
 @router.get("/task-images/{record_id}/{filename}")
 def task_image(request: Request, record_id: str, filename: str):

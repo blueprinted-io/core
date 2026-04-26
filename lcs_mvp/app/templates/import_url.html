@@ -37,16 +37,37 @@
         <th>URL</th>
         <th style="width:110px">Status</th>
         <th style="width:130px">Date</th>
-        <th style="width:90px"></th>
+        <th style="width:160px"></th>
       </tr>
     </thead>
     <tbody>
       {% for s in past %}
       <tr>
         <td class="muted" style="font-size:0.85em; max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ s.filename }}</td>
-        <td><span class="badge">{{ s.job_status }}</span></td>
+        <td>
+          {% if s.job_status == 'nav_pending' %}
+            <span class="badge">select pages</span>
+          {% else %}
+            <span class="badge">{{ s.job_status }}</span>
+          {% endif %}
+        </td>
         <td class="muted" style="font-size:0.85em">{{ s.created_at[:16] }}</td>
-        <td><a href="/import/pdf/sections/{{ s.id }}" class="btn secondary" style="font-size:0.8em; padding:3px 8px">Review</a></td>
+        <td>
+          <div style="display:flex; gap:6px; align-items:center">
+            {% if s.job_status == 'nav_pending' %}
+              <a href="/import/url/nav/{{ s.id }}" class="btn secondary" style="font-size:0.8em; padding:3px 8px">Select pages</a>
+            {% elif s.job_status not in ('running', 'chunking', 'triaging') %}
+              <a href="/import/pdf/sections/{{ s.id }}" class="btn secondary" style="font-size:0.8em; padding:3px 8px">Review</a>
+            {% endif %}
+            {% if s.job_status not in ('running', 'chunking', 'triaging') %}
+            <form method="post" action="/import/url/delete/{{ s.id }}"
+                  onsubmit="return confirm('Remove this URL import session?')">
+              <button class="btn secondary" type="submit"
+                      style="font-size:0.8em; padding:3px 8px; color:var(--danger,#dc2626); border-color:var(--danger,#dc2626)">Remove</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

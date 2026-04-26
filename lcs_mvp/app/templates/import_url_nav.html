@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Select pages to import</h1>
+    <p class="muted">{{ nav_pages | length }} pages discovered in the site navigation. Checking a section automatically selects everything beneath it.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/url">Cancel</a>
+  </div>
+</div>
+
+<div class="callout warn">
+  <b>Source:</b> <span class="muted" style="word-break:break-all">{{ ing.filename }}</span>
+</div>
+
+<form method="post" action="/import/url/crawl/{{ ing.id }}" id="crawl-form">
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">
+      <span id="sel-count" class="muted" style="font-size:14px"></span>
+      <div style="display:flex; gap:8px">
+        <button type="button" onclick="setAll(true)" class="btn secondary">Select all</button>
+        <button type="button" onclick="setAll(false)" class="btn secondary">Deselect all</button>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:4px; max-height:60vh; overflow-y:auto; padding-right:4px">
+      {% for p in nav_pages %}
+      <label class="nav-pick-row" data-level="{{ p.level }}" data-root="{{ '1' if p.is_root else '0' }}"
+             style="padding-left:{{ 12 + p.level * 22 }}px">
+        {% if p.is_root %}
+          <input type="checkbox" checked disabled />
+          <input type="hidden" name="selected_urls" value="{{ p.url }}" />
+        {% else %}
+          <input type="checkbox" name="selected_urls" value="{{ p.url }}"
+                 {% if loop.index0 < 11 %}checked{% endif %}
+                 onchange="onRowChange(this)" />
+        {% endif %}
+        <div style="flex:1; min-width:0">
+          <div style="font-size:14px; font-weight:{{ '600' if p.is_root else '400' }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">
+            {{ p.title or p.url }}
+          </div>
+          <div class="muted" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{{ p.url }}</div>
+        </div>
+        {% if p.is_root %}<span class="badge" style="flex-shrink:0">start page</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <button class="btn" type="submit" id="crawl-btn">Fetch selected pages →</button>
+    <span class="muted" style="font-size:13px" id="fetch-warning"></span>
+  </div>
+</form>
+
+<style>
+.nav-pick-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding-top:8px;
+  padding-bottom:8px;
+  padding-right:12px;
+  border-radius:8px;
+  background:color-mix(in oklab, var(--bg) 55%, var(--panel));
+  border:1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  cursor:pointer;
+  transition:background .1s;
+}
+.nav-pick-row:hover {
+  background:color-mix(in oklab, var(--accent) 6%, var(--panel));
+}
+.nav-pick-row input[type="checkbox"] {
+  width:auto;
+  flex-shrink:0;
+  cursor:pointer;
+}
+</style>
+
+<script>
+function allRows() {
+  return Array.from(document.querySelectorAll('.nav-pick-row'));
+}
+
+function rowLevel(row) {
+  return parseInt(row.dataset.level, 10);
+}
+
+function descendants(row) {
+  const rows = allRows();
+  const idx = rows.indexOf(row);
+  const parentLevel = rowLevel(row);
+  const result = [];
+  for (let i = idx + 1; i < rows.length; i++) {
+    if (rowLevel(rows[i]) <= parentLevel) break;
+    result.push(rows[i]);
+  }
+  return result;
+}
+
+function rowCheckbox(row) {
+  return row.querySelector('input[type="checkbox"]:not([disabled])');
+}
+
+function updateCount() {
+  const fixed = document.querySelectorAll('.nav-pick-row[data-root="1"]').length;
+  const checked = document.querySelectorAll('input[name="selected_urls"]:not([disabled]):checked').length;
+  const total = fixed + checked;
+  document.getElementById('sel-count').textContent =
+    total + ' page' + (total === 1 ? '' : 's') + ' selected';
+  document.getElementById('fetch-warning').textContent =
+    total > 20 ? 'Fetching many pages may take a minute or two.' : '';
+}
+
+function syncParents(changedRow) {
+  const rows = allRows();
+  const idx = rows.indexOf(changedRow);
+  const changedLevel = rowLevel(changedRow);
+  for (let i = idx - 1; i >= 0; i--) {
+    const ancestor = rows[i];
+    const ancestorLevel = rowLevel(ancestor);
+    if (ancestorLevel >= changedLevel) continue;
+    const desc = descendants(ancestor);
+    const boxes = desc.map(rowCheckbox).filter(Boolean);
+    if (!boxes.length) continue;
+    const allChecked = boxes.every(b => b.checked);
+    const anyChecked = boxes.some(b => b.checked);
+    const cb = rowCheckbox(ancestor);
+    if (cb) {
+      cb.checked = allChecked;
+      cb.indeterminate = !allChecked && anyChecked;
+    }
+    if (ancestorLevel === changedLevel - 1) break;
+  }
+}
+
+function onRowChange(checkbox) {
+  const row = checkbox.closest('.nav-pick-row');
+  const desc = descendants(row);
+  if (desc.length) {
+    // Cascade to all descendants
+    checkbox.indeterminate = false;
+    desc.forEach(d => {
+      const cb = rowCheckbox(d);
+      if (cb) { cb.checked = checkbox.checked; cb.indeterminate = false; }
+    });
+  }
+  syncParents(row);
+  updateCount();
+}
+
+function setAll(state) {
+  document.querySelectorAll('input[name="selected_urls"]:not([disabled])').forEach(cb => {
+    cb.checked = state;
+    cb.indeterminate = false;
+  });
+  updateCount();
+}
+
+document.getElementById('crawl-form').addEventListener('submit', function() {
+  var btn = document.getElementById('crawl-btn');
+  btn.disabled = true;
+  btn.textContent = 'Fetching pages…';
+});
+
+updateCount();
+</script>
+{% endblock %}

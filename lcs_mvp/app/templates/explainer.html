@@ -4,98 +4,264 @@
 <p class="muted">A plain-language explainer for contributors, reviewers, and administrators.</p>
 
 <div class="card">
-  <a href="/static/blueprinted-diagram.svg" target="_blank" rel="noopener">
-    <img src="/static/blueprinted-diagram.svg" alt="Blueprinted.io system overview diagram" style="width:50%;height:auto;border-radius:12px;border:1px solid var(--border);display:block" />
-  </a>
-  <p class="muted" style="margin-top:10px">
-    AI is strongest on established patterns and weakest at novelty. Newly released software, fresh regulatory changes, and emerging ways of working are exactly where hallucination risk is highest — and they are also the highest-priority learning areas for most organisations.
-  </p>
-  <p class="muted" style="margin-top:10px">
-    Blueprinted introduces a human-in-the-loop layer between source documentation and AI-generated learning outputs. Human experts structure, validate, and govern the critical knowledge before it is used. The result is faster content production with controlled accuracy, explicit oversight, and full auditability — so organisations in high-risk or regulated environments can use AI output with confidence and traceability.
-  </p>
+  <div style="display:flex; gap:32px; align-items:flex-start; flex-wrap:wrap">
+    <div style="flex:1 1 260px; min-width:0">
+      <p class="muted" style="margin-top:0">
+        AI is strongest on established patterns and weakest at novelty. Newly released software, fresh regulatory changes, and emerging ways of working are exactly where hallucination risk is highest, and they are also the highest-priority learning areas for most organisations.
+      </p>
+      <p class="muted" style="margin-bottom:0">
+        Blueprinted introduces a human-in-the-loop layer between source documentation and AI-generated learning outputs. Human experts structure, validate, and govern the critical knowledge before it is used. The result is faster content production with controlled accuracy, explicit oversight, and full auditability, so organisations in high-risk or regulated environments can use AI output with confidence and traceability.
+      </p>
+    </div>
+    <a href="/static/blueprinted-diagram.svg" target="_blank" rel="noopener" style="flex:1 1 260px; min-width:0; display:block">
+      <img src="/static/blueprinted-diagram.svg" alt="Blueprinted.io system overview diagram" style="width:100%;height:auto;border-radius:12px;border:1px solid var(--border);display:block" />
+    </a>
+  </div>
 </div>
 
 <div class="card">
-  <h2>How it works</h2>
-  <ol>
-    <li><b>Ingest source documentation</b><br><span class="muted">PDF documents and web pages are processed by AI to extract candidate Tasks and Primers. The import pipeline classifies sections, runs LLM extraction, and surfaces candidates for human review. Ingestion produces candidates only — Workflows are never generated automatically.</span></li>
-    <li><b>Review and govern with humans in the loop</b><br><span class="muted">Contributors review AI-extracted candidates, edit them, and submit them for review. Reviewers confirm or return records through the review queue. Each record version is immutable once confirmed.</span></li>
-    <li><b>Compose into Workflows</b><br><span class="muted">Authors compose confirmed Tasks into Workflows and attach relevant Primers. A Workflow expresses an expert's judgement about how Tasks should be sequenced for a specific operational context.</span></li>
-    <li><b>Deliver governed outputs</b><br><span class="muted">Confirmed records drive content output, assessments, and assurance evidence. Every output is grounded in approved, versioned content rather than raw LLM generation.</span></li>
-  </ol>
+  <h2 style="margin-bottom:4px">How it works</h2>
+  <p class="muted" style="margin-top:0; margin-bottom:0; font-size:14px">Four stages from raw documentation to governed, auditable content.</p>
+  <div class="how-steps-grid">
+    <div class="how-step">
+      <div class="how-step-num">1</div>
+      <div>
+        <p class="how-step-title">Ingest source documentation</p>
+        <p class="how-step-body">PDF documents and web pages are processed by AI to extract candidate Tasks and Primers. The import pipeline classifies sections, runs extraction, and surfaces candidates for human review. Ingestion produces candidates only; Workflows are never generated automatically.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-step-num">2</div>
+      <div>
+        <p class="how-step-title">Review and govern</p>
+        <p class="how-step-body">Contributors review AI-extracted candidates, edit them, and submit them for review. Reviewers confirm or return records through the review queue. Each record version is immutable once confirmed.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-step-num">3</div>
+      <div>
+        <p class="how-step-title">Compose into Workflows</p>
+        <p class="how-step-body">Authors compose confirmed Tasks into Workflows and attach relevant Primers. A Workflow expresses an expert's judgement about how Tasks should be sequenced for a specific operational context.</p>
+      </div>
+    </div>
+    <div class="how-step">
+      <div class="how-step-num">4</div>
+      <div>
+        <p class="how-step-title">Deliver governed outputs</p>
+        <p class="how-step-body">Confirmed records drive content output, assessments, and assurance evidence. Every output is grounded in approved, versioned content rather than raw LLM generation.</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
-  <h2>Core record types</h2>
+  <h2 style="margin-bottom:4px">Core record types</h2>
+  <p class="muted" style="margin-top:0; margin-bottom:0; font-size:14px">Four first-class record types, all following the same governed lifecycle.</p>
+  <div class="record-type-grid">
 
-  <h3>Task</h3>
-  <p class="muted">The smallest unit of work that changes the world in one observable way.</p>
-  <ul>
-    <li><b>Outcome:</b> the verifiable result when the task is complete.</li>
-    <li><b>Facts:</b> literal information the operator needs before starting.</li>
-    <li><b>Concepts:</b> the mental model explaining why the procedure works.</li>
-    <li><b>Steps:</b> the ordered procedure, each with a completion criterion.</li>
-    <li><b>Dependencies:</b> what must already be true for the task to be possible.</li>
-  </ul>
+    <div class="record-type-card">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-2"/>
+          <rect x="7" y="2.5" width="6" height="3" rx="1"/>
+          <path d="M7.5 10.5l2 2 3.5-3.5"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Task</p>
+      <p class="record-type-desc">The smallest unit of work that changes the world in one observable way.</p>
+      <ul>
+        <li><b>Outcome:</b> the verifiable result when the task is complete.</li>
+        <li><b>Facts:</b> background knowledge the operator needs before starting.</li>
+        <li><b>Concepts:</b> the mental model explaining why the procedure works.</li>
+        <li><b>Steps:</b> the ordered procedure, each with a completion criterion.</li>
+        <li><b>Dependencies:</b> what must already be true for the task to be possible.</li>
+      </ul>
+    </div>
 
-  <h3>Primer</h3>
-  <p class="muted">A standalone conceptual document — the analytical knowledge that makes practitioners competent, not just procedurally capable.</p>
-  <ul>
-    <li>Explains the <em>why</em> and <em>how</em>, not the <em>what to do</em>.</li>
-    <li>Covers trade-offs, failure modes, and conditions under which to choose each approach.</li>
-    <li>Optionally includes level variants (100–400) tuned for different depths of knowledge: Awareness, Foundation, Applied, and Mastery.</li>
-    <li>Can be attached to Workflows to provide conceptual grounding alongside the procedural steps.</li>
-  </ul>
+    <div class="record-type-card">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 3a4 4 0 0 1 2.83 6.83L12 11H8l-.83-.17A4 4 0 0 1 10 3z"/>
+          <path d="M8 13h4M8.5 15.5h3"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Primer</p>
+      <p class="record-type-desc">A standalone conceptual document: the analytical knowledge that makes practitioners competent, not just procedurally capable.</p>
+      <ul>
+        <li>Explains the <em>why</em> and <em>how</em>, not the <em>what to do</em>.</li>
+        <li>Covers trade-offs, failure modes, and conditions under which to choose each approach.</li>
+        <li>Optionally includes level variants (100-400) for different depths: Awareness through Mastery.</li>
+        <li>Can be attached to Workflows to provide conceptual grounding alongside procedural steps.</li>
+      </ul>
+    </div>
 
-  <h3>Workflow</h3>
-  <p class="muted">An ordered sequence of Tasks that achieves one operational objective.</p>
-  <ul>
-    <li>Contains <b>Tasks</b>, not low-level steps — the Workflow expresses sequencing and context, not procedure.</li>
-    <li>Can reference <b>Primers</b> to surface the conceptual knowledge practitioners need alongside the steps.</li>
-    <li>Always <b>human-composed</b> — never generated automatically during ingestion.</li>
-  </ul>
+    <div class="record-type-card">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="8" width="4" height="4" rx="1"/>
+          <rect x="8" y="3" width="4" height="4" rx="1"/>
+          <rect x="8" y="13" width="4" height="4" rx="1"/>
+          <rect x="14" y="8" width="4" height="4" rx="1"/>
+          <path d="M6 10h2M12 5v1.5a1.5 1.5 0 0 0 1.5 1.5H14M12 15v-1.5a1.5 1.5 0 0 1 1.5-1.5H14"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Workflow</p>
+      <p class="record-type-desc">An ordered sequence of Tasks that achieves one operational objective.</p>
+      <ul>
+        <li>Contains <b>Tasks</b>, not low-level steps. The Workflow expresses sequencing and context.</li>
+        <li>Can reference <b>Primers</b> to surface conceptual knowledge alongside the procedural steps.</li>
+        <li>Always <b>human-composed</b>; never generated automatically during ingestion.</li>
+      </ul>
+    </div>
 
-  <h3>Step</h3>
-  <p class="muted">One unit of procedure inside a Task.</p>
-  <ul>
-    <li><b>Text (required):</b> what you are doing.</li>
-    <li><b>Actions (optional):</b> tool-specific commands or UI paths for execution.</li>
-    <li><b>Completion (required):</b> how you verify the step succeeded.</li>
-  </ul>
+    <div class="record-type-card">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5h2M4 10h2M4 15h2"/>
+          <path d="M9 5h7M9 10h7M9 15h7"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Step</p>
+      <p class="record-type-desc">One unit of procedure inside a Task.</p>
+      <ul>
+        <li><b>Text (required):</b> what you are doing.</li>
+        <li><b>Actions (optional):</b> tool-specific commands or UI paths for execution.</li>
+        <li><b>Completion (required):</b> how you verify the step succeeded.</li>
+      </ul>
+    </div>
+
+  </div>
 </div>
 
 <div class="card">
-  <h2>Status lifecycle</h2>
-  <p class="muted">All record types follow the same governed lifecycle.</p>
-  <ul>
-    <li><b>Draft:</b> being authored. Not yet trusted or reusable.</li>
-    <li><b>Submitted:</b> awaiting review. No further edits until returned or confirmed.</li>
-    <li><b>Returned:</b> reviewer has requested changes. Contributor creates a new version.</li>
-    <li><b>Confirmed:</b> reviewed and approved. Safe to reuse, reference, and export. Immutable.</li>
-    <li><b>Deprecated:</b> superseded by a newer confirmed version.</li>
-  </ul>
-  <p class="muted" style="margin-top:10px">Each edit creates a new version — prior versions are retained. The confirmed version is the authoritative one.</p>
+  <h2 style="margin-bottom:4px">Status lifecycle</h2>
+  <p class="muted" style="margin-top:0; font-size:14px">All record types follow the same governed lifecycle. Each edit creates a new immutable version; prior versions are retained.</p>
+  <div class="xp-lifecycle">
+    <div class="xp-flow-rail">
+      <div class="xp-flow-node xp-flow-node-draft">
+        <p class="xp-flow-label">01</p>
+        <p class="xp-flow-name">Draft</p>
+        <p class="xp-flow-desc">Being authored. Not yet trusted or reusable by others.</p>
+      </div>
+      <div class="xp-flow-arrow">→</div>
+      <div class="xp-flow-node xp-flow-node-submitted">
+        <p class="xp-flow-label">02</p>
+        <p class="xp-flow-name">Submitted</p>
+        <p class="xp-flow-desc">Awaiting review. Locked from edits until a decision is made.</p>
+      </div>
+      <div class="xp-flow-arrow">→</div>
+      <div class="xp-flow-node xp-flow-node-confirmed">
+        <p class="xp-flow-label">03</p>
+        <p class="xp-flow-name">Confirmed</p>
+        <p class="xp-flow-desc">Reviewed and approved. Safe to reuse, reference, and export. Immutable.</p>
+      </div>
+      <div class="xp-flow-arrow">→</div>
+      <div class="xp-flow-node xp-flow-node-deprecated">
+        <p class="xp-flow-label">04</p>
+        <p class="xp-flow-name">Deprecated</p>
+        <p class="xp-flow-desc">Superseded by a newer confirmed version. Retained for audit history.</p>
+      </div>
+    </div>
+    <div class="xp-return-row">
+      <div class="xp-return-desc" style="white-space:nowrap">Reviewer requests changes</div>
+      <div class="xp-return-line"></div>
+      <div class="xp-return-pill">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 6H4M4 6L7 3M4 6L7 9"/>
+        </svg>
+        Returned
+      </div>
+      <div class="xp-return-line"></div>
+      <div class="xp-return-desc" style="white-space:nowrap">Contributor creates new version</div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
-  <h2>Who uses which area</h2>
-  <ul>
-    <li><b>Viewer:</b> read access to Workflows and confirmed content.</li>
-    <li><b>Contributor:</b> ingestion, creating and editing Tasks, Primers, and Workflows.</li>
-    <li><b>Reviewer:</b> the review queue — confirming or returning submitted records.</li>
-    <li><b>Content publisher:</b> content output and delivery artefacts.</li>
-    <li><b>Assessment author:</b> assessments linked to governed records.</li>
-    <li><b>Audit:</b> assurance and audit log visibility.</li>
-    <li><b>Admin:</b> full access including break-glass operations, user management, and system settings.</li>
-  </ul>
-</div>
+  <h2 style="margin-bottom:4px">Who uses which area</h2>
+  <p class="muted" style="margin-top:0; font-size:14px">Access is role-based. Most users need only one or two roles.</p>
+  <div class="xp-roles-grid">
 
-<div class="card">
-  <h2>What this system is not</h2>
-  <ul>
-    <li>It is not a chat bot or a free-form AI assistant.</li>
-    <li>It is not a wiki — confirmed content is controlled, versioned, and requires human approval.</li>
-    <li>It does not generate Workflows automatically — that judgement is always human.</li>
-  </ul>
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="6" r="3"/>
+          <path d="M3 15a6 6 0 0 1 12 0"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Viewer</p>
+      <p class="xp-role-desc">Read-only access to Workflows and confirmed content. No editing or submission.</p>
+    </div>
+
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 14V11l7-7 3 3-7 7H3z"/>
+          <path d="M11 4l3 3"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Contributor</p>
+      <p class="xp-role-desc">Runs ingestion, creates and edits Tasks, Primers, and Workflows, and submits records for review.</p>
+    </div>
+
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 9l4 4 7-7"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Reviewer</p>
+      <p class="xp-role-desc">Works the review queue: confirms or returns submitted records with feedback.</p>
+    </div>
+
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="14" height="10" rx="2"/>
+          <path d="M6 8h6M6 11h4"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Content publisher</p>
+      <p class="xp-role-desc">Generates and exports content output and delivery artefacts from confirmed records.</p>
+    </div>
+
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="9" cy="9" r="6"/>
+          <path d="M9 6v3l2 2"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Assessment author</p>
+      <p class="xp-role-desc">Builds assessments linked to governed records. Assessments inherit the provenance of the records they reference.</p>
+    </div>
+
+    <div class="xp-role-card">
+      <div class="xp-role-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 4h12M3 8h8M3 12h10M3 16h6"/>
+        </svg>
+      </div>
+      <p class="xp-role-name">Audit</p>
+      <p class="xp-role-desc">Visibility into assurance evidence and the full audit log. Read-only, no operational access.</p>
+    </div>
+
+    <div class="xp-role-card" style="grid-column:1/-1">
+      <div style="display:flex; align-items:flex-start; gap:12px">
+        <div class="xp-role-icon" style="margin-bottom:0; flex-shrink:0">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="9" r="6"/>
+            <path d="M9 6v1.5M9 10.5V12"/>
+            <path d="M6 9h6"/>
+          </svg>
+        </div>
+        <div>
+          <p class="xp-role-name">Admin</p>
+          <p class="xp-role-desc">Full access including all contributor and reviewer capabilities, plus break-glass operations, user management, domain configuration, and system settings.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 {% endblock %}

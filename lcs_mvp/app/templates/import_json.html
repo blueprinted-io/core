@@ -1,57 +1,332 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Import JSON</h1>
-<p>Upload a JSON file containing <code>tasks</code> and/or <code>workflows</code>.</p>
+<p class="muted">Upload a JSON file containing tasks, primers, and/or workflows. All records arrive as draft and require human review before confirmation.</p>
 
 {% if error %}
-  <div class="card" style="border-left: 4px solid #b00020;">
-    <b>Error:</b> {{ error }}
-  </div>
+<div class="callout danger"><b>Error:</b> {{ error }}</div>
 {% endif %}
 
 <div class="card">
   <form method="post" action="/import/json" enctype="multipart/form-data">
-    <div class="row">
+    <div style="display:flex; gap:0; margin-bottom:16px; border:1px solid color-mix(in oklab, var(--border) 65%, transparent); border-radius:10px; overflow:hidden; width:fit-content">
+      <button type="button" id="tab-upload" onclick="switchTab('upload')"
+              style="padding:7px 18px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:var(--accent); color:#fff">
+        Upload file
+      </button>
+      <button type="button" id="tab-paste" onclick="switchTab('paste')"
+              style="padding:7px 18px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:transparent; color:var(--muted)">
+        Paste JSON
+      </button>
+    </div>
+
+    <div id="panel-upload">
       <label>JSON file</label>
-      <input type="file" name="upload" accept="application/json,.json" required />
+      <input type="file" name="upload" accept="application/json,.json" />
     </div>
 
-    <div class="row">
-      <label>Actor note</label>
-      <input type="text" name="actor_note" value="Imported from JSON" />
+    <div id="panel-paste" style="display:none">
+      <label>JSON</label>
+      <textarea name="json_text" rows="10" placeholder='{"tasks": [...], "primers": [...]}' style="font-family:monospace; font-size:13px"></textarea>
     </div>
 
-    <button class="btn" type="submit">Import</button>
+    <div style="margin-top:12px">
+      <label>Import note</label>
+      <input type="text" name="actor_note" value="Imported from JSON" style="max-width:400px" />
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn" type="submit">Import →</button>
+    </div>
   </form>
 </div>
 
+<div class="callout warn">
+  <b>Images not supported:</b> JSON import does not extract or carry images. If your source documentation contains screenshots or diagrams that should be attached to tasks, use the <a href="/import/pdf">PDF importer</a> or <a href="/import/url">URL importer</a> with a suitable LLM configuration instead.
+</div>
+
+<!-- ── LLM prompts ──────────────────────────────────────────────────────────── -->
 <div class="card">
-  <h2>Expected shape (example)</h2>
-  <pre style="white-space:pre-wrap">{
+  <h2 style="margin-bottom:4px">Generate content with an external LLM</h2>
+  <p class="muted" style="margin-top:0; font-size:14px">Copy a prompt, paste it into Claude, ChatGPT, or any capable LLM, then append your source documentation. The output will be valid import JSON.</p>
+
+  <div class="record-type-grid" style="margin-top:16px">
+
+    <div class="record-type-card" style="display:flex; flex-direction:column; align-items:flex-start">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-2"/>
+          <rect x="7" y="2.5" width="6" height="3" rx="1"/>
+          <path d="M7.5 10.5l2 2 3.5-3.5"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Task extraction</p>
+      <p class="record-type-desc" style="flex:1">Extracts structured tasks with title, outcome, steps (including CLI commands and completion criteria), facts, concepts, and dependencies from procedural documentation.</p>
+      <button class="btn" style="margin-top:12px; width:100%" onclick="copyPrompt('task', this)">Copy prompt</button>
+    </div>
+
+    <div class="record-type-card" style="display:flex; flex-direction:column; align-items:flex-start">
+      <div class="record-type-icon">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 3a4 4 0 0 1 2.83 6.83L12 11H8l-.83-.17A4 4 0 0 1 10 3z"/>
+          <path d="M8 13h4M8.5 15.5h3"/>
+        </svg>
+      </div>
+      <p class="record-type-name">Primer extraction</p>
+      <p class="record-type-desc" style="flex:1">Extracts conceptual primers with rich markdown explanation covering how something works, trade-offs, and when to choose each approach. For explanatory or reference documentation, not procedural content.</p>
+      <button class="btn" style="margin-top:12px; width:100%" onclick="copyPrompt('primer', this)">Copy prompt</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── JSON shape reference ─────────────────────────────────────────────────── -->
+<div class="card">
+  <h2 style="margin-bottom:4px">JSON shape reference</h2>
+  <p class="muted" style="margin-top:0; font-size:14px">The top-level object may contain <code>tasks</code>, <code>primers</code>, and/or <code>workflows</code> arrays. Required fields are marked.</p>
+
+  <details style="margin-top:16px">
+    <summary>Task</summary>
+    <pre class="schema-block">{
+  "title": "...",            // required — noun phrase, 5-10 words, no leading verb
+  "outcome": "...",          // required — passive voice, one sentence
+  "procedure_name": "...",   // short imperative phrase; defaults to title if omitted
+  "software_name": "...",    // or null
+  "software_version": "...", // or null
+  "facts": [                 // what the components are; [] if none
+    "Sentence describing a component or concept."
+  ],
+  "concepts": [              // why this specific task must be done; [] if none
+    "Paragraph explaining the consequence of skipping this task."
+  ],
+  "dependencies": [          // preconditions; [] if none
+    "Machine is accessible with sudo privileges."
+  ],
+  "irreversible": false,     // true if hard to undo (e.g. disk format, data deletion)
+  "steps": [
+    {
+      "text": "...",         // required — concrete verb, one action only
+      "completion": "...",   // required — specific observable confirmation
+      "actions": [           // CLI commands, menu paths, shortcuts; [] if self-explanatory
+        "sudo apt install example"
+      ],
+      "notes": null          // edge cases or caveats from source; null if none
+    }
+  ],
+  "record_id": "...",        // UUID; auto-generated if omitted
+  "version": 1               // integer; defaults to 1
+}</pre>
+  </details>
+
+  <details style="margin-top:8px">
+    <summary>Primer</summary>
+    <pre class="schema-block">{
+  "title": "...",            // required — noun phrase, 5-12 words
+  "summary": "...",          // required — one sentence, active voice
+  "explanation": "...",      // required — full conceptual content in markdown
+  "analogies": null,         // string or null
+  "software_name": "...",    // or null
+  "software_version": "...", // or null
+  "domain": "",              // optional domain slug
+  "record_id": "...",        // UUID; auto-generated if omitted
+  "version": 1               // integer; defaults to 1
+}</pre>
+  </details>
+
+  <details style="margin-top:8px">
+    <summary>Workflow</summary>
+    <pre class="schema-block">{
+  "title": "...",        // required
+  "objective": "...",    // required — one sentence describing the operational goal
+  "task_refs": [         // required — ordered confirmed tasks; at least one
+    {"record_id": "...", "version": 1}
+  ],
+  "record_id": "...",    // UUID; auto-generated if omitted
+  "version": 1           // integer; defaults to 1
+}</pre>
+  </details>
+
+  <details style="margin-top:8px">
+    <summary>Full example</summary>
+    <pre class="schema-block">{
   "tasks": [
     {
-      "type": "task",
-      "title": "...",
-      "outcome": "...",
-      "procedure_name": "...",
-      "steps": [
-        {"text": "Do X", "completion": "Confirm Y"}
+      "title": "Install the iSCSI Initiator Utilities",
+      "outcome": "The open-iscsi package is installed and the iscsid service is running.",
+      "procedure_name": "Install open-iscsi via apt",
+      "software_name": "open-iscsi",
+      "software_version": null,
+      "facts": [
+        "open-iscsi is the Linux iSCSI initiator stack that allows a Linux machine to connect to iSCSI targets.",
+        "iscsid is the daemon process that manages all active iSCSI sessions on the local machine."
       ],
-      "facts": [],
-      "concepts": [],
-      "dependencies": []
+      "concepts": [
+        "Without open-iscsi installed, a Linux machine cannot participate in iSCSI at all. Every subsequent task depends on this stack being present and running."
+      ],
+      "dependencies": [
+        "Ubuntu machine is accessible with sudo privileges.",
+        "Machine has internet or local repository access."
+      ],
+      "irreversible": false,
+      "steps": [
+        {
+          "text": "Update the package index.",
+          "completion": "Completes without error.",
+          "actions": ["sudo apt update"],
+          "notes": null
+        },
+        {
+          "text": "Install the open-iscsi package.",
+          "completion": "Completes without error.",
+          "actions": ["sudo apt install open-iscsi"],
+          "notes": "If already installed, apt reports 'open-iscsi is already the newest version'."
+        }
+      ]
+    }
+  ],
+  "primers": [
+    {
+      "title": "How iSCSI Sessions and Targets Work",
+      "summary": "Explains the iSCSI protocol architecture so practitioners understand what they are configuring before running discovery and login commands.",
+      "explanation": "## Overview\n\niSCSI (Internet Small Computer Systems Interface) carries SCSI commands over TCP/IP...",
+      "analogies": "An iSCSI target is analogous to a network share, but at the block level rather than the file level.",
+      "software_name": "open-iscsi",
+      "software_version": null
     }
   ],
   "workflows": [
     {
-      "type": "workflow",
-      "title": "...",
-      "objective": "...",
+      "title": "Connect a Linux Machine to an iSCSI Target",
+      "objective": "A Linux machine is connected to and mounting an iSCSI target as a block device.",
       "task_refs": [
+        {"record_id": "...", "version": 1},
         {"record_id": "...", "version": 1}
       ]
     }
   ]
 }</pre>
+  </details>
 </div>
+
+<style>
+.schema-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: color-mix(in oklab, var(--bg) 60%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--border) 65%, transparent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+details > summary {
+  list-style: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  user-select: none;
+  padding: 6px 0;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "▶  "; font-size: 10px; color: var(--muted); }
+details[open] > summary::before { content: "▼  "; }
+</style>
+
+<script>
+const PROMPTS = {
+  task: `Extract structured task records from the technical documentation provided below.
+
+## Field definitions
+
+title: A concise noun phrase (5-10 words) naming the task from the operator's perspective. Do not start with a verb; do not repeat the software name unless necessary for clarity.
+  Good: "Initial Backup Job Configuration" / "Agent Installation on Windows Server"
+  Bad: "Configure a backup job" (verb start)
+
+outcome: A single sentence in passive voice describing the observable end state after all steps are complete. Specific to this procedure.
+
+facts: Background knowledge the learner needs about the subject matter before they can make sense of this task. The "what" -- what the components involved are, what they do, what they are for. Not technical reference data (commands and port numbers belong in steps). Write each as a complete sentence. Use [] if none are present in the source.
+
+concepts: The specific reason THIS task must be performed -- not a general description of the technology. Explain what specifically breaks, fails, or cannot happen if this particular task is skipped. A substantive explanation of one or two paragraphs is expected; do not summarise to a single line. Use [] if not determinable from the source.
+
+dependencies: Specific preconditions that must be true before the operator can start. Full sentences. Use [] if none stated in the source.
+
+procedure_name: A short imperative phrase naming the method used, distinct from the task title.
+  Example: title "Upgrade Veeam Agent for Microsoft Windows" -> procedure_name "Interactive upgrade via Control Panel"
+
+software_name: The name of the software product this content relates to, as it appears in the source document. null if not determinable.
+
+software_version: The version of that software this content was written for, exactly as it appears in the source. null if not stated.
+
+irreversible: true only if completing this task produces changes that are difficult or impossible to undo without significant additional work or data loss risk. Formatting a disk = true. Installing software = false.
+
+steps: Each step is a single physical or digital action.
+  text: the instruction. Start with a concrete verb: open, close, press, click, run, record, insert, remove, verify, enter, select. One action only -- if the step contains "and" or "then", split it.
+  completion: observable confirmation the step is done. Specific -- not "Step is complete."
+    Good: "Terminal shows 'OK'." / "Wizard advances to the License Agreement screen."
+    Bad: "Software is installed."
+  actions: array of substeps giving the concrete method -- menu navigation paths, exact CLI commands, keyboard shortcuts. Empty array [] if the step text is self-explanatory.
+  notes: "oh by the way" information from the source -- edge cases, uncommon configurations, conditional caveats. null if none.
+
+## Output rules
+1. Output valid JSON only. No preamble, no explanation, no markdown code fences.
+2. Assign each task a sequential ID starting at T001 (T001, T002, T003...). Never skip or reuse IDs.
+3. Every field must be present in every object, even if null, false, or []. Never omit a field.
+4. Do not invent content. Extract only what is present in the source text.
+5. Do not use em dashes (--). Use commas, colons, or rewrite the sentence instead.
+
+## Output format
+{"tasks":[{"title":"...","outcome":"...","procedure_name":"...","software_name":null,"software_version":null,"facts":[],"concepts":[],"dependencies":[],"irreversible":false,"steps":[{"text":"...","completion":"...","actions":[],"notes":null}]}]}
+
+## Source documentation
+[Paste your source documentation here]`,
+
+  primer: `Extract structured primer records from the conceptual technical documentation provided below.
+
+A primer is a standalone conceptual document that explains *why* and *how* -- not *what to do*. It covers trade-offs, failure modes, and conditions under which to choose each approach. It does not contain step-by-step procedures.
+
+## Field definitions
+
+title: Concise noun phrase naming the concept. 5-12 words.
+
+summary: One sentence in active voice: what this primer explains and why it matters to a practitioner.
+
+explanation: The full conceptual content. Include: what the thing is, how it works, trade-offs between alternatives, conditions under which you would choose each option. Preserve the source structure. Use rich markdown throughout: ## headings for major sections, ### for sub-sections, **bold** for key terms on first use, bullet and numbered lists, and code blocks for syntax or command examples. Do not include step-by-step procedures. This field will be rendered as HTML so markdown formatting is important.
+
+analogies: If the source contains analogies or comparisons that aid understanding, extract them here as a single string. null if none.
+
+software_name: The product or technology this primer is about, as named in the source. null if not determinable.
+
+software_version: Version string if stated in the source. null if not determinable.
+
+## Output rules
+1. Output valid JSON only. No preamble, no markdown code fences.
+2. Every field must be present, even if null or empty string.
+3. Do not invent content not present in the source.
+4. Do not use em dashes (--). Use commas, colons, or rewrite instead.
+
+## Output format
+{"primers":[{"title":"...","summary":"...","explanation":"...","analogies":null,"software_name":null,"software_version":null}]}
+
+## Source documentation
+[Paste your source documentation here]`
+};
+
+function switchTab(tab) {
+  const isUpload = tab === 'upload';
+  document.getElementById('panel-upload').style.display = isUpload ? '' : 'none';
+  document.getElementById('panel-paste').style.display = isUpload ? 'none' : '';
+  document.getElementById('tab-upload').style.background = isUpload ? 'var(--accent)' : 'transparent';
+  document.getElementById('tab-upload').style.color = isUpload ? '#fff' : 'var(--muted)';
+  document.getElementById('tab-paste').style.background = isUpload ? 'transparent' : 'var(--accent)';
+  document.getElementById('tab-paste').style.color = isUpload ? 'var(--muted)' : '#fff';
+}
+
+function copyPrompt(key, btn) {
+  navigator.clipboard.writeText(PROMPTS[key]).then(function() {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(function() { btn.textContent = orig; }, 1800);
+  });
+}
+</script>
 {% endblock %}

@@ -1321,6 +1321,42 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
 .task-picker-empty-msg{padding:12px;color:var(--muted);font-size:14px}
 @media (max-width:980px){.task-picker{grid-template-columns:1fr}}
 
+/* Explainer page */
+.how-steps-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.how-step{display:flex;gap:14px;align-items:flex-start;padding:16px;background:color-mix(in oklab,var(--bg) 55%,var(--panel));border:1px solid color-mix(in oklab,var(--border) 60%,transparent);border-radius:12px}
+.how-step-num{flex:0 0 auto;width:40px;height:40px;border-radius:10px;background:color-mix(in oklab,var(--accent) 14%,var(--panel));color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:300;letter-spacing:-0.03em;flex-shrink:0}
+.how-step-title{font-weight:600;font-size:14px;margin:0 0 5px}
+.how-step-body{color:var(--muted);font-size:14px;margin:0;line-height:1.5}
+.record-type-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.record-type-card{padding:18px;background:color-mix(in oklab,var(--bg) 55%,var(--panel));border:1px solid color-mix(in oklab,var(--border) 60%,transparent);border-radius:12px}
+.record-type-icon{width:38px;height:38px;border-radius:10px;background:color-mix(in oklab,var(--accent) 14%,var(--panel));color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:12px;flex-shrink:0}
+.record-type-name{font-weight:700;font-size:15px;margin:0 0 6px;letter-spacing:-0.01em}
+.record-type-desc{color:var(--muted);font-size:13px;margin:0 0 10px;line-height:1.5}
+.record-type-card ul{margin:0;padding-left:16px;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+/* Explainer — status lifecycle flow */
+.xp-lifecycle{margin-top:14px}
+.xp-flow-rail{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.xp-flow-node{flex:1 1 0;min-width:110px;border:1px solid color-mix(in oklab,var(--border) 65%,transparent);border-radius:12px;padding:12px 14px}
+.xp-flow-node-draft{background:color-mix(in oklab,#94a3b8 14%,var(--panel));border-color:color-mix(in oklab,#94a3b8 42%,var(--border))}
+.xp-flow-node-submitted{background:color-mix(in oklab,#f59e0b 13%,var(--panel));border-color:color-mix(in oklab,#f59e0b 38%,var(--border))}
+.xp-flow-node-confirmed{background:color-mix(in oklab,#10b981 13%,var(--panel));border-color:color-mix(in oklab,#10b981 38%,var(--border))}
+.xp-flow-node-deprecated{background:color-mix(in oklab,var(--border) 30%,var(--panel));border-color:color-mix(in oklab,var(--border) 60%,transparent)}
+.xp-flow-label{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 3px}
+.xp-flow-name{font-size:14px;font-weight:600;margin:0 0 4px}
+.xp-flow-desc{font-size:12px;color:var(--muted);margin:0;line-height:1.45}
+.xp-flow-arrow{color:var(--muted);font-size:18px;font-weight:700;flex-shrink:0}
+.xp-return-row{margin-top:8px;display:flex;align-items:center;gap:8px}
+.xp-return-line{flex:1;height:1px;background:color-mix(in oklab,#ef4444 40%,var(--border));position:relative}
+.xp-return-pill{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;background:color-mix(in oklab,#ef4444 11%,var(--panel));border:1px solid color-mix(in oklab,#ef4444 35%,var(--border));font-size:12px;font-weight:700;color:color-mix(in oklab,#ef4444 80%,var(--ink));white-space:nowrap}
+.xp-return-desc{font-size:12px;color:var(--muted)}
+/* Explainer — roles grid */
+.xp-roles-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.xp-role-card{padding:16px;background:color-mix(in oklab,var(--bg) 55%,var(--panel));border:1px solid color-mix(in oklab,var(--border) 60%,transparent);border-radius:12px}
+.xp-role-icon{width:36px;height:36px;border-radius:9px;background:color-mix(in oklab,var(--accent) 14%,var(--panel));color:var(--accent);display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.xp-role-name{font-size:14px;font-weight:700;margin:0 0 5px;letter-spacing:-0.01em}
+.xp-role-desc{font-size:12px;color:var(--muted);margin:0;line-height:1.5}
+@media(max-width:640px){.how-steps-grid,.record-type-grid,.xp-roles-grid{grid-template-columns:1fr}.xp-flow-rail{flex-direction:column;align-items:stretch}.xp-flow-arrow{transform:rotate(90deg);align-self:center}.xp-return-row{display:none}}
+
 /* Achievement toasts */
 #toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none}
 .toast{display:flex;align-items:flex-start;gap:12px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:0 4px 24px rgba(0,0,0,.15);min-width:260px;max-width:340px;opacity:0;transform:translateY(16px);transition:opacity .3s,transform .3s;pointer-events:all}

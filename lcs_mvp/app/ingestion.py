@@ -609,10 +609,11 @@ def _near_duplicate_score(a: dict[str, Any], b: dict[str, Any]) -> float:
 # ---------------------------------------------------------------------------
 
 _TRIAGE_SYSTEM = """Classify this section of technical documentation as exactly one of:
-- "task": describes one or more concrete procedures an operator would perform (including sections that describe multiple related procedures — these will be extracted as separate tasks)
-- "primer": conceptual or explanatory material — how something works, why it behaves that way, trade-off analysis, or guidance on when to choose one approach over another. No imperative steps; declarative, not instructional.
+- "task": describes one or more concrete procedures an operator would perform (including sections that describe multiple related procedures, which will be extracted as separate tasks)
+- "primer": conceptual or explanatory material, covering how something works, why it behaves that way, trade-off analysis, or guidance on when to choose one approach over another. No imperative steps; declarative, not instructional.
 - "ignore": administrative, introductory, legal, appendix, glossary, index, or no actionable content
 
+Do not use em dashes (—) in any output. Use commas, colons, or rewrite instead.
 Return JSON only — no markdown, no commentary:
 {"type": "task|primer|ignore", "confidence": 0.0, "reason": "one sentence"}"""
 
@@ -664,6 +665,7 @@ steps: Each step is a single physical or digital action.
 2. Assign each task a sequential ID starting at T001 (T001, T002, T003...). Never skip or reuse IDs.
 3. Every field must be present in every object, even if null, false, or []. Never omit a field.
 4. Do not invent content. Extract only what is present in the source text. If facts, concepts, or dependencies are not present in the source, use [].
+5. Do not use em dashes (—) in any field. Use commas, colons, or rewrite the sentence instead.
 
 ## Example
 
@@ -780,6 +782,7 @@ software_version: Version string if stated in the source. null if not determinab
 1. Output valid JSON only. No preamble, no markdown, no code fences.
 2. Every field must be present, even if null or empty string.
 3. Do not invent content not present in the source.
+4. Do not use em dashes (—) in any field. Use commas, colons, or rewrite the sentence instead.
 
 {"primers":[{"title":"...","summary":"...","explanation":"...","analogies":null,"software_name":"...","software_version":null}]}"""
 
@@ -795,6 +798,7 @@ _GENERATE_SINGLE_LEVEL_SYSTEM = """You are rewriting a technical primer at a spe
 
 Rewrite the provided content at the requested level. Preserve the topic and factual accuracy.
 Adjust depth, vocabulary, assumed knowledge, and emphasis to match the target level.
+Do not use em dashes (—) in any output. Use commas, colons, or rewrite instead.
 
 Output valid JSON only. No preamble, no markdown fences.
 {"title": "...", "summary": "...", "explanation": "...", "analogies": null}"""
@@ -836,16 +840,10 @@ def _llm_extract_primer_chunk(text: str, section_title: str, cfg: dict[str, Any]
 _HTML_HEADING_LEVEL = {"h1": 0, "h2": 1, "h3": 2}
 
 
-def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list[dict], list[dict]]:
-    """Fetch a URL and return (raw_bytes, pages, outline).
+def _html_fetch_raw(url: str) -> tuple[bytes, str]:
+    """Fetch a URL and return (raw_bytes, response_text).
 
-    pages: same shape as _pdf_extract_pages — list of {"page": int, "text": str}
-           where page numbers are synthetic (1 per heading section).
-    outline: same shape as _pdf_extract_outline — list of {"title": str, "page": int, "level": int}
-
-    Raises HTTPException(400) for pages with <50 words of text.
-    Raises HTTPException(422) if the URL is unreachable or returns a non-200 status.
-    Returns (raw_bytes, pages, outline). raw_bytes is suitable for SHA-256 hashing.
+    Raises HTTPException(422) if unreachable or non-200.
     """
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=20, headers={"User-Agent": "Blueprinted/1.0"})
@@ -853,17 +851,22 @@ def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list
         raise HTTPException(status_code=422, detail=f"Could not fetch URL: {exc}")
     if resp.status_code != 200:
         raise HTTPException(status_code=422, detail=f"URL returned HTTP {resp.status_code}")
+    return resp.content, resp.text
 
-    raw_bytes = resp.content
-    soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Remove non-content elements
+def _html_chunk_from_html(html_text: str, url: str, max_chars: int = 12000) -> tuple[bytes, list[dict], list[dict]]:
+    """Parse HTML text into (dummy_bytes, pages, outline) suitable for _chunk_by_structure.
+
+    Returns the same shape as _html_fetch_and_chunk but accepts already-fetched HTML.
+    dummy_bytes is empty — callers that need real bytes for hashing should use _html_fetch_raw.
+    Raises HTTPException(400) if fewer than 50 words of extractable text.
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+
     for tag in soup.find_all(["nav", "header", "footer", "aside", "script", "style"]):
         tag.decompose()
 
-    # Collect heading-bounded sections
     headings = soup.find_all(["h1", "h2", "h3"])
-
     pages: list[dict] = []
     outline: list[dict] = []
 
@@ -871,7 +874,6 @@ def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list
         for idx, heading in enumerate(headings, start=1):
             title = heading.get_text(separator=" ", strip=True)
             level = _HTML_HEADING_LEVEL.get(heading.name, 0)
-            # Gather text from siblings until the next heading of any level
             parts: list[str] = []
             for sib in heading.find_next_siblings():
                 if sib.name in _HTML_HEADING_LEVEL:
@@ -883,7 +885,6 @@ def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list
             outline.append({"title": title, "page": idx, "level": level})
             pages.append({"page": idx, "text": f"{title}\n\n{body}" if body else title})
     else:
-        # No headings — fall back to full body text as a single section
         body = soup.get_text(separator="\n", strip=True)
         pages = [{"page": 1, "text": body}]
         outline = []
@@ -892,5 +893,113 @@ def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list
     if total_words < 50:
         raise HTTPException(status_code=400, detail="Page contains less than 50 words of extractable text.")
 
-    logger.info("URL fetch %s — %d section(s), %d words", url[:80], len(pages), total_words)
+    logger.info("HTML chunk %s — %d section(s), %d words", url[:80], len(pages), total_words)
+    return b"", pages, outline
+
+
+def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list[dict], list[dict]]:
+    """Fetch a URL and return (raw_bytes, pages, outline). Convenience wrapper."""
+    raw_bytes, html_text = _html_fetch_raw(url)
+    _, pages, outline = _html_chunk_from_html(html_text, url, max_chars)
     return raw_bytes, pages, outline
+
+
+def _html_discover_nav(root_url: str, html_text: str) -> list[dict]:
+    """Extract same-origin navigation links from a page's nav/sidebar elements.
+
+    Returns a list of {"url", "title", "level", "is_root"} dicts ordered as found,
+    with the root URL always first and marked is_root=True.
+    Returns [] if fewer than 2 distinct pages found (no useful nav to show).
+    """
+    from urllib.parse import urljoin, urlparse, urlunparse
+
+    root_parsed = urlparse(root_url)
+    root_origin = (root_parsed.scheme, root_parsed.netloc)
+    root_norm = urlunparse((root_parsed.scheme, root_parsed.netloc, root_parsed.path,
+                            root_parsed.params, root_parsed.query, ""))
+
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # Collect candidate nav containers — semantic first, then class-based
+    candidates: list[Any] = []
+    candidates.extend(soup.find_all("nav"))
+    candidates.extend(soup.find_all("aside"))
+    _nav_keywords = ("sidebar", "toc", "navigation", "menu")
+    for el in soup.find_all(True, class_=True):
+        classes = " ".join(el.get("class", [])).lower()
+        if any(kw in classes for kw in _nav_keywords):
+            candidates.append(el)
+
+    seen: dict[str, dict] = {}
+
+    for container in candidates:
+        for a in container.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if not href or href.startswith(("mailto:", "javascript:", "#")):
+                continue
+            abs_url = urljoin(root_url, href)
+            parsed = urlparse(abs_url)
+            if (parsed.scheme, parsed.netloc) != root_origin:
+                continue
+            norm = urlunparse((parsed.scheme, parsed.netloc, parsed.path,
+                               parsed.params, parsed.query, ""))
+            if norm in seen:
+                continue
+            title = a.get_text(separator=" ", strip=True)[:120] or norm
+            # Count <ul>/<ol> ancestors within container to determine depth
+            level = 0
+            parent = a.parent
+            while parent and parent is not container:
+                if parent.name in ("ul", "ol"):
+                    level += 1
+                parent = parent.parent
+            level = max(0, level - 1)  # top-level list item = level 0
+            seen[norm] = {"url": norm, "title": title, "level": level, "is_root": norm == root_norm}
+            if len(seen) >= 80:
+                break
+        if len(seen) >= 80:
+            break
+
+    # Ensure root is always present and first
+    if root_norm in seen:
+        seen[root_norm]["is_root"] = True
+        pages = [seen[root_norm]] + [p for u, p in seen.items() if u != root_norm]
+    else:
+        root_title = root_parsed.path or root_url
+        pages = [{"url": root_norm, "title": root_title, "level": 0, "is_root": True}] + list(seen.values())
+
+    if len(pages) < 2:
+        return []
+
+    logger.info("Nav discovery %s — %d pages found", root_url[:80], len(pages))
+    return pages
+
+
+def _html_crawl_and_chunk(urls: list[str]) -> list[dict]:
+    """Concurrently fetch a list of URLs and return a combined flat chunk list.
+
+    Failed pages are skipped with a warning. Results are combined in submission order.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_one(url: str) -> tuple[str, list[dict]]:
+        try:
+            _, html_text = _html_fetch_raw(url)
+            _, pages, outline = _html_chunk_from_html(html_text, url)
+            chunks = _chunk_by_structure(pages, outline) if outline else _chunk_text(pages)
+            return url, chunks
+        except Exception as exc:
+            logger.warning("Crawl skip %s: %s", url[:80], exc)
+            return url, []
+
+    result_map: dict[str, list[dict]] = {}
+    with ThreadPoolExecutor(max_workers=5) as exe:
+        futures = {exe.submit(_fetch_one, u): u for u in urls}
+        for fut in as_completed(futures):
+            url, chunks = fut.result()
+            result_map[url] = chunks
+
+    all_chunks: list[dict] = []
+    for url in urls:
+        all_chunks.extend(result_map.get(url, []))
+    return all_chunks

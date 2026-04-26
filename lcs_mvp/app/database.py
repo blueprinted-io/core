@@ -602,6 +602,19 @@ def init_db_path(db_path: str) -> None:
                   PRIMARY KEY (workflow_record_id, primer_record_id)
                 )
             """)
+        if "ingestion_nav_pages" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE ingestion_nav_pages (
+                  id           TEXT PRIMARY KEY,
+                  ingestion_id TEXT NOT NULL,
+                  url          TEXT NOT NULL,
+                  title        TEXT NOT NULL,
+                  level        INTEGER NOT NULL DEFAULT 0,
+                  order_index  INTEGER NOT NULL DEFAULT 0,
+                  is_root      INTEGER NOT NULL DEFAULT 0,
+                  FOREIGN KEY (ingestion_id) REFERENCES ingestions(id) ON DELETE CASCADE
+                )
+            """)
 
         # Primer level / concept grouping columns (legacy — kept in schema, no longer used)
         if not _column_exists(conn, "primers", "level"):

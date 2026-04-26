@@ -62,12 +62,21 @@
   <div class="card" style="margin-top:8px">
     <div class="muted" style="margin-bottom:10px">Each step has two fields: <b>Step</b> and <b>Completion</b>. Use the completion field to state the observable check that proves the step is done.</div>
 
-    {% if task_images %}
+    {% if mode == 'edit' or task_images %}
     {# Screenshot pool — drag from here to a step row #}
     <div id="screenshot-pool" class="screenshot-pool"
          ondragover="poolDragOver(event)" ondrop="poolDrop(event)" ondragleave="poolDragLeave(event)">
-      <div class="muted" style="font-size:0.82em; margin-bottom:6px">Unassigned screenshots — drag to a step</div>
-      <div id="pool-tiles" style="display:flex; flex-wrap:wrap; gap:8px; min-height:60px">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; flex-wrap:wrap; gap:8px">
+        <div class="muted" style="font-size:0.82em">Unassigned screenshots — drag to a step</div>
+        {% if mode == 'edit' %}
+        <label class="btn secondary" style="cursor:pointer; font-size:0.8em; padding:4px 10px; margin:0">
+          + Add screenshot
+          <input type="file" id="screenshot-upload-input" accept="image/*" multiple style="display:none"
+                 onchange="uploadScreenshots(this)" />
+        </label>
+        {% endif %}
+      </div>
+      <div id="pool-tiles" style="display:flex; flex-wrap:wrap; gap:8px; min-height:48px">
         {% set assigned_urls = task.steps | map(attribute='screenshots') | sum(start=[]) | list if task and task.steps else [] %}
         {% for img in task_images %}
           {% if img.url not in assigned_urls %}
@@ -79,14 +88,20 @@
                  style="max-width:90px; max-height:68px; border-radius:3px; object-fit:contain; display:block; pointer-events:none">
             <div style="font-size:0.7em; color:var(--muted); margin-top:2px; text-align:center">{{ img.label }}</div>
             <button type="button" class="ss-delete" onclick="deleteFromPool(this)" title="Delete screenshot">×</button>
+            <button type="button" class="ss-zoom" onclick="openLightbox('{{ img.url }}','{{ img.label }}')" title="View full size">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="2.8"/><path d="M6.5 6.5l2 2"/></svg>
+            </button>
           </div>
           {% endif %}
         {% endfor %}
+        {% if mode == 'edit' %}
+        <div id="pool-upload-hint" class="muted" style="font-size:0.8em; align-self:center; {% if task_images %}display:none{% endif %}">No screenshots yet — click Add screenshot to upload</div>
+        {% endif %}
       </div>
     </div>
     {% endif %}
 
-    <table class="table" id="steps-table" style="margin-top:{% if task_images %}12px{% else %}0{% endif %}">
+    <table class="table" id="steps-table" style="margin-top:12px">
       <thead>
         <tr>
           <th style="width:26%">Step</th>
@@ -117,6 +132,9 @@
                     <img src="{{ url }}" alt="screenshot"
                          style="max-width:90px; max-height:68px; border-radius:3px; object-fit:contain; display:block; pointer-events:none">
                     <button type="button" class="ss-remove" onclick="removeZoneScreenshot(this)" title="Remove">×</button>
+                    <button type="button" class="ss-zoom" onclick="openLightbox('{{ url }}','{{ task_images | selectattr('url','equalto',url) | map(attribute='label') | first | default('screenshot') }}')" title="View full size">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="2.8"/><path d="M6.5 6.5l2 2"/></svg>
+                    </button>
                   </div>
                   {% endfor %}
                   {% if not st_shots %}
@@ -159,6 +177,11 @@
   {% endif %}
 </form>
 
+<div id="ss-lightbox" onclick="closeLightbox()">
+  <img id="ss-lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+  <div id="ss-lightbox-label"></div>
+</div>
+
 <style>
 .screenshot-pool {
   background: var(--hover-bg, #f9fafb);
@@ -184,24 +207,56 @@
 .ss-tile:active { cursor: grabbing; }
 .ss-tile.dragging { opacity: 0.4; }
 .ss-assigned { display: inline-block; }
-.ss-remove, .ss-delete {
+.ss-remove, .ss-delete, .ss-zoom {
   position: absolute;
-  top: 2px; right: 2px;
   color: #fff;
   border: none;
   border-radius: 50%;
-  width: 18px; height: 18px;
-  font-size: 12px;
-  line-height: 18px;
-  text-align: center;
+  width: 20px; height: 20px;
+  display: none;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   padding: 0;
-  display: none;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.1s;
 }
-.ss-remove { background: rgba(0,0,0,0.55); }
-.ss-delete { background: rgba(185,28,28,0.85); }
+.ss-remove { background: rgba(0,0,0,0.5); top: 2px; right: 2px; }
+.ss-delete { background: rgba(185,28,28,0.8); top: 2px; right: 2px; }
+.ss-zoom   { background: rgba(0,0,0,0.5); bottom: 2px; right: 2px; }
+.ss-remove:hover, .ss-delete:hover, .ss-zoom:hover { opacity: 0.85; }
 .ss-tile:hover .ss-remove,
-.ss-tile:hover .ss-delete { display: block; }
+.ss-tile:hover .ss-delete,
+.ss-tile:hover .ss-zoom { display: flex; }
+/* Lightbox */
+#ss-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.82);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+#ss-lightbox.open { display: flex; }
+#ss-lightbox img {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 6px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  object-fit: contain;
+  cursor: default;
+}
+#ss-lightbox-label {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.75);
+  font-size: 13px;
+  pointer-events: none;
+}
 .ss-drop-zone {
   vertical-align: middle;
   min-width: 120px;
@@ -331,6 +386,13 @@ function appendTileToZone(zone, url, label) {
   removeBtn.onclick = function() { removeZoneScreenshot(this); };
   tile.appendChild(removeBtn);
 
+  const zoomBtn2 = document.createElement('button');
+  zoomBtn2.type = 'button'; zoomBtn2.className = 'ss-zoom';
+  zoomBtn2.title = 'View full size';
+  zoomBtn2.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="2.8"/><path d="M6.5 6.5l2 2"/></svg>';
+  zoomBtn2.onclick = function() { openLightbox(url, label); };
+  tile.appendChild(zoomBtn2);
+
   const img = document.createElement('img');
   img.src = url;
   img.alt = label || 'screenshot';
@@ -380,6 +442,12 @@ function addTileToPool(url, label) {
   delBtn.title = 'Delete screenshot'; delBtn.textContent = '×';
   delBtn.onclick = function() { deleteFromPool(this); };
   tile.appendChild(delBtn);
+  const zoomBtn = document.createElement('button');
+  zoomBtn.type = 'button'; zoomBtn.className = 'ss-zoom';
+  zoomBtn.title = 'View full size';
+  zoomBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="4" cy="4" r="2.8"/><path d="M6.5 6.5l2 2"/></svg>';
+  zoomBtn.onclick = function() { openLightbox(url, label); };
+  tile.appendChild(zoomBtn);
   pool.appendChild(tile);
 }
 
@@ -394,6 +462,33 @@ function deleteFromPool(btn) {
   const tile = btn.closest('.ss-tile');
   if (tile) tile.remove();
 }
+
+{% if mode == 'edit' %}
+async function uploadScreenshots(input) {
+  const files = Array.from(input.files);
+  if (!files.length) return;
+  const recordId = '{{ task.record_id }}';
+  const hint = document.getElementById('pool-upload-hint');
+  for (const file of files) {
+    const fd = new FormData();
+    fd.append('image', file);
+    try {
+      const resp = await fetch('/tasks/' + recordId + '/upload-image', {method: 'POST', body: fd});
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert('Upload failed: ' + (err.detail || resp.status));
+        continue;
+      }
+      const data = await resp.json();
+      addTileToPool(data.url, data.label);
+      if (hint) hint.style.display = 'none';
+    } catch (e) {
+      alert('Upload error: ' + e);
+    }
+  }
+  input.value = '';
+}
+{% endif %}
 
 function removeZoneScreenshot(btn) {
   const tile = btn.closest('.ss-tile');
@@ -425,6 +520,20 @@ function addStep() {
   `;
   body.appendChild(tr);
 }
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+function openLightbox(url, label) {
+  document.getElementById('ss-lightbox-img').src = url;
+  document.getElementById('ss-lightbox-label').textContent = label || '';
+  document.getElementById('ss-lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('ss-lightbox').classList.remove('open');
+  document.getElementById('ss-lightbox-img').src = '';
+}
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeLightbox();
+});
 
 function removeRow(btn) {
   const tr = btn.closest('tr');
