@@ -30,17 +30,21 @@ def home(request: Request):
 
         admin_panels: dict[str, Any] = {}
         domain_breakdown: list[dict[str, Any]] = []
+        contributor_sections: dict[str, Any] = {}
         if role == "contributor":
-            cards = [
-                # Review queue
-                {"title": "Tasks outstanding for review", "value": _count_entity_status(conn, "tasks", "submitted", role, dset), "href": "/review?item_type=task"},
-                {"title": "Workflows outstanding for review", "value": _count_entity_status(conn, "workflows", "submitted", role, dset), "href": "/review?item_type=workflow"},
-                {"title": "Assessments outstanding for review", "value": _count_entity_status(conn, "assessment_items", "submitted", role, dset), "href": "/review?item_type=assessment"},
-                # Authoring queue
-                {"title": "Returned Tasks", "value": _count_entity_status(conn, "tasks", "returned", role, dset), "href": "/tasks?status=returned"},
-                {"title": "Returned Workflows", "value": _count_entity_status(conn, "workflows", "returned", role, dset), "href": "/workflows?status=returned"},
-                {"title": "Returned Assessments", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
-            ]
+            cards = []
+            contributor_sections = {
+                "review": [
+                    {"title": "Tasks", "value": _count_entity_status(conn, "tasks", "submitted", role, dset), "href": "/review?item_type=task"},
+                    {"title": "Workflows", "value": _count_entity_status(conn, "workflows", "submitted", role, dset), "href": "/review?item_type=workflow"},
+                    {"title": "Primers", "value": _count_entity_status(conn, "primers", "submitted", role, dset), "href": "/primers?status=submitted"},
+                ],
+                "returned": [
+                    {"title": "Tasks", "value": _count_entity_status(conn, "tasks", "returned", role, dset), "href": "/tasks?status=returned"},
+                    {"title": "Workflows", "value": _count_entity_status(conn, "workflows", "returned", role, dset), "href": "/workflows?status=returned"},
+                    {"title": "Primers", "value": _count_entity_status(conn, "primers", "returned", role, dset), "href": "/primers?status=returned"},
+                ],
+            }
         elif role == "assessment_author":
             cards = [
                 {"title": "Returned Questions", "value": _count_entity_status(conn, "assessment_items", "returned", role, dset), "href": "/assessments?status=returned"},
@@ -109,6 +113,7 @@ def home(request: Request):
         "home.html",
         {
             "cards": cards,
+            "contributor_sections": contributor_sections if role == "contributor" else {},
             "domains": doms,
             "last_audit": dict(last_audit) if last_audit else None,
             "admin_panels": admin_panels,

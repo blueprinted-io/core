@@ -1356,6 +1356,18 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
 .xp-role-name{font-size:14px;font-weight:700;margin:0 0 5px;letter-spacing:-0.01em}
 .xp-role-desc{font-size:12px;color:var(--muted);margin:0;line-height:1.5}
 @media(max-width:640px){.how-steps-grid,.record-type-grid,.xp-roles-grid{grid-template-columns:1fr}.xp-flow-rail{flex-direction:column;align-items:stretch}.xp-flow-arrow{transform:rotate(90deg);align-self:center}.xp-return-row{display:none}}
+/* Contributor dashboard sections */
+.contrib-section{margin-bottom:28px}
+.contrib-section-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.contrib-section-icon{width:38px;height:38px;border-radius:10px;background:color-mix(in oklab,var(--accent) 14%,var(--panel));color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.contrib-section-title{font-size:15px;font-weight:700;letter-spacing:-0.01em;margin:0 0 3px}
+.contrib-section-desc{font-size:13px;color:var(--muted);margin:0}
+.contrib-section-alert{border-left:3px solid var(--warn,#f59e0b);padding-left:14px;margin-left:-14px}
+.contrib-count-card{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:80px;text-decoration:none;color:inherit;transition:border-color .15s,background .15s}
+.contrib-count-card:hover{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 7%,var(--panel))}
+.contrib-count-card.is-zero{opacity:.55}
+.contrib-count{font-size:32px;font-weight:300;letter-spacing:-0.04em;line-height:1;margin-bottom:4px}
+.contrib-count-alert{color:var(--warn,#f59e0b)}
 
 /* Achievement toasts */
 #toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none}

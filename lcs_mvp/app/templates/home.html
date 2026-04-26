@@ -283,51 +283,177 @@
     </div>
   {% else %}
 
-  {% if domains and not contributor_mode %}
+  {% if contributor_mode %}
+
+  {% if domains %}
+    <p class="muted" style="margin-bottom:20px">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
+  {% endif %}
+
+  {# ── Review queue ────────────────────────────────────────────────────────── #}
+  <div class="contrib-section">
+    <div class="contrib-section-header">
+      <div class="contrib-section-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 5h14M2 9h9M2 13h6"/><circle cx="14" cy="13" r="3"/><path d="M13 13l.8.8 1.7-1.6"/>
+        </svg>
+      </div>
+      <div>
+        <div class="contrib-section-title">Review queue</div>
+        <div class="contrib-section-desc">Items submitted and awaiting confirmation</div>
+      </div>
+      <a class="btn secondary" href="/review" style="margin-left:auto; font-size:12px; padding:4px 12px">Open queue →</a>
+    </div>
+    <div class="record-type-grid" style="margin-top:0">
+      {% for item in contributor_sections.review %}
+      <a class="record-type-card contrib-count-card {% if item.value == 0 %}is-zero{% endif %}" href="{{ item.href }}">
+        <div class="contrib-count">{{ item.value }}</div>
+        <div class="record-type-name">{{ item.title }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Returned ────────────────────────────────────────────────────────────── #}
+  {% set returned_total = contributor_sections.returned | sum(attribute='value') %}
+  <div class="contrib-section {% if returned_total > 0 %}contrib-section-alert{% endif %}">
+    <div class="contrib-section-header">
+      <div class="contrib-section-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9a6 6 0 1 0 6-6"/><path d="M3 5v4h4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="contrib-section-title">Returned for revision</div>
+        <div class="contrib-section-desc">Items sent back — revise and resubmit</div>
+      </div>
+    </div>
+    <div class="record-type-grid" style="margin-top:0">
+      {% for item in contributor_sections.returned %}
+      <a class="record-type-card contrib-count-card {% if item.value == 0 %}is-zero{% endif %}" href="{{ item.href }}">
+        <div class="contrib-count {% if item.value > 0 %}contrib-count-alert{% endif %}">{{ item.value }}</div>
+        <div class="record-type-name">{{ item.title }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Write ───────────────────────────────────────────────────────────────── #}
+  <div class="contrib-section">
+    <div class="contrib-section-header">
+      <div class="contrib-section-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2l3 3-9 9H4v-3L13 2z"/><path d="M11 4l3 3"/>
+        </svg>
+      </div>
+      <div>
+        <div class="contrib-section-title">Write</div>
+        <div class="contrib-section-desc">Create new records manually</div>
+      </div>
+    </div>
+    <div class="record-type-grid" style="margin-top:0">
+      <a class="record-type-card" href="/tasks/new">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1h-2"/>
+            <rect x="7" y="2.5" width="6" height="3" rx="1"/>
+            <path d="M7.5 10.5l2 2 3.5-3.5"/>
+          </svg>
+        </div>
+        <div class="record-type-name">New task</div>
+        <div class="record-type-desc">Step-by-step procedure with completion criteria</div>
+      </a>
+      <a class="record-type-card" href="/workflows/new">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="5" height="4" rx="1"/><rect x="13" y="6" width="5" height="4" rx="1"/>
+            <path d="M7 8h6M13 6l2-3M13 10l2 3"/>
+          </svg>
+        </div>
+        <div class="record-type-name">New workflow</div>
+        <div class="record-type-desc">Ordered sequence of confirmed tasks</div>
+      </a>
+      <a class="record-type-card" href="/primers/new">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 3a4 4 0 0 1 2.83 6.83L12 11H8l-.83-.17A4 4 0 0 1 10 3z"/>
+            <path d="M8 13h4M8.5 15.5h3"/>
+          </svg>
+        </div>
+        <div class="record-type-name">New primer</div>
+        <div class="record-type-desc">Conceptual explanation of how something works</div>
+      </a>
+    </div>
+  </div>
+
+  {# ── Import ──────────────────────────────────────────────────────────────── #}
+  <div class="contrib-section">
+    <div class="contrib-section-header">
+      <div class="contrib-section-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 2v10M5 8l4 4 4-4"/><path d="M3 14h12"/>
+        </svg>
+      </div>
+      <div>
+        <div class="contrib-section-title">Import</div>
+        <div class="contrib-section-desc">Extract records from source documentation</div>
+      </div>
+    </div>
+    <div class="record-type-grid" style="margin-top:0">
+      <a class="record-type-card" href="/import/pdf">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4a2 2 0 0 1 2-2h6l4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4z"/><path d="M14 2v4h4"/>
+          </svg>
+        </div>
+        <div class="record-type-name">Import PDF</div>
+        <div class="record-type-desc">Extract tasks and primers from a PDF document</div>
+      </a>
+      <a class="record-type-card" href="/import/url">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10" cy="10" r="8"/><path d="M2 10h16M10 2a13 13 0 0 1 0 16M10 2a13 13 0 0 0 0 16"/>
+          </svg>
+        </div>
+        <div class="record-type-name">Import URL</div>
+        <div class="record-type-desc">Crawl a documentation site and extract records</div>
+      </a>
+      <a class="record-type-card" href="/import/json">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 7c-2 0-3 1-3 3s1 3 3 3M14 7c2 0 3 1 3 3s-1 3-3 3M8 10h4"/>
+          </svg>
+        </div>
+        <div class="record-type-name">Import JSON</div>
+        <div class="record-type-desc">Upload or paste LLM-generated structured JSON</div>
+      </a>
+      <a class="record-type-card" href="/import/changelog">
+        <div class="record-type-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6h12M4 10h8M4 14h5"/><path d="M15 11l2 2-2 2"/>
+          </svg>
+        </div>
+        <div class="record-type-name">Changelog impact</div>
+        <div class="record-type-desc">Identify and update tasks affected by a new release</div>
+      </a>
+    </div>
+  </div>
+
+  {% else %}
+
+  {% if domains and not assessment_author_mode %}
     <p class="muted">Your domains: {% for d in domains %}<span class="badge">{{ d }}</span> {% endfor %}</p>
   {% endif %}
 
-  <div class="dashboard-grid {% if contributor_mode %}contributor-dashboard-grid{% endif %}">
+  <div class="dashboard-grid">
     {% for c in cards %}
-      <a class="card dashboard-card {% if contributor_mode %}contributor-card{% endif %}" href="{{ c.href }}">
-        {% if contributor_mode %}
-          <div class="reviewer-card-icon">
-            {% if 'Tasks' in c.title %}✓{% elif 'Workflows' in c.title %}▦{% else %}◈{% endif %}
-          </div>
-        {% endif %}
+      <a class="card dashboard-card" href="{{ c.href }}">
         <div class="dashboard-card-title">{{ c.title }}</div>
         <div class="dashboard-card-value">{{ c.value }}</div>
         <div class="muted">Open queue view</div>
       </a>
     {% endfor %}
 
-    {% if contributor_mode %}
-      <a class="card dashboard-card author-action-card" href="/workflows/new">
-        <div class="author-action-icon">⎇</div>
-        <div class="dashboard-card-title">Write a workflow</div>
-        <div class="muted">Create a new workflow</div>
-      </a>
-
-      <a class="card dashboard-card author-action-card" href="/tasks/new">
-        <div class="author-action-icon">✓</div>
-        <div class="dashboard-card-title">Write a task</div>
-        <div class="muted">Create a new task</div>
-      </a>
-
-      <a class="card dashboard-card author-action-card" href="/import/pdf">
-        <div class="author-action-icon">📄</div>
-        <div class="dashboard-card-title">Import a PDF</div>
-        <div class="muted">Import source material</div>
-      </a>
-
-      <a class="card dashboard-card author-action-card" href="/import/json">
-        <div class="author-action-icon">{}</div>
-        <div class="dashboard-card-title">Import JSON</div>
-        <div class="muted">Import structured records</div>
-      </a>
-    {% endif %}
-
-    {% if not contributor_mode and not assessment_author_mode %}
+    {% if not assessment_author_mode %}
     <section class="card dashboard-card audit-card">
       <div class="dashboard-card-title">Last audit</div>
       {% if last_audit %}
@@ -341,6 +467,8 @@
     </section>
     {% endif %}
   </div>
+
+  {% endif %}
 {% endif %}
 {% endif %}
 
