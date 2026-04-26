@@ -247,7 +247,13 @@ html[data-theme="dark"] .badge{background:rgba(255,255,255,.06)}
 .badge-warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
 .badge-danger{background:#fef2f2;border-color:#fecaca;color:#991b1b}
 
-html[data-theme="dark"] .badge-returned{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:rgba(245,158,11,.95)}
+html[data-theme="dark"] .badge-draft{background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.35);color:rgba(165,180,252,.95)}
+html[data-theme="dark"] .badge-submitted{background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35);color:rgba(253,186,116,.95)}
+html[data-theme="dark"] .badge-confirmed{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:rgba(110,231,183,.95)}
+html[data-theme="dark"] .badge-returned{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:rgba(252,211,77,.95)}
+html[data-theme="dark"] .badge-deprecated{background:rgba(156,163,175,.10);border-color:rgba(156,163,175,.28);color:rgba(209,213,219,.85)}
+html[data-theme="dark"] .badge-warn{background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35);color:rgba(253,186,116,.95)}
+html[data-theme="dark"] .badge-danger{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35);color:rgba(252,165,165,.95)}
 
 .callout{border-radius:12px;padding:12px;margin-top:12px;border:1px solid var(--border);background:var(--panel)}
 .callout.warn{border-color:#fed7aa;background:#fff7ed}
