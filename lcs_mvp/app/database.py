@@ -616,6 +616,36 @@ def init_db_path(db_path: str) -> None:
                 )
             """)
 
+        if "changelog_runs" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE changelog_runs (
+                  id            TEXT PRIMARY KEY,
+                  title         TEXT NOT NULL,
+                  content       TEXT NOT NULL,
+                  software_name TEXT,
+                  scope_domain  TEXT,
+                  source_type   TEXT NOT NULL DEFAULT 'text',
+                  created_by    TEXT NOT NULL,
+                  created_at    TEXT NOT NULL,
+                  job_status    TEXT NOT NULL DEFAULT 'pending'
+                )
+            """)
+
+        if "changelog_impacts" not in existing_tables:
+            conn.execute("""
+                CREATE TABLE changelog_impacts (
+                  id               TEXT PRIMARY KEY,
+                  run_id           TEXT NOT NULL REFERENCES changelog_runs(id) ON DELETE CASCADE,
+                  task_record_id   TEXT NOT NULL,
+                  task_version     INTEGER NOT NULL,
+                  affected         INTEGER NOT NULL DEFAULT 0,
+                  impact_summary   TEXT,
+                  proposed_json    TEXT,
+                  new_task_version INTEGER,
+                  item_status      TEXT NOT NULL DEFAULT 'pending'
+                )
+            """)
+
         # Primer level / concept grouping columns (legacy — kept in schema, no longer used)
         if not _column_exists(conn, "primers", "level"):
             conn.execute("ALTER TABLE primers ADD COLUMN level INTEGER DEFAULT NULL")

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Confirm scope</h1>
+    <p class="muted">Review the scope before starting the LLM screening pass.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/changelog">Cancel</a>
+  </div>
+</div>
+
+<div class="card">
+  <div style="margin-bottom:12px">
+    <div style="font-size:13px; color:var(--muted); margin-bottom:2px">Changelog</div>
+    <div style="font-weight:600; font-size:16px">{{ run.title }}</div>
+  </div>
+
+  <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:16px">
+    <div>
+      <div style="font-size:12px; color:var(--muted)">Software filter</div>
+      <div style="font-size:14px">{{ run.software_name or '(all)' }}</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:var(--muted)">Domain filter</div>
+      <div style="font-size:14px">{{ run.scope_domain or '(all)' }}</div>
+    </div>
+    <div>
+      <div style="font-size:12px; color:var(--muted)">Tasks to screen</div>
+      <div style="font-size:14px; font-weight:600">{{ task_count }}</div>
+    </div>
+  </div>
+
+  <div style="background:color-mix(in oklab, var(--bg) 60%, var(--panel)); border:1px solid color-mix(in oklab, var(--border) 65%, transparent); border-radius:8px; padding:12px 14px; font-family:monospace; font-size:12px; white-space:pre-wrap; word-break:break-word; color:var(--muted); max-height:140px; overflow-y:auto; margin-bottom:20px">{{ content_preview }}{% if content_preview|length >= 400 %}…{% endif %}</div>
+
+  <form method="post" action="/import/changelog/screen/{{ run.id }}" id="screen-form">
+    <button class="btn" type="submit" id="screen-btn">Screen {{ task_count }} task{{ 's' if task_count != 1 else '' }} →</button>
+    <span class="muted" style="font-size:13px; margin-left:10px">This may take a minute depending on the number of tasks and your LLM configuration.</span>
+  </form>
+</div>
+
+<script>
+document.getElementById('screen-form').addEventListener('submit', function() {
+  var btn = document.getElementById('screen-btn');
+  btn.disabled = true;
+  btn.textContent = 'Screening…';
+});
+</script>
+{% endblock %}

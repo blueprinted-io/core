@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Changelog Impact Analysis</h1>
+<p class="muted">Upload or paste a software changelog to identify which confirmed tasks need updating and generate proposed revisions.</p>
+
+<div class="card">
+  <form method="post" action="/import/changelog/prepare" enctype="multipart/form-data" id="prepare-form">
+
+    <label>Changelog title <span class="muted" style="font-weight:normal">(e.g. "Veeam Agent 7.0 Release Notes")</span></label>
+    <input name="title" required placeholder="Product Name vX.Y Release Notes" style="max-width:480px" />
+
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:4px">
+      <div style="flex:1; min-width:200px">
+        <label>Software name filter <span class="muted" style="font-weight:normal">(optional — limits which tasks are screened)</span></label>
+        <input name="software_name" placeholder="e.g. Veeam Agent for Microsoft Windows" />
+      </div>
+      <div style="flex:0 0 200px">
+        <label>Domain filter <span class="muted" style="font-weight:normal">(optional)</span></label>
+        <select name="scope_domain">
+          <option value="">All domains</option>
+          {% for d in domains %}
+            <option value="{{ d }}">{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div style="display:flex; gap:0; margin-bottom:16px; border:1px solid color-mix(in oklab, var(--border) 65%, transparent); border-radius:10px; overflow:hidden; width:fit-content">
+        <button type="button" id="tab-paste" onclick="switchTab('paste')"
+                style="padding:7px 18px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:var(--accent); color:#fff">
+          Paste text
+        </button>
+        <button type="button" id="tab-upload" onclick="switchTab('upload')"
+                style="padding:7px 18px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:transparent; color:var(--muted)">
+          Upload file
+        </button>
+      </div>
+
+      <div id="panel-paste">
+        <label>Changelog content</label>
+        <textarea name="json_text" rows="12" placeholder="Paste release notes, changelog markdown, or plain text here..." style="font-family:monospace; font-size:13px"></textarea>
+      </div>
+
+      <div id="panel-upload" style="display:none">
+        <label>PDF or text file</label>
+        <input type="file" name="upload" accept="application/pdf,.pdf,.txt,.md" />
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <button class="btn" type="submit" id="submit-btn">Analyse changelog →</button>
+    </div>
+  </form>
+</div>
+
+<div class="callout info" style="margin-top:0">
+  <b>How it works:</b> The system screens each confirmed task in scope against the changelog using your configured LLM. Affected tasks are shown with a reason, you select which ones to update, and the LLM proposes a revised version of each. Proposals arrive as draft tasks in the normal review queue.
+</div>
+
+{% if runs %}
+<div class="card" style="margin-top:24px">
+  <h2 style="margin-bottom:12px">Recent runs</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Scope</th>
+        <th>Status</th>
+        <th>Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+      <tr>
+        <td>{{ run.title }}</td>
+        <td class="muted" style="font-size:13px">
+          {% if run.software_name %}{{ run.software_name }}{% endif %}
+          {% if run.scope_domain %} / {{ run.scope_domain }}{% endif %}
+          {% if not run.software_name and not run.scope_domain %}All confirmed tasks{% endif %}
+        </td>
+        <td>
+          {% if run.job_status == 'complete' %}
+            <span class="badge confirmed">complete</span>
+          {% elif run.job_status in ('screening', 'proposing') %}
+            <span class="badge submitted">{{ run.job_status }}</span>
+          {% elif run.job_status == 'screened' %}
+            <span class="badge draft">screened</span>
+          {% elif run.job_status == 'failed' %}
+            <span class="badge deprecated">failed</span>
+          {% else %}
+            <span class="badge">{{ run.job_status }}</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size:12px">{{ run.created_at[:10] }}</td>
+        <td>
+          {% if run.job_status == 'screened' %}
+            <a class="btn secondary" style="font-size:12px; padding:3px 10px" href="/import/changelog/review/{{ run.id }}">Review</a>
+          {% elif run.job_status == 'complete' %}
+            <a class="btn secondary" style="font-size:12px; padding:3px 10px" href="/import/changelog/proposals/{{ run.id }}">Proposals</a>
+          {% elif run.job_status in ('pending', 'screening', 'proposing') %}
+            <a class="btn secondary" style="font-size:12px; padding:3px 10px" href="/import/changelog/review/{{ run.id }}">View</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+function switchTab(tab) {
+  const isPaste = tab === 'paste';
+  document.getElementById('panel-paste').style.display = isPaste ? '' : 'none';
+  document.getElementById('panel-upload').style.display = isPaste ? 'none' : '';
+  document.getElementById('tab-paste').style.background = isPaste ? 'var(--accent)' : 'transparent';
+  document.getElementById('tab-paste').style.color = isPaste ? '#fff' : 'var(--muted)';
+  document.getElementById('tab-upload').style.background = isPaste ? 'transparent' : 'var(--accent)';
+  document.getElementById('tab-upload').style.color = isPaste ? 'var(--muted)' : '#fff';
+}
+document.getElementById('prepare-form').addEventListener('submit', function() {
+  var btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+});
+</script>
+{% endblock %}

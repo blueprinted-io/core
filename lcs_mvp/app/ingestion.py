@@ -837,6 +837,256 @@ def _llm_extract_primer_chunk(text: str, section_title: str, cfg: dict[str, Any]
     return result
 
 
+_CHANGELOG_SCREEN_SYSTEM = """Determine whether the task described is affected by any changes in the given changelog.
+
+Output valid JSON only. No preamble, no markdown fences, no em dashes.
+{"affected": true|false, "reason": "One or two sentences explaining which change impacts this task, or why it is unaffected."}
+
+Rules:
+- Mark affected if any step action, CLI command, UI element, menu path, config option, or dependency changed.
+- Mark affected if the task references a feature, API, or option that the changelog deprecates or removes.
+- Mark unaffected only if the changelog changes are entirely in areas unrelated to this task.
+- Be conservative: when in doubt, mark affected."""
+
+
+_CHANGELOG_PROPOSE_SYSTEM = """You are updating a structured task record to reflect changes described in a software changelog.
+
+Return the complete updated task as a single JSON object. Use the same field schema as the input. Preserve all fields verbatim unless the changelog explicitly requires a change.
+
+Fields you may update: outcome, software_version, facts, concepts, steps (text, completion, actions, notes). Do not change: title, procedure_name, software_name, domain, irreversible, dependencies (unless a precondition changed).
+
+Output rules:
+1. Output valid JSON only. No preamble, no markdown fences.
+2. Every field must be present even if unchanged.
+3. Do not invent content not supported by the changelog.
+4. Do not use em dashes. Use commas, colons, or rewrite instead.
+
+{"title":"...","outcome":"...","procedure_name":"...","software_name":null,"software_version":null,"facts":[],"concepts":[],"dependencies":[],"irreversible":false,"steps":[{"text":"...","completion":"...","actions":[],"notes":null}]}"""
+
+
+def _task_row_to_dict(task_row) -> dict[str, Any]:
+    """Convert a sqlite3.Row task record to a plain dict for LLM input."""
+    import json as _json
+    return {
+        "title": task_row["title"],
+        "outcome": task_row["outcome"],
+        "procedure_name": task_row["procedure_name"],
+        "software_name": task_row["software_name"],
+        "software_version": task_row["software_version"],
+        "facts": _json.loads(task_row["facts_json"] or "[]"),
+        "concepts": _json.loads(task_row["concepts_json"] or "[]"),
+        "dependencies": _json.loads(task_row["dependencies_json"] or "[]"),
+        "irreversible": bool(task_row["irreversible_flag"]),
+        "steps": _json.loads(task_row["steps_json"] or "[]"),
+    }
+
+
+def _llm_screen_task_impact(task_row, changelog_content: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Ask the LLM whether a task is affected by a changelog. Returns {affected, reason}."""
+    import json as _json
+    task_dict = _task_row_to_dict(task_row)
+    user_msg = (
+        f"CHANGELOG:\n{changelog_content[:8000]}\n\n"
+        f"TASK:\n{_json.dumps(task_dict, ensure_ascii=False)}"
+    )
+    screen_cfg = dict(cfg)
+    screen_cfg["max_tokens"] = 150
+    screen_cfg["temperature"] = 0.0
+    raw = _llm_chat([
+        {"role": "system", "content": _CHANGELOG_SCREEN_SYSTEM},
+        {"role": "user", "content": user_msg},
+    ], screen_cfg)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+    try:
+        result = json.loads(raw)
+        return {
+            "affected": bool(result.get("affected", False)),
+            "reason": str(result.get("reason", ""))[:500],
+        }
+    except Exception:
+        logger.warning("Changelog screen parse failed for task %s — defaulting to unaffected", task_row["record_id"])
+        return {"affected": False, "reason": "classification failed"}
+
+
+def _llm_propose_task_revision(task_row, changelog_content: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Ask the LLM to produce an updated version of a task based on a changelog."""
+    import json as _json
+    task_dict = _task_row_to_dict(task_row)
+    user_msg = (
+        f"CHANGELOG:\n{changelog_content[:8000]}\n\n"
+        f"TASK:\n{_json.dumps(task_dict, ensure_ascii=False)}"
+    )
+    raw = _llm_chat([
+        {"role": "system", "content": _CHANGELOG_PROPOSE_SYSTEM},
+        {"role": "user", "content": user_msg},
+    ], cfg)
+    result = _parse_llm_json(raw, task_row["title"], int(cfg.get("llm_max_tokens") or 2000))
+    return result
+
+
+def _run_changelog_screening(run_id: str, db_path: str) -> None:
+    """Background: LLM-screen each task impact row for a changelog run."""
+    import sqlite3 as _sq
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    conn = _sq.connect(db_path, timeout=30.0)
+    conn.row_factory = _sq.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
+        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
+        cfg = {
+            "llm_base_url": raw_cfg.get("llm_base_url", ""),
+            "llm_api_key": raw_cfg.get("llm_api_key", ""),
+            "llm_model": raw_cfg.get("llm_model", ""),
+            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
+            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
+            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
+        }
+
+        conn.execute("UPDATE changelog_runs SET job_status='screening' WHERE id=?", (run_id,))
+        conn.commit()
+
+        run = conn.execute("SELECT content FROM changelog_runs WHERE id=?", (run_id,)).fetchone()
+        changelog_content = run["content"]
+
+        impacts = conn.execute(
+            "SELECT id, task_record_id, task_version FROM changelog_impacts WHERE run_id=? AND item_status='pending'",
+            (run_id,),
+        ).fetchall()
+
+        task_rows = {}
+        for imp in impacts:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE record_id=? AND version=?",
+                (imp["task_record_id"], imp["task_version"]),
+            ).fetchone()
+            if row:
+                task_rows[imp["id"]] = row
+
+        def screen_one(impact_id: str):
+            task_row = task_rows.get(impact_id)
+            if not task_row:
+                return impact_id, False, "task not found"
+            try:
+                result = _llm_screen_task_impact(task_row, changelog_content, cfg)
+                return impact_id, result["affected"], result["reason"]
+            except Exception as exc:
+                logger.warning("Changelog screening failed for impact %s: %s", impact_id, exc)
+                return impact_id, False, f"screening error: {exc}"
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(screen_one, imp["id"]): imp["id"] for imp in impacts}
+            for future in as_completed(futures):
+                impact_id, affected, reason = future.result()
+                write_conn = _sq.connect(db_path, timeout=30.0)
+                write_conn.execute("PRAGMA journal_mode = WAL")
+                write_conn.execute(
+                    "UPDATE changelog_impacts SET affected=?, impact_summary=?, item_status='screened' WHERE id=?",
+                    (1 if affected else 0, reason, impact_id),
+                )
+                write_conn.commit()
+                write_conn.close()
+
+        conn.execute("UPDATE changelog_runs SET job_status='screened' WHERE id=?", (run_id,))
+        conn.commit()
+        logger.info("Changelog screening complete run=%s", run_id[:8])
+    except Exception as exc:
+        logger.error("Changelog screening background failed run=%s: %s", run_id[:8], exc)
+        try:
+            conn.execute("UPDATE changelog_runs SET job_status='failed' WHERE id=?", (run_id,))
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
+def _run_changelog_proposing(run_id: str, db_path: str) -> None:
+    """Background: LLM-generate proposed task revisions for selected impact rows."""
+    import sqlite3 as _sq
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    conn = _sq.connect(db_path, timeout=30.0)
+    conn.row_factory = _sq.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        cfg_rows = conn.execute("SELECT key, value FROM system_settings WHERE key LIKE 'llm_%'").fetchall()
+        raw_cfg = {r["key"]: r["value"] for r in cfg_rows}
+        cfg = {
+            "llm_base_url": raw_cfg.get("llm_base_url", ""),
+            "llm_api_key": raw_cfg.get("llm_api_key", ""),
+            "llm_model": raw_cfg.get("llm_model", ""),
+            "llm_max_tokens": int(raw_cfg.get("llm_max_tokens", 2000)),
+            "llm_temperature": float(raw_cfg.get("llm_temperature", 0.2)),
+            "llm_timeout_seconds": float(raw_cfg.get("llm_timeout_seconds", 120)),
+        }
+
+        conn.execute("UPDATE changelog_runs SET job_status='proposing' WHERE id=?", (run_id,))
+        conn.commit()
+
+        run = conn.execute("SELECT content FROM changelog_runs WHERE id=?", (run_id,)).fetchone()
+        changelog_content = run["content"]
+
+        impacts = conn.execute(
+            "SELECT id, task_record_id, task_version FROM changelog_impacts WHERE run_id=? AND item_status='selected'",
+            (run_id,),
+        ).fetchall()
+
+        task_rows = {}
+        for imp in impacts:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE record_id=? AND version=?",
+                (imp["task_record_id"], imp["task_version"]),
+            ).fetchone()
+            if row:
+                task_rows[imp["id"]] = row
+
+        def propose_one(impact_id: str):
+            import json as _json
+            task_row = task_rows.get(impact_id)
+            if not task_row:
+                return impact_id, None
+            try:
+                proposed = _llm_propose_task_revision(task_row, changelog_content, cfg)
+                return impact_id, _json.dumps(proposed, ensure_ascii=False)
+            except Exception as exc:
+                logger.warning("Changelog proposal failed for impact %s: %s", impact_id, exc)
+                return impact_id, None
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = {pool.submit(propose_one, imp["id"]): imp["id"] for imp in impacts}
+            for future in as_completed(futures):
+                impact_id, proposed_json = future.result()
+                write_conn = _sq.connect(db_path, timeout=30.0)
+                write_conn.execute("PRAGMA journal_mode = WAL")
+                new_status = "proposed" if proposed_json else "error"
+                write_conn.execute(
+                    "UPDATE changelog_impacts SET proposed_json=?, item_status=? WHERE id=?",
+                    (proposed_json, new_status, impact_id),
+                )
+                write_conn.commit()
+                write_conn.close()
+
+        conn.execute("UPDATE changelog_runs SET job_status='complete' WHERE id=?", (run_id,))
+        conn.commit()
+        logger.info("Changelog proposing complete run=%s", run_id[:8])
+    except Exception as exc:
+        logger.error("Changelog proposing background failed run=%s: %s", run_id[:8], exc)
+        try:
+            conn.execute("UPDATE changelog_runs SET job_status='failed' WHERE id=?", (run_id,))
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
 _HTML_HEADING_LEVEL = {"h1": 0, "h2": 1, "h3": 2}
 
 

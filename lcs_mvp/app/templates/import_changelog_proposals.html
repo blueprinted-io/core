@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set is_proposing = run.job_status in ('screened', 'proposing') %}
+{% if is_proposing %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
+
+<div class="page-header">
+  <div>
+    <h1>Revision proposals</h1>
+    <p class="muted">{{ run.title }}</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/changelog/review/{{ run.id }}">Back</a>
+  </div>
+</div>
+
+{% if is_proposing %}
+<div class="callout info">
+  <b>Generating proposals</b> — the LLM is drafting revised versions. This page will refresh automatically.
+</div>
+{% endif %}
+
+{% if not is_proposing %}
+{% set ready = proposals | selectattr('proposed', 'ne', None) | list %}
+{% set errored = proposals | selectattr('proposed', 'equalto', None) | list %}
+
+{% if errored %}
+<div class="callout warn">
+  <b>{{ errored | length }} proposal{{ 's' if errored | length != 1 else '' }} failed</b> — the LLM could not generate a revision for these tasks. You can still commit the successful ones.
+  <ul style="margin:6px 0 0 0">
+    {% for p in errored %}<li>{{ p.impact.task_title }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if ready %}
+<form method="post" action="/import/changelog/commit/{{ run.id }}" id="commit-form">
+
+  <div style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
+    <span class="muted" style="font-size:14px">{{ ready | length }} proposal{{ 's' if ready | length != 1 else '' }} ready — review changes then commit as draft revisions</span>
+    <div style="display:flex; gap:8px">
+      <button type="button" class="btn secondary" onclick="setAll(true)">Select all</button>
+      <button type="button" class="btn secondary" onclick="setAll(false)">Deselect all</button>
+    </div>
+  </div>
+
+  {% for p in ready %}
+  {% set imp = p.impact %}
+  {% set proposed = p.proposed %}
+  <div class="card" style="margin-bottom:12px; padding:0; overflow:hidden">
+    <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid color-mix(in oklab, var(--border) 55%, transparent)">
+      <input type="checkbox" name="commit_ids" value="{{ imp.id }}" checked style="width:auto; flex-shrink:0">
+      <div style="flex:1; min-width:0">
+        <div style="font-weight:600">{{ imp.task_title }}</div>
+        <div style="display:flex; gap:6px; margin-top:2px; flex-wrap:wrap; align-items:center">
+          {% if imp.domain %}<span class="badge">{{ imp.domain }}</span>{% endif %}
+          {% if imp.impact_summary %}<span class="muted" style="font-size:12px">{{ imp.impact_summary }}</span>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if proposed %}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0">
+
+      <div style="padding:14px 16px; border-right:1px solid color-mix(in oklab, var(--border) 55%, transparent)">
+        <div class="muted" style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px">Current (confirmed)</div>
+
+        {% if proposed.outcome and proposed.outcome != imp.orig_outcome %}
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px">Outcome</div>
+          <div style="font-size:13px">{{ imp.orig_outcome }}</div>
+        </div>
+        {% endif %}
+
+        {% if proposed.software_version and proposed.software_version != imp.orig_sw_version %}
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px">Software version</div>
+          <div style="font-size:13px">{{ imp.orig_sw_version or '(none)' }}</div>
+        </div>
+        {% endif %}
+
+        {% if p.orig_steps %}
+        {% if proposed.steps and proposed.steps | tojson != imp.orig_steps_json %}
+        <div style="margin-bottom:4px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px">Steps</div>
+          {% for st in p.orig_steps %}
+          <div style="font-size:12px; padding:4px 0; border-top:1px solid color-mix(in oklab, var(--border) 40%, transparent)">
+            <div style="font-weight:500">{{ loop.index }}. {{ st.text }}</div>
+            {% if st.actions %}<div class="muted" style="font-family:monospace; font-size:11px">{{ st.actions | join(', ') }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      <div style="padding:14px 16px; background:color-mix(in oklab, var(--accent) 4%, var(--panel))">
+        <div style="font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; color:var(--accent)">Proposed revision</div>
+
+        {% if proposed.outcome and proposed.outcome != imp.orig_outcome %}
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px">Outcome</div>
+          <div style="font-size:13px; background:color-mix(in oklab, var(--accent) 8%, var(--panel)); border-radius:4px; padding:4px 6px">{{ proposed.outcome }}</div>
+        </div>
+        {% endif %}
+
+        {% if proposed.software_version and proposed.software_version != imp.orig_sw_version %}
+        <div style="margin-bottom:10px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:2px">Software version</div>
+          <div style="font-size:13px; background:color-mix(in oklab, var(--accent) 8%, var(--panel)); border-radius:4px; padding:4px 6px">{{ proposed.software_version }}</div>
+        </div>
+        {% endif %}
+
+        {% if p.orig_steps and proposed.steps and proposed.steps | tojson != imp.orig_steps_json %}
+        <div style="margin-bottom:4px">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px">Steps</div>
+          {% for st in proposed.steps %}
+          <div style="font-size:12px; padding:4px 0; border-top:1px solid color-mix(in oklab, var(--border) 40%, transparent)">
+            <div style="font-weight:500">{{ loop.index }}. {{ st.text }}</div>
+            {% if st.actions %}<div class="muted" style="font-family:monospace; font-size:11px; background:color-mix(in oklab, var(--accent) 8%, var(--panel)); border-radius:3px; padding:2px 4px; margin-top:2px">{{ st.actions | join(', ') }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not proposed.outcome and not proposed.software_version and not proposed.steps %}
+        <div class="muted" style="font-size:13px">No displayable field changes detected — the full proposed record will be committed as a new draft.</div>
+        {% endif %}
+      </div>
+
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <button class="btn" type="submit" id="commit-btn">Commit selected as draft revisions →</button>
+    <span class="muted" style="font-size:13px">New draft versions will appear in the task list for review and submission.</span>
+  </div>
+
+</form>
+
+{% else %}
+<div class="card">
+  <p class="muted">No proposals available. <a href="/import/changelog/review/{{ run.id }}">Go back</a> to select tasks for proposal generation.</p>
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+function setAll(state) {
+  document.querySelectorAll('input[name="commit_ids"]').forEach(cb => cb.checked = state);
+}
+var commitForm = document.getElementById('commit-form');
+if (commitForm) {
+  commitForm.addEventListener('submit', function() {
+    var btn = document.getElementById('commit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Committing…';
+  });
+}
+</script>
+
+<style>
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+</style>
+
+{% endblock %}

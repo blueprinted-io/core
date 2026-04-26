@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set is_screening = run.job_status in ('pending', 'screening') %}
+{% if is_screening %}
+<meta http-equiv="refresh" content="4">
+{% endif %}
+
+<div class="page-header">
+  <div>
+    <h1>Impact review</h1>
+    <p class="muted">{{ run.title }}</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/changelog">Back</a>
+  </div>
+</div>
+
+{% if is_screening %}
+<div class="callout info">
+  <b>Screening in progress</b> — the LLM is reviewing each task against the changelog. This page will refresh automatically.
+  {% set screened = impacts | selectattr('item_status', 'ne', 'pending') | list | length %}
+  {% set total = impacts | length %}
+  {% if total > 0 %}<br><span class="muted">{{ screened }} of {{ total }} complete</span>{% endif %}
+</div>
+{% endif %}
+
+{% if not is_screening %}
+
+{% set affected = impacts | selectattr('affected', 'equalto', 1) | list %}
+{% set unaffected = impacts | selectattr('affected', 'equalto', 0) | list %}
+
+{% if affected %}
+<form method="post" action="/import/changelog/propose/{{ run.id }}" id="propose-form">
+
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px">
+      <div>
+        <span style="font-weight:600">{{ affected | length }} task{{ 's' if affected | length != 1 else '' }} affected</span>
+        <span class="muted" style="font-size:13px; margin-left:8px">Select which to update</span>
+      </div>
+      <div style="display:flex; gap:8px">
+        <button type="button" class="btn secondary" onclick="setAll(true)">Select all</button>
+        <button type="button" class="btn secondary" onclick="setAll(false)">Deselect all</button>
+      </div>
+    </div>
+
+    {% for imp in affected %}
+    <label class="impact-row" style="display:flex; align-items:flex-start; gap:12px; padding:12px; border-radius:8px; background:color-mix(in oklab, var(--bg) 55%, var(--panel)); border:1px solid color-mix(in oklab, var(--border) 55%, transparent); margin-bottom:6px; cursor:pointer">
+      <input type="checkbox" name="selected_ids" value="{{ imp.id }}" checked style="margin-top:3px; flex-shrink:0; width:auto">
+      <div style="flex:1; min-width:0">
+        <div style="font-weight:600; font-size:14px">{{ imp.task_title }}</div>
+        <div style="display:flex; gap:6px; margin-top:3px; flex-wrap:wrap">
+          {% if imp.domain %}<span class="badge">{{ imp.domain }}</span>{% endif %}
+          {% if imp.software_version %}<span class="muted" style="font-size:12px">v{{ imp.software_version }}</span>{% endif %}
+        </div>
+        {% if imp.impact_summary %}
+        <div class="muted" style="font-size:13px; margin-top:6px">{{ imp.impact_summary }}</div>
+        {% endif %}
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+    <button class="btn" type="submit" id="propose-btn">Generate revision proposals →</button>
+    <span class="muted" style="font-size:13px">The LLM will draft an updated version of each selected task.</span>
+  </div>
+
+</form>
+{% else %}
+<div class="card">
+  <p class="muted">No tasks were identified as affected by this changelog. You can <a href="/import/changelog/screen/{{ run.id }}">re-screen</a> if you believe this is incorrect.</p>
+</div>
+{% endif %}
+
+{% if unaffected %}
+<details style="margin-top:16px">
+  <summary style="font-size:14px; font-weight:600; cursor:pointer; padding:8px 0; list-style:none; user-select:none">
+    <span style="color:var(--muted); font-size:10px">▶  </span>{{ unaffected | length }} task{{ 's' if unaffected | length != 1 else '' }} not affected
+  </summary>
+  <details[open] > summary > span { content: "▼  "; }
+  <div style="margin-top:8px; display:flex; flex-direction:column; gap:4px">
+    {% for imp in unaffected %}
+    <div style="padding:8px 12px; border-radius:6px; background:color-mix(in oklab, var(--bg) 55%, var(--panel)); border:1px solid color-mix(in oklab, var(--border) 40%, transparent); font-size:13px">
+      <span style="font-weight:500">{{ imp.task_title }}</span>
+      {% if imp.domain %}<span class="badge" style="margin-left:6px">{{ imp.domain }}</span>{% endif %}
+      {% if imp.impact_summary %}<span class="muted" style="margin-left:8px">{{ imp.impact_summary }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% endif %}
+
+<script>
+function setAll(state) {
+  document.querySelectorAll('input[name="selected_ids"]').forEach(cb => cb.checked = state);
+}
+var proposeForm = document.getElementById('propose-form');
+if (proposeForm) {
+  proposeForm.addEventListener('submit', function() {
+    var btn = document.getElementById('propose-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating proposals…';
+  });
+}
+</script>
+{% endblock %}

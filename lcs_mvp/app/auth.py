@@ -64,6 +64,7 @@ def can(role: Role, action: str) -> bool:
       - export:library, export:cleanup
       - import:pdf
       - import:json
+      - import:changelog
       - db:switch
       - audit:view
       - task:force_submit, task:force_confirm
@@ -111,7 +112,7 @@ def can(role: Role, action: str) -> bool:
     if action.endswith(":revise"):
         return role in ("contributor",)
 
-    if action in ("import:pdf", "import:json"):
+    if action in ("import:pdf", "import:json", "import:changelog"):
         return role in ("contributor",)
 
     if action == "db:switch":
