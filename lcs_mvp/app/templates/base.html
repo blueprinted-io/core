@@ -181,6 +181,7 @@
           'Audit Log':'◷',
           'Exports library':'⬒',
           'Import PDF':'⇪',
+          'Import URL':'⇪',
           'Import JSON':'⇪',
           'Users':'◉',
           'Domains':'◌',
@@ -367,6 +368,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Ingestion</div>
           <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
+          <a class="navlink {% if request.url.path.startswith('/import/url') %}active{% endif %}" href="/import/url">Import URL</a>
           <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
         </div>
 
@@ -387,6 +389,7 @@
           <div class="sidebar-title">Ingestion</div>
           {% if can(role, 'import:pdf') %}
             <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
+            <a class="navlink {% if request.url.path.startswith('/import/url') %}active{% endif %}" href="/import/url">Import URL</a>
           {% endif %}
           {% if can(role, 'import:json') %}
             <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>

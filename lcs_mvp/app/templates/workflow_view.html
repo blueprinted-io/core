@@ -130,15 +130,15 @@
 
       {% if attached_primers %}
       <h3 style="margin-top:0">Attached Primers</h3>
-      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px">
+      <div class="primer-card-grid" style="margin-bottom:14px">
         {% for p in attached_primers %}
-        <div class="card" style="padding:12px 14px">
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-            <a href="/primers/{{ p.record_id }}/{{ p.version }}" style="font-weight:600">{{ p.title }}</a>
-            <span class="badge badge-confirmed">confirmed</span>
-            {% if p.domain %}<code style="font-size:0.78em">{{ p.domain }}</code>{% endif %}
+        <div class="primer-card">
+          <div class="primer-card-title">
+            <a href="/primers/{{ p.record_id }}/{{ p.version }}">{{ p.title }}</a>
+            <span class="badge badge-confirmed" style="margin-left:6px; font-size:0.75em">confirmed</span>
+            {% if p.domain %}<code style="font-size:0.78em; margin-left:4px">{{ p.domain }}</code>{% endif %}
           </div>
-          <div class="muted" style="margin-top:4px; font-size:0.9em">{{ p.summary }}</div>
+          {% if p.summary %}<div class="primer-card-meta">{{ p.summary }}</div>{% endif %}
         </div>
         {% endfor %}
       </div>

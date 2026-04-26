@@ -152,12 +152,22 @@ def workflow_new_form(request: Request):
     require(request.state.role, "workflow:create")
     with db() as conn:
         ct_json = _confirmed_tasks_json(conn)
+        confirmed_primer_rows = conn.execute(
+            """
+            SELECT p.record_id, p.title, p.summary, p.domain, p.version
+            FROM primers p
+            WHERE p.status = 'confirmed'
+              AND p.version = (SELECT MAX(p2.version) FROM primers p2 WHERE p2.record_id = p.record_id AND p2.status = 'confirmed')
+            ORDER BY p.title
+            """
+        ).fetchall()
     return templates.TemplateResponse(
         request,
         "workflow_edit.html",
         {"mode": "new", "workflow": None,
          "confirmed_tasks_json": ct_json, "refs_text_json": json.dumps(""),
-         "confirmed_primers": [], "attached_primers": []},
+         "confirmed_primers": [dict(r) for r in confirmed_primer_rows],
+         "attached_primers": []},
     )
 
 
@@ -169,6 +179,7 @@ def workflow_create(
     tags: str = Form(""),
     meta: str = Form(""),
     task_refs: str = Form(""),
+    primer_ids: list[str] = Form([]),
 ):
     require(request.state.role, "workflow:create")
     actor = request.state.user
@@ -222,6 +233,11 @@ def workflow_create(
                 VALUES (?,?,?,?,?)
                 """,
                 (record_id, version, idx, rid, ver),
+            )
+        for pid in primer_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by) VALUES (?,?,?,?)",
+                (record_id, pid, now, actor),
             )
 
     audit("workflow", record_id, version, "create", actor)

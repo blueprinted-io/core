@@ -46,45 +46,42 @@
   </div>
 </form>
 
-{% if mode != 'new' and workflow %}
 <div class="card stack-sm" style="margin-top:24px">
   <h3 style="margin-top:0">Attached Primers</h3>
   <p class="muted" style="font-size:13px">Primers attach to the workflow record (all versions). Only confirmed primers can be attached.</p>
 
-  <div style="display:flex; gap:18px; flex-wrap:wrap">
-    <div style="flex:1; min-width:220px">
-      <div class="muted" style="font-size:0.82em; margin-bottom:6px">Available confirmed primers</div>
+  {% if mode != 'new' and workflow %}
+  <div class="two-col-picker">
+    <div class="picker-col">
+      <div class="picker-col-header muted">Available confirmed primers</div>
       {% if confirmed_primers %}
         {% set attached_ids = attached_primers | map(attribute='record_id') | list %}
         {% for p in confirmed_primers %}
           {% if p.record_id not in attached_ids %}
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.9em">
+          <div class="picker-item-row">
             <span style="flex:1"><b>{{ p.title }}</b>{% if p.domain %} <code style="font-size:0.78em">{{ p.domain }}</code>{% endif %}</span>
-            <form method="post" action="/workflows/{{ workflow.record_id }}/primers/attach" style="display:inline">
+            <form method="post" action="/workflows/{{ workflow.record_id }}/primers/attach">
               <input type="hidden" name="primer_record_id" value="{{ p.record_id }}" />
               <button class="btn secondary" style="font-size:0.78em; padding:2px 8px" type="submit">Attach</button>
             </form>
           </div>
           {% endif %}
         {% endfor %}
-        {% set attached_ids = attached_primers | map(attribute='record_id') | list %}
-        {% if confirmed_primers | selectattr('record_id', 'in', attached_ids) | list | length == confirmed_primers | length %}
+        {% if confirmed_primers | rejectattr('record_id', 'in', attached_ids) | list | length == 0 %}
           <div class="muted" style="font-size:0.85em">All confirmed primers are attached.</div>
-        {% elif confirmed_primers | rejectattr('record_id', 'in', attached_ids) | list | length == 0 %}
-          <div class="muted" style="font-size:0.85em">No more confirmed primers to attach.</div>
         {% endif %}
       {% else %}
         <div class="muted" style="font-size:0.85em">No confirmed primers available.</div>
       {% endif %}
     </div>
 
-    <div style="flex:1; min-width:220px">
-      <div class="muted" style="font-size:0.82em; margin-bottom:6px">Currently attached</div>
+    <div class="picker-col">
+      <div class="picker-col-header muted">Currently attached</div>
       {% if attached_primers %}
         {% for p in attached_primers %}
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.9em">
+        <div class="picker-item-row">
           <span style="flex:1"><b>{{ p.title }}</b>{% if p.domain %} <code style="font-size:0.78em">{{ p.domain }}</code>{% endif %}</span>
-          <form method="post" action="/workflows/{{ workflow.record_id }}/primers/detach" style="display:inline">
+          <form method="post" action="/workflows/{{ workflow.record_id }}/primers/detach">
             <input type="hidden" name="primer_record_id" value="{{ p.record_id }}" />
             <button class="btn secondary" style="font-size:0.78em; padding:2px 8px; color:var(--red,#b91c1c)" type="submit">Detach</button>
           </form>
@@ -95,8 +92,25 @@
       {% endif %}
     </div>
   </div>
+
+  {% else %}
+  {# New workflow — checkbox selection submitted with the main form #}
+  {% if confirmed_primers %}
+    <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px">
+      {% for p in confirmed_primers %}
+      <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer">
+        <input type="checkbox" name="primer_ids" value="{{ p.record_id }}" />
+        <b>{{ p.title }}</b>
+        {% if p.domain %}<code style="font-size:0.78em">{{ p.domain }}</code>{% endif %}
+        {% if p.summary %}<span class="muted" style="font-size:0.82em">— {{ p.summary }}</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="muted" style="font-size:0.85em; margin-top:6px">No confirmed primers available yet. You can attach primers after creation.</div>
+  {% endif %}
+  {% endif %}
 </div>
-{% endif %}
 
 <script>
 (function(){

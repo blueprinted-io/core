@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 import httpx
+from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from fastapi import HTTPException
 
@@ -830,3 +831,66 @@ def _llm_extract_primer_chunk(text: str, section_title: str, cfg: dict[str, Any]
         result["primers"] = []
     logger.info("Extracted %d primer(s) from '%s'", len(result["primers"]), section_title[:80])
     return result
+
+
+_HTML_HEADING_LEVEL = {"h1": 0, "h2": 1, "h3": 2}
+
+
+def _html_fetch_and_chunk(url: str, max_chars: int = 12000) -> tuple[bytes, list[dict], list[dict]]:
+    """Fetch a URL and return (raw_bytes, pages, outline).
+
+    pages: same shape as _pdf_extract_pages — list of {"page": int, "text": str}
+           where page numbers are synthetic (1 per heading section).
+    outline: same shape as _pdf_extract_outline — list of {"title": str, "page": int, "level": int}
+
+    Raises HTTPException(400) for pages with <50 words of text.
+    Raises HTTPException(422) if the URL is unreachable or returns a non-200 status.
+    Returns (raw_bytes, pages, outline). raw_bytes is suitable for SHA-256 hashing.
+    """
+    try:
+        resp = httpx.get(url, follow_redirects=True, timeout=20, headers={"User-Agent": "Blueprinted/1.0"})
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not fetch URL: {exc}")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=422, detail=f"URL returned HTTP {resp.status_code}")
+
+    raw_bytes = resp.content
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Remove non-content elements
+    for tag in soup.find_all(["nav", "header", "footer", "aside", "script", "style"]):
+        tag.decompose()
+
+    # Collect heading-bounded sections
+    headings = soup.find_all(["h1", "h2", "h3"])
+
+    pages: list[dict] = []
+    outline: list[dict] = []
+
+    if headings:
+        for idx, heading in enumerate(headings, start=1):
+            title = heading.get_text(separator=" ", strip=True)
+            level = _HTML_HEADING_LEVEL.get(heading.name, 0)
+            # Gather text from siblings until the next heading of any level
+            parts: list[str] = []
+            for sib in heading.find_next_siblings():
+                if sib.name in _HTML_HEADING_LEVEL:
+                    break
+                text = sib.get_text(separator=" ", strip=True)
+                if text:
+                    parts.append(text)
+            body = " ".join(parts).strip()
+            outline.append({"title": title, "page": idx, "level": level})
+            pages.append({"page": idx, "text": f"{title}\n\n{body}" if body else title})
+    else:
+        # No headings — fall back to full body text as a single section
+        body = soup.get_text(separator="\n", strip=True)
+        pages = [{"page": 1, "text": body}]
+        outline = []
+
+    total_words = sum(len(p["text"].split()) for p in pages)
+    if total_words < 50:
+        raise HTTPException(status_code=400, detail="Page contains less than 50 words of extractable text.")
+
+    logger.info("URL fetch %s — %d section(s), %d words", url[:80], len(pages), total_words)
+    return raw_bytes, pages, outline

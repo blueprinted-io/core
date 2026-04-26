@@ -23,7 +23,7 @@ from ..ingestion import (
     _sha256_bytes, _task_fingerprint, _near_duplicate_score,
     _pdf_extract_pages, _pdf_is_scanned, _chunk_text, _pdf_extract_outline, _chunk_by_structure,
     _llm_triage_chunk, _llm_extract_task_chunk, _llm_extract_primer_chunk, _extract_and_match_images,
-    _llm_generate_all_levels,
+    _llm_generate_all_levels, _html_fetch_and_chunk,
 )
 from ..notifications import _notify_ingestion_complete
 from ..utils import _json_dump, _json_load
@@ -1732,4 +1732,80 @@ def import_json_run(
         return RedirectResponse(url="/primers?status=draft", status_code=303)
     if created_workflow_ids and not created_task_ids:
         return RedirectResponse(url="/workflows", status_code=303)
+    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# URL import
+# ---------------------------------------------------------------------------
+
+@router.get("/import/url", response_class=HTMLResponse)
+def import_url_form(request: Request):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+    with db() as conn:
+        past = conn.execute(
+            "SELECT id, filename, created_at, job_status, domain FROM ingestions "
+            "WHERE source_type='url' AND created_by=? ORDER BY created_at DESC LIMIT 50",
+            (actor,),
+        ).fetchall()
+    return templates.TemplateResponse(request, "import_url.html", {"past": [dict(r) for r in past]})
+
+
+@router.post("/import/url/prepare")
+def import_url_prepare(request: Request, url: str = Form(...)):
+    require(request.state.role, "import:pdf")
+    actor = request.state.user
+
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        return templates.TemplateResponse(
+            request, "import_url.html",
+            {"past": [], "error": "URL must start with http:// or https://"},
+            status_code=400,
+        )
+
+    raw_bytes, pages, outline = _html_fetch_and_chunk(url)
+    sha = _sha256_bytes(raw_bytes)
+
+    db_path = DB_PATH_CTX.get()
+    with db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM ingestions WHERE source_type='url' AND source_sha256=? AND created_by=?",
+            (sha, actor),
+        ).fetchone()
+        if existing:
+            return RedirectResponse(url=f"/import/pdf/sections/{existing['id']}", status_code=303)
+
+        ingestion_id = str(uuid.uuid4())
+        now = utc_now_iso()
+        conn.execute(
+            "INSERT INTO ingestions(id, source_type, source_sha256, filename, file_path, created_by, created_at, "
+            "status, cursor_chunk, max_tasks_per_run, note, job_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (ingestion_id, "url", sha, url, None, actor, now, "draft", 0, 10, None, "pending"),
+        )
+
+        chunks = _chunk_by_structure(pages, outline) if outline else _chunk_text(pages)
+        for idx, chunk in enumerate(chunks):
+            conn.execute(
+                "INSERT INTO ingestion_chunks(ingestion_id, chunk_index, pages_json, text, created_at, "
+                "section_title, selected, chunk_status, section_level) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    ingestion_id, idx,
+                    json.dumps(chunk.get("pages", [])),
+                    chunk.get("text", ""),
+                    now,
+                    chunk.get("section_title", ""),
+                    0,
+                    "pending",
+                    int(chunk.get("section_level", 0)),
+                ),
+            )
+        no_toc = not outline
+        conn.execute(
+            "UPDATE ingestions SET note=? WHERE id=?",
+            ("no-headings-fallback" if no_toc else None, ingestion_id),
+        )
+
+    return RedirectResponse(url=f"/import/pdf/sections/{ingestion_id}", status_code=303)
     return RedirectResponse(url="/tasks?status=draft", status_code=303)

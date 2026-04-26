@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Import Tasks from PDF</h1>
-<p class="muted">Upload a text-based PDF. The system will extract its table of contents, let you choose which sections to import, then process them in the background using AI.</p>
+<div class="page-header">
+  <div>
+    <h1>Import from PDF</h1>
+    <p class="muted">Upload a text-based PDF. The system will extract its table of contents, let you choose which sections to import, then process them in the background using AI.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/url">From URL</a>
+  </div>
+</div>
 
 <div class="callout warn">
   <b>Trust boundary:</b> All imported Tasks are created as <b>draft</b> and flagged for review. Nothing is auto-confirmed.

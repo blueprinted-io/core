@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import from URL</h1>
+    <p class="muted">Fetch a web page and extract sections for triage, the same way PDF import works.</p>
+  </div>
+  <div class="row-right">
+    <a class="btn secondary" href="/import/pdf">From PDF</a>
+  </div>
+</div>
+
+{% if error %}
+<div class="callout danger">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/import/url/prepare" id="url-form">
+    <label>URL</label>
+    <input type="url" name="url" required placeholder="https://docs.example.com/guide" style="width:100%" />
+    <div class="muted" style="margin-top:6px; font-size:0.85em">
+      Plain HTTP/HTTPS pages only. JavaScript-rendered pages, login-gated pages, and PDFs are not supported.
+      Single URL — no link-following.
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn" type="submit" id="url-submit-btn">Fetch and analyse</button>
+    </div>
+  </form>
+</div>
+
+{% if past %}
+<div class="card" style="padding:0; overflow:hidden">
+  <div style="padding:10px 16px; border-bottom:1px solid var(--border); font-weight:600">Past URL imports</div>
+  <table class="table" style="margin:0">
+    <thead>
+      <tr>
+        <th>URL</th>
+        <th style="width:110px">Status</th>
+        <th style="width:130px">Date</th>
+        <th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in past %}
+      <tr>
+        <td class="muted" style="font-size:0.85em; max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ s.filename }}</td>
+        <td><span class="badge">{{ s.job_status }}</span></td>
+        <td class="muted" style="font-size:0.85em">{{ s.created_at[:16] }}</td>
+        <td><a href="/import/pdf/sections/{{ s.id }}" class="btn secondary" style="font-size:0.8em; padding:3px 8px">Review</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+document.getElementById('url-form').addEventListener('submit', function () {
+  var btn = document.getElementById('url-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Fetching…';
+});
+</script>
+{% endblock %}

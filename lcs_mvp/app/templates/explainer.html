@@ -1,100 +1,101 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>What is this system</h1>
-<p class="muted">A plain-language explainer for first-time users.</p>
+<p class="muted">A plain-language explainer for contributors, reviewers, and administrators.</p>
 
 <div class="card">
   <a href="/static/blueprinted-diagram.svg" target="_blank" rel="noopener">
     <img src="/static/blueprinted-diagram.svg" alt="Blueprinted.io system overview diagram" style="width:50%;height:auto;border-radius:12px;border:1px solid var(--border);display:block" />
   </a>
   <p class="muted" style="margin-top:10px">
-    AI is strongest on established patterns and weakest at novelty. Newly released software, fresh regulatory changes, and emerging ways of working are exactly where hallucination risk is highest, and they are also the highest priority learning areas for most organizations.
+    AI is strongest on established patterns and weakest at novelty. Newly released software, fresh regulatory changes, and emerging ways of working are exactly where hallucination risk is highest — and they are also the highest-priority learning areas for most organisations.
   </p>
   <p class="muted" style="margin-top:10px">
-    Blueprinted-io introduces a human-in-the-loop middleware layer between source documentation and AI-generated learning outputs. Humans structure and validate the critical concepts, workflows, and dependencies before delivery. The result is faster content production with controlled accuracy, explicit oversight, and clear auditability, so organizations in high risk or regulated environments can use AI output with confidence, traceability, and governance.
-  </p>
-  <p class="muted" style="margin-top:10px">
-    <b>What's happening on the right:</b> The system implements a very detailed RAG (Retrieval-Augmented Generation) pipeline. Source documentation is processed, structured, and validated by human experts before being made available for AI-generated outputs. This ensures responses are grounded in approved, versioned content rather than hallucinated or outdated information.
+    Blueprinted introduces a human-in-the-loop layer between source documentation and AI-generated learning outputs. Human experts structure, validate, and govern the critical knowledge before it is used. The result is faster content production with controlled accuracy, explicit oversight, and full auditability — so organisations in high-risk or regulated environments can use AI output with confidence and traceability.
   </p>
 </div>
 
 <div class="card">
-  <h2>What this does for you</h2>
-  <ul>
-    <li><b>Build trusted learning content faster:</b> convert source material into reusable, governed records.</li>
-    <li><b>Keep human control where it matters:</b> critical content is reviewed before confirmation.</li>
-    <li><b>Produce audit-ready outputs:</b> every version and approval decision is traceable.</li>
-  </ul>
-
   <h2>How it works</h2>
   <ol>
-    <li><b>Ingest source inputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Technical documentation is processed by AI to extract task candidates. Ingestion produces tasks only — workflows are never generated automatically.</span></li>
-    <li><b>Structure and validate with humans-in-the-loop</b><br><span class="muted">Authors review AI-extracted task candidates and confirm them. Reviewers confirm tasks through the review queue. Authors then compose confirmed tasks into Workflows using the authoring UI.</span></li>
-    <li><b>Deliver controlled outputs</b> <span class="badge badge-warn">early development, not yet functional</span><br><span class="muted">Confirmed records drive content output, assessments, and assurance evidence.</span></li>
+    <li><b>Ingest source documentation</b><br><span class="muted">PDF documents and web pages are processed by AI to extract candidate Tasks and Primers. The import pipeline classifies sections, runs LLM extraction, and surfaces candidates for human review. Ingestion produces candidates only — Workflows are never generated automatically.</span></li>
+    <li><b>Review and govern with humans in the loop</b><br><span class="muted">Contributors review AI-extracted candidates, edit them, and submit them for review. Reviewers confirm or return records through the review queue. Each record version is immutable once confirmed.</span></li>
+    <li><b>Compose into Workflows</b><br><span class="muted">Authors compose confirmed Tasks into Workflows and attach relevant Primers. A Workflow expresses an expert's judgement about how Tasks should be sequenced for a specific operational context.</span></li>
+    <li><b>Deliver governed outputs</b><br><span class="muted">Confirmed records drive content output, assessments, and assurance evidence. Every output is grounded in approved, versioned content rather than raw LLM generation.</span></li>
   </ol>
 </div>
 
 <div class="card">
-  <h2>Who should use which area</h2>
-  <ul>
-    <li><b>Viewer:</b> Workflows, Content output</li>
-    <li><b>Author:</b> Ingestion, Tasks, Workflows</li>
-    <li><b>Reviewer:</b> Review queue, submitted Tasks/Workflows</li>
-    <li><b>Content publisher:</b> Content output and delivery artifacts</li>
-    <li><b>Assessment author:</b> Assessments linked to governed records</li>
-    <li><b>Audit:</b> Assurance and audit log visibility</li>
-    <li><b>Admin:</b> Full access including break-glass operations</li>
-  </ul>
-</div>
-
-<div class="card">
-  <h2>Core model (for authors and reviewers)</h2>
+  <h2>Core record types</h2>
 
   <h3>Task</h3>
-  <p class="muted">A Task is the smallest unit of work that changes the world in one observable way.</p>
+  <p class="muted">The smallest unit of work that changes the world in one observable way.</p>
   <ul>
-    <li><b>Outcome:</b> the result you can verify.</li>
-    <li><b>Facts:</b> literal information required before starting.</li>
-    <li><b>Concepts:</b> the mental model that explains why the procedure works.</li>
-    <li><b>Procedure:</b> a list of Steps.</li>
-    <li><b>Dependencies:</b> what must already be true.</li>
+    <li><b>Outcome:</b> the verifiable result when the task is complete.</li>
+    <li><b>Facts:</b> literal information the operator needs before starting.</li>
+    <li><b>Concepts:</b> the mental model explaining why the procedure works.</li>
+    <li><b>Steps:</b> the ordered procedure, each with a completion criterion.</li>
+    <li><b>Dependencies:</b> what must already be true for the task to be possible.</li>
+  </ul>
+
+  <h3>Primer</h3>
+  <p class="muted">A standalone conceptual document — the analytical knowledge that makes practitioners competent, not just procedurally capable.</p>
+  <ul>
+    <li>Explains the <em>why</em> and <em>how</em>, not the <em>what to do</em>.</li>
+    <li>Covers trade-offs, failure modes, and conditions under which to choose each approach.</li>
+    <li>Optionally includes level variants (100–400) tuned for different depths of knowledge: Awareness, Foundation, Applied, and Mastery.</li>
+    <li>Can be attached to Workflows to provide conceptual grounding alongside the procedural steps.</li>
   </ul>
 
   <h3>Workflow</h3>
-  <p class="muted">A Workflow is an ordered list of Tasks that achieves one objective.</p>
+  <p class="muted">An ordered sequence of Tasks that achieves one operational objective.</p>
   <ul>
-    <li>Workflows contain <b>Tasks</b>, not low-level steps.</li>
-    <li>The Workflow objective defines the business outcome for the set of Tasks.</li>
-    <li>Workflows are always <b>human-composed</b>. They are never generated automatically during ingestion — a workflow expresses an expert's judgment about how tasks should be sequenced for a specific operational context.</li>
+    <li>Contains <b>Tasks</b>, not low-level steps — the Workflow expresses sequencing and context, not procedure.</li>
+    <li>Can reference <b>Primers</b> to surface the conceptual knowledge practitioners need alongside the steps.</li>
+    <li>Always <b>human-composed</b> — never generated automatically during ingestion.</li>
   </ul>
 
   <h3>Step</h3>
-  <p>A Step is one unit of procedure inside a Task.</p>
+  <p class="muted">One unit of procedure inside a Task.</p>
   <ul>
-    <li><b>Step text (required):</b> what you are doing.</li>
-    <li><b>Actions (optional):</b> tool-specific details for execution.</li>
-    <li><b>Completion (required):</b> how you prove the step is done.</li>
+    <li><b>Text (required):</b> what you are doing.</li>
+    <li><b>Actions (optional):</b> tool-specific commands or UI paths for execution.</li>
+    <li><b>Completion (required):</b> how you verify the step succeeded.</li>
   </ul>
-  <p class="muted">Important: confirmation lives in <b>Completion</b>. Actions do not have separate completion rules.</p>
 </div>
 
 <div class="card">
   <h2>Status lifecycle</h2>
+  <p class="muted">All record types follow the same governed lifecycle.</p>
   <ul>
-    <li><b>Draft:</b> being written, not trusted yet.</li>
-    <li><b>Submitted:</b> waiting for review.</li>
-    <li><b>Returned:</b> reviewed, but changes are required before confirmation.</li>
-    <li><b>Confirmed:</b> reviewed and approved, safe to reuse and export.</li>
-    <li><b>Deprecated:</b> older confirmed version replaced by a newer confirmed version.</li>
+    <li><b>Draft:</b> being authored. Not yet trusted or reusable.</li>
+    <li><b>Submitted:</b> awaiting review. No further edits until returned or confirmed.</li>
+    <li><b>Returned:</b> reviewer has requested changes. Contributor creates a new version.</li>
+    <li><b>Confirmed:</b> reviewed and approved. Safe to reuse, reference, and export. Immutable.</li>
+    <li><b>Deprecated:</b> superseded by a newer confirmed version.</li>
+  </ul>
+  <p class="muted" style="margin-top:10px">Each edit creates a new version — prior versions are retained. The confirmed version is the authoritative one.</p>
+</div>
+
+<div class="card">
+  <h2>Who uses which area</h2>
+  <ul>
+    <li><b>Viewer:</b> read access to Workflows and confirmed content.</li>
+    <li><b>Contributor:</b> ingestion, creating and editing Tasks, Primers, and Workflows.</li>
+    <li><b>Reviewer:</b> the review queue — confirming or returning submitted records.</li>
+    <li><b>Content publisher:</b> content output and delivery artefacts.</li>
+    <li><b>Assessment author:</b> assessments linked to governed records.</li>
+    <li><b>Audit:</b> assurance and audit log visibility.</li>
+    <li><b>Admin:</b> full access including break-glass operations, user management, and system settings.</li>
   </ul>
 </div>
 
 <div class="card">
   <h2>What this system is not</h2>
   <ul>
-    <li>It is not a chat bot.</li>
-    <li>It is not a free-form wiki. Confirmed content is controlled and versioned.</li>
-    <li>It is not currently designed for operational use in production environments.</li>
+    <li>It is not a chat bot or a free-form AI assistant.</li>
+    <li>It is not a wiki — confirmed content is controlled, versioned, and requires human approval.</li>
+    <li>It does not generate Workflows automatically — that judgement is always human.</li>
   </ul>
 </div>
 {% endblock %}
