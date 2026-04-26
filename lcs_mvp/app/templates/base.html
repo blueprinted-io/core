@@ -451,6 +451,29 @@
           <a class="navlink {% if request.url.path.startswith('/primers') %}active{% endif %}" href="/primers">Primers</a>
         </div>
 
+      {% elif role == 'contributor' %}
+        <div class="sidebar-section">
+          <div class="sidebar-title">Records</div>
+          <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
+          <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
+          <a class="navlink {% if request.url.path.startswith('/primers') %}active{% endif %}" href="/primers">Primers</a>
+          <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Delivery</div>
+          <a class="navlink {% if request.url.path.startswith('/delivery') %}active{% endif %}" href="/delivery">Content output</a>
+          <a class="navlink {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">Assessments</a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-title">Ingestion</div>
+          <a class="navlink {% if request.url.path.startswith('/import/pdf') %}active{% endif %}" href="/import/pdf">Import PDF</a>
+          <a class="navlink {% if request.url.path.startswith('/import/url') %}active{% endif %}" href="/import/url">Import URL</a>
+          <a class="navlink {% if request.url.path.startswith('/import/json') %}active{% endif %}" href="/import/json">Import JSON</a>
+          <a class="navlink {% if request.url.path.startswith('/import/changelog') %}active{% endif %}" href="/import/changelog">Changelog Impact</a>
+        </div>
+
       {% else %}
         <div class="sidebar-section">
           <div class="sidebar-title">Delivery</div>
@@ -463,9 +486,6 @@
           <a class="navlink {% if request.url.path.startswith('/workflows') %}active{% endif %}" href="/workflows">Workflows</a>
           <a class="navlink {% if request.url.path.startswith('/tasks') %}active{% endif %}" href="/tasks">Tasks</a>
           <a class="navlink {% if request.url.path.startswith('/primers') %}active{% endif %}" href="/primers">Primers</a>
-          {% if role in ['reviewer'] %}
-            <a class="navlink {% if request.url.path.startswith('/review') %}active{% endif %}" href="/review">Review queue</a>
-          {% endif %}
         </div>
       {% endif %}
 
