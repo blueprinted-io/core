@@ -590,6 +590,9 @@ def task_force_submit(request: Request, record_id: str, version: int):
             raise HTTPException(404)
         if row["status"] in ("deprecated", "retired", "confirmed"):
             raise HTTPException(409, detail=f"Cannot force-submit a {row['status']} task")
+        domain = (row["domain"] or "").strip() if "domain" in row.keys() else ""
+        if not domain:
+            raise HTTPException(409, detail="Cannot force-submit task: domain is required")
         conn.execute(
             "UPDATE tasks SET status='submitted', updated_at=?, updated_by=? WHERE record_id=? AND version=?",
             (utc_now_iso(), actor, record_id, version),

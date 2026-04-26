@@ -194,7 +194,7 @@
       <a class="btn secondary" href="/assessments/new?task_record_id={{ task.record_id }}&task_version={{ task.version }}">New assessment</a>
     {% endif %}
 
-    {% if task.status == 'draft' and can(request.state.role, 'task:submit') %}
+    {% if task.status == 'draft' and task.domain and can(request.state.role, 'task:submit') %}
     <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/submit">
       <button class="btn" type="submit">Submit for review</button>
     </form>
@@ -239,9 +239,11 @@
 
     {% if request.state.role == 'admin' %}
       <a class="btn secondary" href="/admin/tasks/{{ task.record_id }}/{{ task.version }}/edit">Admin edit</a>
+      {% if task.domain %}
       <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-submit">
         <button class="btn secondary" type="submit">Force submit</button>
       </form>
+      {% endif %}
       <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/force-confirm">
         <button class="btn secondary" type="submit">Force confirm</button>
       </form>
