@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Presentation prompt</h1>
+    <p class="muted">{{ workflow_title }}</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="section-header">Instructions</div>
+  <p>Copy the prompt below and paste it into any LLM (Claude, ChatGPT, Gemini). The LLM will fetch the workflow content and build a slide deck.</p>
+  <p class="muted" style="margin-top:8px">
+    <strong>This link is single-use and expires at {{ token.expires_at }}.</strong>
+    Copy and use the prompt before it expires — the link burns on first access.
+  </p>
+</div>
+
+<div class="card">
+  <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
+    <span>Prompt</span>
+    <button class="btn secondary" id="copy-btn" type="button">Copy prompt</button>
+  </div>
+  <textarea id="prompt-text" readonly style="width:100%;min-height:320px;font-family:monospace;font-size:0.85em;resize:vertical;margin-top:8px;box-sizing:border-box">You are a presentation design assistant. I need you to build a slide deck for a workplace learning workflow.
+
+Step 1 — Fetch the content:
+Make a GET request to: {{ fetch_url }}
+
+This returns JSON with the following structure:
+- workflow: title, objective, domains, tags
+- primers: pre-reading material (title, summary, explanation, analogies)
+- tasks: ordered list — each has a title, outcome, and steps array
+
+Step 2 — Build the slide deck using this structure:
+1. Title slide — workflow title + one-sentence objective
+2. Pre-reading section — one slide per primer (title as heading, summary as body, key points from explanation as bullets). Skip this section if primers is empty.
+3. Task slides — one slide per task:
+   • Heading: task title
+   • Body: each step in the steps array as a bullet point
+   • Speaker note: task outcome (what the learner will be able to do after this task)
+4. Summary slide — 3–5 key takeaways from the workflow
+
+Step 3 — Output each slide as:
+---
+## [Slide title]
+[Body content]
+**Speaker note:** [note text]
+---
+
+Important: The fetch URL above is single-use and expires in 10 minutes. Make the GET request before doing anything else.</textarea>
+</div>
+
+<div style="margin-top:16px">
+  <a class="btn secondary" href="/delivery">← Back to Delivery</a>
+</div>
+
+<script>
+  document.getElementById('copy-btn').addEventListener('click', function() {
+    var text = document.getElementById('prompt-text').value;
+    navigator.clipboard.writeText(text).then(function() {
+      var btn = document.getElementById('copy-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy prompt'; }, 2000);
+    });
+  });
+</script>
+{% endblock %}

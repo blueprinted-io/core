@@ -37,7 +37,12 @@ ROLE_ORDER: dict[str, int] = {
 # ---------------------------------------------------------------------------
 
 def _is_public_path(path: str) -> bool:
-    return path.startswith("/static/") or path.startswith("/avatar/") or path in ("/login", "/login/demo", "/login/password", "/logout", "/db/pick")
+    return (
+        path.startswith("/static/")
+        or path.startswith("/avatar/")
+        or path.startswith("/api/present/")  # token-authenticated; no session needed
+        or path in ("/login", "/login/demo", "/login/password", "/logout", "/db/pick")
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -907,3 +907,88 @@ def workflow_export_md(record_id: str, version: int):
         media_type="text/markdown",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+@router.get("/api/present/{token_id}")
+def present_fetch(token_id: str):
+    """Public endpoint — authenticated by the one-time token, no session required."""
+    with db() as conn:
+        tok = conn.execute(
+            "SELECT * FROM presentation_tokens WHERE id=?", (token_id,)
+        ).fetchone()
+        if not tok:
+            raise HTTPException(status_code=404, detail="Token not found")
+
+        now_iso = utc_now_iso()
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+        exp_dt = datetime.fromisoformat(tok["expires_at"].replace("Z", "+00:00"))
+        if now_dt > exp_dt:
+            raise HTTPException(status_code=410, detail="Token expired")
+        if tok["consumed_at"]:
+            raise HTTPException(status_code=410, detail="Token already used")
+
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?",
+            (tok["workflow_record_id"], tok["workflow_version"]),
+        ).fetchone()
+        if not wf:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
+        refs = conn.execute(
+            "SELECT task_record_id, task_version, order_index "
+            "FROM workflow_task_refs WHERE workflow_record_id=? AND workflow_version=? "
+            "ORDER BY order_index",
+            (tok["workflow_record_id"], tok["workflow_version"]),
+        ).fetchall()
+        tasks = []
+        for ref in refs:
+            t = conn.execute(
+                "SELECT record_id, version, title, outcome, steps_json, domain "
+                "FROM tasks WHERE record_id=? AND version=?",
+                (ref["task_record_id"], ref["task_version"]),
+            ).fetchone()
+            if t:
+                tasks.append({
+                    "order_index": ref["order_index"],
+                    "record_id": t["record_id"],
+                    "version": int(t["version"]),
+                    "title": t["title"],
+                    "outcome": t["outcome"],
+                    "domain": t["domain"],
+                    "steps": _json_load(t["steps_json"] or "[]") or [],
+                })
+
+        primer_rows = conn.execute(
+            _PRIMER_ATTACH_QUERY, (tok["workflow_record_id"],)
+        ).fetchall()
+        primers = [
+            {
+                "record_id": p["record_id"],
+                "version": int(p["version"]),
+                "title": p["title"],
+                "summary": p["summary"],
+                "explanation": p["explanation"],
+                "analogies": p["analogies"],
+            }
+            for p in primer_rows
+        ]
+
+        conn.execute(
+            "UPDATE presentation_tokens SET consumed_at=? WHERE id=?",
+            (now_iso, token_id),
+        )
+        audit("presentation_token", token_id, 1, "consume", "anon", conn=conn)
+
+    return {
+        "workflow": {
+            "record_id": wf["record_id"],
+            "version": int(wf["version"]),
+            "title": wf["title"],
+            "objective": wf["objective"],
+            "domains": _normalize_domains(wf["domains_json"]),
+            "tags": _json_load(wf["tags_json"] or "[]") or [],
+        },
+        "tasks": tasks,
+        "primers": primers,
+        "meta": {"generated_at": now_iso, "expires_at": tok["expires_at"]},
+    }

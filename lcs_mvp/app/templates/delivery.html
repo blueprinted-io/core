@@ -71,6 +71,25 @@
   </form>
 </div>
 
+<div class="card stack-sm">
+  <div class="section-header">Generate presentation prompt</div>
+  <p class="muted">Creates a one-time fetch link (valid 10 minutes) and a ready-to-paste LLM prompt. Paste it into Claude, ChatGPT, or Gemini to generate a slide deck — no expensive APIs required.</p>
+  <form method="post" action="/delivery/present" class="stack-sm">
+    <div>
+      <label>Workflow (confirmed only)</label>
+      <select name="workflow_key" required>
+        <option value="" selected disabled>Select a workflow…</option>
+        {% for w in workflows %}
+          <option value="{{ w.record_id }}@{{ w.version }}">{{ w.title }} (v{{ w.version }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="actions-bar" style="margin-top:4px">
+      <button class="btn" type="submit">Generate prompt</button>
+    </div>
+  </form>
+</div>
+
 {% if not workflows %}
   <div class="card">
     <h2>No confirmed workflows found</h2>

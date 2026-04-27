@@ -420,6 +420,16 @@ def init_db_path(db_path: str) -> None:
               FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS presentation_tokens (
+              id                 TEXT PRIMARY KEY,
+              workflow_record_id TEXT NOT NULL,
+              workflow_version   INTEGER NOT NULL,
+              created_by         TEXT NOT NULL,
+              created_at         TEXT NOT NULL,
+              expires_at         TEXT NOT NULL,
+              consumed_at        TEXT
+            );
+
             -- Domains (admin-managed registry) + per-user domain entitlements
             CREATE TABLE IF NOT EXISTS domains (
               name TEXT PRIMARY KEY,

@@ -455,6 +455,76 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
     raise HTTPException(status_code=409, detail=f"Modality '{mod}' is not operational yet")
 
 
+@router.post("/delivery/present")
+def delivery_present_generate(request: Request, workflow_key: str = Form("")):
+    require(request.state.role, "delivery:export")
+    actor = request.state.user
+
+    wk = (workflow_key or "").strip()
+    if "@" not in wk:
+        raise HTTPException(status_code=400, detail="workflow_key required")
+    rid, ver_s = wk.split("@", 1)
+    try:
+        ver = int(ver_s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid workflow version")
+
+    import datetime as _dt
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT record_id FROM workflows WHERE record_id=? AND version=? AND status='confirmed'",
+            (rid, ver),
+        ).fetchone()
+        if not wf:
+            raise HTTPException(status_code=404, detail="Workflow not found or not confirmed")
+
+        token_id = str(uuid.uuid4())
+        now = utc_now_iso()
+        expires = (
+            _dt.datetime.fromisoformat(now.replace("Z", "+00:00"))
+            + _dt.timedelta(minutes=10)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        conn.execute(
+            "INSERT INTO presentation_tokens (id, workflow_record_id, workflow_version, created_by, created_at, expires_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (token_id, rid, ver, actor, now, expires),
+        )
+        audit("presentation_token", token_id, 1, "create", actor,
+              note=f"workflow={rid}@{ver}", conn=conn)
+
+    return RedirectResponse(url=f"/delivery/present/{token_id}", status_code=303)
+
+
+@router.get("/delivery/present/{token_id}", response_class=HTMLResponse)
+def delivery_present_page(request: Request, token_id: str):
+    require(request.state.role, "delivery:view")
+
+    with db() as conn:
+        tok = conn.execute(
+            "SELECT * FROM presentation_tokens WHERE id=?", (token_id,)
+        ).fetchone()
+        if not tok:
+            raise HTTPException(status_code=404)
+        wf = conn.execute(
+            "SELECT title FROM workflows WHERE record_id=? AND version=?",
+            (tok["workflow_record_id"], tok["workflow_version"]),
+        ).fetchone()
+
+    base_url = str(request.base_url).rstrip("/")
+    fetch_url = f"{base_url}/api/present/{token_id}"
+
+    return templates.TemplateResponse(
+        request,
+        "delivery_present.html",
+        {
+            "token": dict(tok),
+            "workflow_title": wf["title"] if wf else tok["workflow_record_id"],
+            "fetch_url": fetch_url,
+        },
+    )
+
+
 @router.get("/assessments/new", response_class=HTMLResponse)
 def assessment_new_form(
     request: Request,
