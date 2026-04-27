@@ -457,7 +457,7 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
 
 @router.post("/delivery/present")
 def delivery_present_generate(request: Request, workflow_key: str = Form("")):
-    require(request.state.role, "delivery:export")
+    require(request.state.role, "delivery:view")
     actor = request.state.user
 
     wk = (workflow_key or "").strip()
@@ -511,8 +511,9 @@ def delivery_present_page(request: Request, token_id: str):
             (tok["workflow_record_id"], tok["workflow_version"]),
         ).fetchone()
 
-    base_url = str(request.base_url).rstrip("/")
-    fetch_url = f"{base_url}/api/present/{token_id}"
+    host = request.headers.get("host") or str(request.base_url).rstrip("/")
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    fetch_url = f"{scheme}://{host}/api/present/{token_id}"
 
     return templates.TemplateResponse(
         request,

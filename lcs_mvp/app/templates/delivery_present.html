@@ -9,11 +9,17 @@
 
 <div class="card" style="margin-bottom:16px">
   <div class="section-header">Instructions</div>
-  <p>Copy the prompt below and paste it into any LLM (Claude, ChatGPT, Gemini). The LLM will fetch the workflow content and build a slide deck.</p>
+  <p>Copy the prompt below and paste it into any LLM that can make HTTP requests (Claude with tools, ChatGPT with browsing, etc.). The LLM will fetch the workflow content and build a slide deck.</p>
   <p class="muted" style="margin-top:8px">
-    <strong>This link is single-use and expires at {{ token.expires_at }}.</strong>
-    Copy and use the prompt before it expires — the link burns on first access.
+    <strong>Single-use link · expires {{ token.expires_at }}</strong> — the link burns on first access.
   </p>
+  <div style="margin-top:12px">
+    <label style="font-size:0.85em;font-weight:600">Fetch URL (test in browser first to confirm it's reachable)</label>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+      <input id="fetch-url-input" type="text" readonly value="{{ fetch_url }}" style="flex:1;font-family:monospace;font-size:0.8em" />
+      <button class="btn secondary" type="button" id="copy-url-btn" style="white-space:nowrap;flex-shrink:0">Copy URL</button>
+    </div>
+  </div>
 </div>
 
 <div class="card">
@@ -55,13 +61,16 @@ Important: The fetch URL above is single-use and expires in 10 minutes. Make the
 </div>
 
 <script>
-  document.getElementById('copy-btn').addEventListener('click', function() {
-    var text = document.getElementById('prompt-text').value;
+  function copyText(sourceId, btnId, label) {
+    var el = document.getElementById(sourceId);
+    var text = el.tagName === 'INPUT' ? el.value : el.value;
     navigator.clipboard.writeText(text).then(function() {
-      var btn = document.getElementById('copy-btn');
+      var btn = document.getElementById(btnId);
       btn.textContent = 'Copied!';
-      setTimeout(function() { btn.textContent = 'Copy prompt'; }, 2000);
+      setTimeout(function() { btn.textContent = label; }, 2000);
     });
-  });
+  }
+  document.getElementById('copy-btn').addEventListener('click', function() { copyText('prompt-text', 'copy-btn', 'Copy prompt'); });
+  document.getElementById('copy-url-btn').addEventListener('click', function() { copyText('fetch-url-input', 'copy-url-btn', 'Copy URL'); });
 </script>
 {% endblock %}
