@@ -9,35 +9,21 @@
 
 <div class="card" style="margin-bottom:16px">
   <div class="section-header">Instructions</div>
-  <p>Copy the prompt below and paste it into any LLM that can make HTTP requests (Claude with tools, ChatGPT with browsing, etc.). The LLM will fetch the workflow content and build a slide deck.</p>
-  <p class="muted" style="margin-top:8px">
-    <strong>Single-use link · expires {{ token.expires_at }}</strong> — the link burns on first access.
-  </p>
-  <div style="margin-top:12px">
-    <label style="font-size:0.85em;font-weight:600">Fetch URL (test in browser first to confirm it's reachable)</label>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
-      <input id="fetch-url-input" type="text" readonly value="{{ fetch_url }}" style="flex:1;font-family:monospace;font-size:0.8em" />
-      <button class="btn secondary" type="button" id="copy-url-btn" style="white-space:nowrap;flex-shrink:0">Copy URL</button>
-    </div>
-  </div>
+  <p>Copy the prompt below and paste it into any LLM (Claude, ChatGPT, Gemini). The workflow content is embedded directly — no fetch required.</p>
+  <p class="muted" style="margin-top:8px">The fetch URL below is preserved for future automated use but is not needed for copy-paste workflows.</p>
 </div>
 
-<div class="card">
+<div class="card" style="margin-bottom:16px">
   <div class="section-header" style="display:flex;justify-content:space-between;align-items:center">
     <span>Prompt</span>
-    <button class="btn secondary" id="copy-btn" type="button">Copy prompt</button>
+    <button class="btn" id="copy-btn" type="button">Copy prompt</button>
   </div>
-  <textarea id="prompt-text" readonly style="width:100%;min-height:320px;font-family:monospace;font-size:0.85em;resize:vertical;margin-top:8px;box-sizing:border-box">You are a presentation design assistant. I need you to build a slide deck for a workplace learning workflow.
+  <textarea id="prompt-text" readonly style="width:100%;min-height:400px;font-family:monospace;font-size:0.85em;resize:vertical;margin-top:8px;box-sizing:border-box">You are a presentation design assistant. I need you to build a slide deck for a workplace learning workflow.
 
-Step 1 — Fetch the content:
-Make a GET request to: {{ fetch_url }}
+Here is the workflow content in JSON format:
+{{ content_json }}
 
-This returns JSON with the following structure:
-- workflow: title, objective, domains, tags
-- primers: pre-reading material (title, summary, explanation, analogies)
-- tasks: ordered list — each has a title, outcome, and steps array
-
-Step 2 — Build the slide deck using this structure:
+Build the slide deck using this structure:
 1. Title slide — workflow title + one-sentence objective
 2. Pre-reading section — one slide per primer (title as heading, summary as body, key points from explanation as bullets). Skip this section if primers is empty.
 3. Task slides — one slide per task:
@@ -46,25 +32,33 @@ Step 2 — Build the slide deck using this structure:
    • Speaker note: task outcome (what the learner will be able to do after this task)
 4. Summary slide — 3–5 key takeaways from the workflow
 
-Step 3 — Output each slide as:
+Output each slide as:
 ---
 ## [Slide title]
 [Body content]
 **Speaker note:** [note text]
----
-
-Important: The fetch URL above is single-use and expires in 10 minutes. Make the GET request before doing anything else.</textarea>
+---</textarea>
 </div>
 
-<div style="margin-top:16px">
+<details style="margin-bottom:16px">
+  <summary style="cursor:pointer;font-size:0.9em;color:var(--muted)">Fetch URL (for automated agent use)</summary>
+  <div class="card" style="margin-top:8px">
+    <p class="muted" style="font-size:0.85em;margin-bottom:8px">Single-use · expires {{ token.expires_at }}. For LLMs or agents that can make outbound HTTP requests.</p>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="fetch-url-input" type="text" readonly value="{{ fetch_url }}" style="flex:1;font-family:monospace;font-size:0.8em" />
+      <button class="btn secondary" type="button" id="copy-url-btn" style="white-space:nowrap;flex-shrink:0">Copy URL</button>
+    </div>
+  </div>
+</details>
+
+<div>
   <a class="btn secondary" href="/delivery">← Back to Delivery</a>
 </div>
 
 <script>
   function copyText(sourceId, btnId, label) {
     var el = document.getElementById(sourceId);
-    var text = el.tagName === 'INPUT' ? el.value : el.value;
-    navigator.clipboard.writeText(text).then(function() {
+    navigator.clipboard.writeText(el.value).then(function() {
       var btn = document.getElementById(btnId);
       btn.textContent = 'Copied!';
       setTimeout(function() { btn.textContent = label; }, 2000);

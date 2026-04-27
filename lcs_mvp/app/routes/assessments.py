@@ -8,12 +8,15 @@ from typing import Any
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+import json
+
 from ..config import templates
 from ..database import db, utc_now_iso, _active_domains, _user_has_domain, _workflow_domains
 from ..audit import audit, _normalize_domains, _fetch_return_note, get_latest_version
 from ..linting import _normalize_steps
 from ..auth import require
 from ..utils import _json_dump, _json_load
+from .exports import _build_presentation_payload
 
 router = APIRouter()
 
@@ -506,10 +509,7 @@ def delivery_present_page(request: Request, token_id: str):
         ).fetchone()
         if not tok:
             raise HTTPException(status_code=404)
-        wf = conn.execute(
-            "SELECT title FROM workflows WHERE record_id=? AND version=?",
-            (tok["workflow_record_id"], tok["workflow_version"]),
-        ).fetchone()
+        payload = _build_presentation_payload(conn, tok["workflow_record_id"], tok["workflow_version"])
 
     host = request.headers.get("host") or str(request.base_url).rstrip("/")
     scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
@@ -520,8 +520,9 @@ def delivery_present_page(request: Request, token_id: str):
         "delivery_present.html",
         {
             "token": dict(tok),
-            "workflow_title": wf["title"] if wf else tok["workflow_record_id"],
+            "workflow_title": payload["workflow"]["title"],
             "fetch_url": fetch_url,
+            "content_json": json.dumps(payload, indent=2),
         },
     )
 
