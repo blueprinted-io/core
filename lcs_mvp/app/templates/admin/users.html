@@ -7,7 +7,7 @@
 {% set temp_pw = request.query_params.get('temp_pw') %}
 
 {% if created and temp_pw %}
-  <div class="callout" style="border-left:4px solid #14532d; margin-bottom:16px">
+  <div class="callout" style="border-left:4px solid var(--ok); margin-bottom:16px">
     <b>User <code>{{ created }}</code> created.</b>
     <div style="margin-top:8px">Temporary password — share this with the user and ask them to change it after first login. <b>It will not be shown again.</b></div>
     <div style="margin-top:10px; display:flex; align-items:center; gap:10px">
@@ -29,7 +29,7 @@
 {% endif %}
 
 {% if error %}
-  <div class="card" style="border-left:4px solid #b91c1c; margin-bottom:16px">
+  <div class="card" style="border-left:4px solid var(--danger); margin-bottom:16px">
     <b>Error</b>
     <div class="muted">{{ error }}</div>
   </div>
@@ -84,9 +84,9 @@
         </td>
         <td>
           {% if u.disabled_at %}
-            <span class="badge" style="background:#3f3f46;color:#fff;border-color:rgba(255,255,255,.12)">disabled</span>
+            <span class="badge badge-deprecated">disabled</span>
           {% else %}
-            <span class="badge" style="background:#14532d;color:#fff;border-color:rgba(255,255,255,.18)">active</span>
+            <span class="badge badge-confirmed">active</span>
           {% endif %}
         </td>
         <td>

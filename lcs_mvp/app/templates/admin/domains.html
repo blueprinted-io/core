@@ -4,7 +4,7 @@
 <p class="muted">Admin-managed domain registry. Domains gate author submission and reviewer confirmation.</p>
 
 {% if error %}
-  <div class="card" style="border-left:4px solid #b91c1c">
+  <div class="card" style="border-left:4px solid var(--danger)">
     <b>Error</b>
     <div class="muted">{{ error }}</div>
   </div>
@@ -40,9 +40,9 @@
         <td><code>{{ d.name }}</code></td>
         <td>
           {% if d.disabled_at %}
-            <span class="badge" style="background:#3f3f46">disabled</span>
+            <span class="badge badge-deprecated">disabled</span>
           {% else %}
-            <span class="badge" style="background:#14532d">active</span>
+            <span class="badge badge-confirmed">active</span>
           {% endif %}
         </td>
         <td>
