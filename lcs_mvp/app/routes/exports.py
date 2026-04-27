@@ -133,7 +133,20 @@ def _task_export_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _workflow_export_dict(wf_row: sqlite3.Row, refs_rows: list[sqlite3.Row]) -> dict[str, Any]:
+_PRIMER_ATTACH_QUERY = """
+    SELECT p.record_id, p.title, p.summary, p.explanation, p.analogies, p.levels_json, p.version
+    FROM workflow_primer_refs wpr
+    JOIN primers p ON p.record_id = wpr.primer_record_id
+    WHERE wpr.workflow_record_id = ?
+      AND p.version = (
+        SELECT MAX(p2.version) FROM primers p2
+        WHERE p2.record_id = p.record_id AND p2.status = 'confirmed'
+      )
+    ORDER BY p.title
+"""
+
+
+def _workflow_export_dict(wf_row: sqlite3.Row, refs_rows: list[sqlite3.Row], primer_rows: list[sqlite3.Row] | None = None) -> dict[str, Any]:
     wf = dict(wf_row)
     return {
         "type": "workflow",
@@ -149,6 +162,17 @@ def _workflow_export_dict(wf_row: sqlite3.Row, refs_rows: list[sqlite3.Row]) -> 
                 "version": int(r["task_version"]),
             }
             for r in refs_rows
+        ],
+        "primers": [
+            {
+                "record_id": p["record_id"],
+                "version": int(p["version"]),
+                "title": p["title"],
+                "summary": p["summary"],
+                "explanation": p["explanation"],
+                "analogies": p["analogies"],
+            }
+            for p in (primer_rows or [])
         ],
         "needs_review_flag": bool(wf["needs_review_flag"]),
         "needs_review_note": wf["needs_review_note"],
@@ -282,6 +306,21 @@ def export_download(request: Request, export_id: str):
     )
 
 
+def _primers_html(primer_rows: list, esc_fn: Any) -> str:
+    if not primer_rows:
+        return ""
+    parts = ["<h2>Pre-reading</h2>"]
+    for p in primer_rows:
+        parts.append(f"<h3>{esc_fn(str(p['title']))}</h3>")
+        if p["summary"]:
+            parts.append(f"<p><em>{esc_fn(str(p['summary']))}</em></p>")
+        if p["explanation"]:
+            parts.append(f"<p>{esc_fn(str(p['explanation']))}</p>")
+        if p["analogies"]:
+            parts.append(f"<p><strong>Analogy:</strong> {esc_fn(str(p['analogies']))}</p>")
+    return "\n".join(parts)
+
+
 @router.get("/workflows/{record_id}/{version}/export.html")
 def workflow_export_html(record_id: str, version: int):
     """Export a confirmed workflow as a standalone, print-friendly HTML file."""
@@ -312,6 +351,8 @@ def workflow_export_html(record_id: str, version: int):
         )
         if readiness != "ready":
             raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
+
+        primer_rows = conn.execute(_PRIMER_ATTACH_QUERY, (record_id,)).fetchall()
 
     def _esc(s: str) -> str:
         return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -380,6 +421,7 @@ def workflow_export_html(record_id: str, version: int):
 <body>
 <h1>{_esc(str(wf['title']))}</h1>
 <p><strong>Objective:</strong> {_esc(str(wf['objective']))}</p>
+{_primers_html(primer_rows, _esc)}
 <h2>Task Overview</h2>
 <ol>{"".join(f"<li>{_esc(str(r['title']))}</li>" for r in refs)}</ol>
 {"".join(tasks_html)}
@@ -599,7 +641,9 @@ def export_workflow_json(record_id: str, version: int):
         if readiness != "ready":
             raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
 
-    payload = _workflow_export_dict(wf, refs)
+        primers = conn.execute(_PRIMER_ATTACH_QUERY, (record_id,)).fetchall()
+
+    payload = _workflow_export_dict(wf, refs, primers)
     filename = f"workflow__{record_id}__v{version}.json"
     return JSONResponse(
         content=payload,
@@ -641,6 +685,8 @@ def workflow_export_docx(request: Request, record_id: str, version: int):
         if readiness != "ready":
             raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
 
+        primer_rows = conn.execute(_PRIMER_ATTACH_QUERY, (record_id,)).fetchall()
+
         tasks: list[dict[str, Any]] = []
         for r in ref_rows:
             t = conn.execute(
@@ -665,6 +711,17 @@ def workflow_export_docx(request: Request, record_id: str, version: int):
 
         doc.add_heading(str(wf["title"]), level=1)
         doc.add_paragraph(str(wf["objective"])).style = doc.styles["Normal"]
+
+        if primer_rows:
+            doc.add_heading("Pre-reading", level=2)
+            for p in primer_rows:
+                doc.add_heading(str(p["title"]), level=3)
+                if p["summary"]:
+                    doc.add_paragraph(str(p["summary"])).style = doc.styles["Normal"]
+                if p["explanation"]:
+                    doc.add_paragraph(str(p["explanation"])).style = doc.styles["Normal"]
+                if p["analogies"]:
+                    doc.add_paragraph(f"Analogy: {p['analogies']}").style = doc.styles["Normal"]
 
         doc.add_heading("Tasks", level=2)
         for t in tasks:
@@ -767,12 +824,30 @@ def workflow_export_md(record_id: str, version: int):
         if readiness != "ready":
             raise HTTPException(status_code=409, detail="Export is allowed only when all referenced Task versions are confirmed")
 
+        primer_rows = conn.execute(_PRIMER_ATTACH_QUERY, (record_id,)).fetchall()
+
     lines: list[str] = []
     lines.append(f"# {wf['title']}")
     lines.append("")
 
     lines.append(f"**Objective:** {wf['objective']}")
     lines.append("")
+
+    if primer_rows:
+        lines.append("## Pre-reading")
+        lines.append("")
+        for p in primer_rows:
+            lines.append(f"### {p['title']}")
+            lines.append("")
+            if p["summary"]:
+                lines.append(f"_{p['summary']}_")
+                lines.append("")
+            if p["explanation"]:
+                lines.append(str(p["explanation"]))
+                lines.append("")
+            if p["analogies"]:
+                lines.append(f"**Analogy:** {p['analogies']}")
+                lines.append("")
 
     for r in refs:
         steps = _normalize_steps(_json_load(r["steps_json"]))
