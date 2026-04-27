@@ -235,10 +235,14 @@ def workflow_create(
                 (record_id, version, idx, rid, ver),
             )
         for pid in primer_ids:
-            conn.execute(
-                "INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by) VALUES (?,?,?,?)",
-                (record_id, pid, now, actor),
-            )
+            confirmed = conn.execute(
+                "SELECT record_id FROM primers WHERE record_id=? AND status='confirmed' LIMIT 1", (pid,)
+            ).fetchone()
+            if confirmed:
+                conn.execute(
+                    "INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by) VALUES (?,?,?,?)",
+                    (record_id, pid, now, actor),
+                )
 
     audit("workflow", record_id, version, "create", actor)
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
@@ -437,6 +441,7 @@ def workflow_revise(
     meta: str = Form(""),
     task_refs: str = Form(""),
     change_note: str = Form(""),
+    primer_ids: list[str] = Form([]),
 ):
     require(request.state.role, "workflow:revise")
     actor = request.state.user
@@ -457,6 +462,16 @@ def workflow_revise(
             raise HTTPException(404)
 
         enforce_workflow_ref_rules(conn, refs)
+
+        # Validate primer_ids — each must have a confirmed version
+        valid_primer_ids: list[str] = []
+        for pid in primer_ids:
+            confirmed = conn.execute(
+                "SELECT record_id FROM primers WHERE record_id=? AND status='confirmed' LIMIT 1",
+                (pid,),
+            ).fetchone()
+            if confirmed:
+                valid_primer_ids.append(pid)
 
         latest_v = get_latest_version(conn, "workflows", record_id) or version
         new_v = latest_v + 1
@@ -502,6 +517,14 @@ def workflow_revise(
                 VALUES (?,?,?,?,?)
                 """,
                 (record_id, new_v, idx, rid, ver),
+            )
+
+        # Sync primer refs: replace all existing refs with the new selection
+        conn.execute("DELETE FROM workflow_primer_refs WHERE workflow_record_id=?", (record_id,))
+        for pid in valid_primer_ids:
+            conn.execute(
+                "INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by) VALUES (?,?,?,?)",
+                (record_id, pid, now, actor),
             )
 
     audit("workflow", record_id, new_v, "new_version", actor, note=f"from v{version}: {note}")
@@ -726,53 +749,6 @@ def workflow_retire(request: Request, record_id: str, version: int, note: str = 
     return RedirectResponse(url=f"/workflows/{record_id}/{version}", status_code=303)
 
 
-@router.post("/workflows/{record_id}/primers/attach")
-def workflow_attach_primer(request: Request, record_id: str, primer_record_id: str = Form(...)):
-    require(request.state.role, "workflow:revise")
-    actor = request.state.user
-    with db() as conn:
-        wf = conn.execute(
-            "SELECT record_id FROM workflows WHERE record_id=? LIMIT 1", (record_id,)
-        ).fetchone()
-        if not wf:
-            raise HTTPException(404)
-        # Primer must have a confirmed version
-        confirmed = conn.execute(
-            "SELECT record_id FROM primers WHERE record_id=? AND status='confirmed' LIMIT 1",
-            (primer_record_id,),
-        ).fetchone()
-        if not confirmed:
-            raise HTTPException(status_code=400, detail="Primer must be confirmed before attaching to a workflow")
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO workflow_primer_refs(workflow_record_id, primer_record_id, attached_at, attached_by)
-            VALUES (?,?,?,?)
-            """,
-            (record_id, primer_record_id, utc_now_iso(), actor),
-        )
-    # Redirect back to the latest version of the workflow
-    with db() as conn:
-        latest = conn.execute(
-            "SELECT MAX(version) AS v FROM workflows WHERE record_id=?", (record_id,)
-        ).fetchone()
-    latest_v = int(latest["v"]) if latest and latest["v"] else 1
-    return RedirectResponse(url=f"/workflows/{record_id}/{latest_v}", status_code=303)
-
-
-@router.post("/workflows/{record_id}/primers/detach")
-def workflow_detach_primer(request: Request, record_id: str, primer_record_id: str = Form(...)):
-    require(request.state.role, "workflow:revise")
-    with db() as conn:
-        conn.execute(
-            "DELETE FROM workflow_primer_refs WHERE workflow_record_id=? AND primer_record_id=?",
-            (record_id, primer_record_id),
-        )
-    with db() as conn:
-        latest = conn.execute(
-            "SELECT MAX(version) AS v FROM workflows WHERE record_id=?", (record_id,)
-        ).fetchone()
-    latest_v = int(latest["v"]) if latest and latest["v"] else 1
-    return RedirectResponse(url=f"/workflows/{record_id}/{latest_v}", status_code=303)
 
 
 @router.post("/workflows/{record_id}/delete")
