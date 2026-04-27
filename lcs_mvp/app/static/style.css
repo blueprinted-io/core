@@ -819,17 +819,26 @@ body.spa-v1 .spider-svg{
   max-height:360px;
   color:color-mix(in oklab, var(--muted) 70%, var(--ink));
 }
+body.spa-v1 .spider-svg text{
+  fill:currentColor;
+}
 body.spa-v1 .spider-shape{
-  fill:rgba(239,68,68,.16);
-  stroke:#dc2626;
+  fill:color-mix(in oklab, var(--danger) 14%, transparent);
+  stroke:var(--danger);
   stroke-width:1.4;
+}
+body.spa-v1 .spider-dot{
+  fill:var(--muted);
+}
+body.spa-v1 .spider-dot.focus{
+  fill:var(--danger);
 }
 body.spa-v1 .spider-label{
   font-size:10px;
   font-weight:600;
 }
 body.spa-v1 .spider-label.focus{
-  fill:#b91c1c;
+  fill:var(--danger);
   font-weight:800;
 }
 body.spa-v1 .spider-focus{

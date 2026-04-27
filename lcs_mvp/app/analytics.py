@@ -384,7 +384,6 @@ def _viz_domain_spider(trend_series: list[dict[str, Any]]) -> dict[str, Any]:
             anchor = "middle"
         dname = str(s["domain"])
         focus = health < 85.0
-        point_color = "#dc2626" if focus else "#6b7280"
         spider_pts.append(f"{value_x:.2f},{value_y:.2f}")
         spider_axes.append(
             {
@@ -398,7 +397,6 @@ def _viz_domain_spider(trend_series: list[dict[str, Any]]) -> dict[str, Any]:
                 "label_y": round(label_y, 2),
                 "anchor": anchor,
                 "focus": focus,
-                "color": point_color,
             }
         )
     spider_rings = []

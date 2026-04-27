@@ -77,7 +77,7 @@
           <polygon points="{{ spider.polygon }}" class="spider-shape"></polygon>
         {% endif %}
         {% for a in spider.axes %}
-          <circle cx="{{ a.point_x }}" cy="{{ a.point_y }}" r="{% if a.focus %}4.5{% else %}3.2{% endif %}" fill="{{ a.color }}" />
+          <circle cx="{{ a.point_x }}" cy="{{ a.point_y }}" r="{% if a.focus %}4.5{% else %}3.2{% endif %}" class="spider-dot{% if a.focus %} focus{% endif %}" />
         {% endfor %}
         {% for a in spider.axes %}
           <text x="{{ a.label_x }}" y="{{ a.label_y }}" text-anchor="{{ a.anchor }}" class="spider-label {% if a.focus %}focus{% else %}muted{% endif %}">
