@@ -356,10 +356,10 @@ def _viz_domain_spider(trend_series: list[dict[str, Any]]) -> dict[str, Any]:
     spider_cy = 150.0
     spider_r = 108.0
     spider_inner_r = spider_r / 5.0  # first ring = 100% health
-    spider_source = sorted(
-        [{"domain": str(s["domain"]), "current": float(s["current"])} for s in trend_series],
-        key=lambda x: str(x["domain"]),
-    )
+    import random as _random
+    spider_source = [{"domain": str(s["domain"]), "current": float(s["current"])} for s in trend_series]
+    _seed = hash(tuple(sorted(x["domain"] for x in spider_source)))
+    _random.Random(_seed).shuffle(spider_source)
     spider_axes: list[dict[str, Any]] = []
     spider_pts: list[str] = []
     axis_count = len(spider_source)
