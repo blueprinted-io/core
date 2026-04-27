@@ -39,26 +39,22 @@
   </div>
   <p class="muted" style="margin-top:6px;font-size:13px">Click a task on the left to add it. Use ↑↓ to reorder, ✕ to remove.</p>
 
-  <div class="card stack-sm" style="margin-top:16px">
-    <h3 style="margin-top:0">Primers</h3>
-    <p class="muted" style="font-size:13px;margin-top:0">Select confirmed primers to attach. Changes are saved as part of this form submission.</p>
-    {% if confirmed_primers %}
-      {% set attached_ids = (attached_primers | map(attribute='record_id') | list) if attached_primers is defined else [] %}
-      <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px">
-        {% for p in confirmed_primers %}
-        <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer">
-          <input type="checkbox" name="primer_ids" value="{{ p.record_id }}"
-            {% if p.record_id in attached_ids %}checked{% endif %} />
-          <b>{{ p.title }}</b>
-          {% if p.domain %}<code style="font-size:0.78em">{{ p.domain }}</code>{% endif %}
-          {% if p.summary %}<span class="muted" style="font-size:0.82em">— {{ p.summary }}</span>{% endif %}
-        </label>
-        {% endfor %}
+  <div id="primer-hidden-fields"></div>
+
+  <label style="margin-top:16px">Primers <span class="muted" style="font-weight:400;font-size:13px">— confirmed versions only</span></label>
+  <div class="task-picker" id="primer-picker">
+    <div class="task-picker-left">
+      <div class="task-picker-search-row">
+        <input type="text" id="primer-picker-search" placeholder="Search by title, domain or summary…" autocomplete="off" />
       </div>
-    {% else %}
-      <p class="muted" style="font-size:0.85em;margin-top:6px">No confirmed primers available yet.</p>
-    {% endif %}
+      <div class="task-picker-list" id="primer-picker-list"></div>
+    </div>
+    <div class="task-picker-right">
+      <div class="task-picker-right-header">Selected primers</div>
+      <div class="task-picker-selected" id="primer-picker-selected"></div>
+    </div>
   </div>
+  <p class="muted" style="margin-top:6px;font-size:13px">Click a primer on the left to add it. Click again or ✕ to remove.</p>
 
   <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
     <button class="btn" type="submit" id="submit-btn">{% if mode=='new' %}Create workflow{% else %}Create new version{% endif %}</button>
@@ -212,6 +208,103 @@
   }
 
   syncHidden(); renderList(); renderSelected();
+})();
+
+// Primer picker
+(function(){
+  var PRIMERS = {{ confirmed_primers_json | safe }};
+  var attachedIds = {{ attached_primer_ids_json | safe }};
+  var primerSelected = PRIMERS.filter(function(p){ return attachedIds.indexOf(p.record_id) >= 0; });
+
+  function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function syncHiddenPrimers(){
+    var container = document.getElementById('primer-hidden-fields');
+    container.innerHTML = '';
+    primerSelected.forEach(function(p){
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'primer_ids';
+      inp.value = p.record_id;
+      container.appendChild(inp);
+    });
+  }
+
+  function isPrimerSelected(rid){
+    return primerSelected.some(function(p){ return p.record_id === rid; });
+  }
+
+  function renderPrimerList(){
+    var q = (document.getElementById('primer-picker-search').value || '').toLowerCase().trim();
+    var list = document.getElementById('primer-picker-list');
+    list.innerHTML = '';
+    var shown = 0;
+    PRIMERS.forEach(function(p){
+      if (q && !((p.title||'').toLowerCase().indexOf(q) >= 0 ||
+                 (p.domain||'').toLowerCase().indexOf(q) >= 0 ||
+                 (p.summary||'').toLowerCase().indexOf(q) >= 0)) return;
+      shown++;
+      var div = document.createElement('div');
+      div.className = 'task-picker-item' + (isPrimerSelected(p.record_id) ? ' is-selected' : '');
+      div.innerHTML =
+        '<span class="task-picker-item-title">' + esc(p.title) + '</span>' +
+        '<span class="task-picker-item-meta">' + (p.domain ? esc(p.domain) + ' · ' : '') + (p.summary ? esc(p.summary.slice(0,80)) : '') + '</span>';
+      div.addEventListener('click', function(){
+        if (isPrimerSelected(p.record_id)){
+          primerSelected = primerSelected.filter(function(s){ return s.record_id !== p.record_id; });
+        } else {
+          primerSelected.push(p);
+        }
+        syncHiddenPrimers(); renderPrimerList(); renderPrimerSelected();
+      });
+      list.appendChild(div);
+    });
+    if (!shown){
+      var em = document.createElement('div');
+      em.className = 'task-picker-empty-msg';
+      em.textContent = PRIMERS.length === 0 ? 'No confirmed primers exist yet.' : 'No primers match "' + q + '".';
+      list.appendChild(em);
+    }
+  }
+
+  function renderPrimerSelected(){
+    var el = document.getElementById('primer-picker-selected');
+    el.innerHTML = '';
+    if (primerSelected.length === 0){
+      var p = document.createElement('div');
+      p.className = 'task-picker-empty-msg';
+      p.textContent = 'No primers selected. Click a primer on the left to attach it.';
+      el.appendChild(p);
+      return;
+    }
+    primerSelected.forEach(function(p){
+      var row = document.createElement('div');
+      row.className = 'task-picker-selected-row';
+
+      var text = document.createElement('span');
+      text.className = 'task-picker-selected-text';
+      text.innerHTML =
+        '<span class="task-picker-item-title">' + esc(p.title) + '</span>' +
+        '<span class="task-picker-item-meta">' + (p.domain ? esc(p.domain) : '') + '</span>';
+
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn secondary btn-xs';
+      removeBtn.title = 'Remove';
+      removeBtn.textContent = '✕';
+      (function(pid){ removeBtn.addEventListener('click', function(){
+        primerSelected = primerSelected.filter(function(s){ return s.record_id !== pid; });
+        syncHiddenPrimers(); renderPrimerList(); renderPrimerSelected();
+      }); })(p.record_id);
+
+      row.appendChild(text);
+      row.appendChild(removeBtn);
+      el.appendChild(row);
+    });
+  }
+
+  document.getElementById('primer-picker-search').addEventListener('input', renderPrimerList);
+  syncHiddenPrimers(); renderPrimerList(); renderPrimerSelected();
 })();
 </script>
 {% endblock %}

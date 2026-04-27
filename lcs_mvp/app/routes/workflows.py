@@ -161,13 +161,14 @@ def workflow_new_form(request: Request):
             ORDER BY p.title
             """
         ).fetchall()
+    confirmed_primers = [dict(r) for r in confirmed_primer_rows]
     return templates.TemplateResponse(
         request,
         "workflow_edit.html",
         {"mode": "new", "workflow": None,
          "confirmed_tasks_json": ct_json, "refs_text_json": json.dumps(""),
-         "confirmed_primers": [dict(r) for r in confirmed_primer_rows],
-         "attached_primers": []},
+         "confirmed_primers_json": json.dumps(confirmed_primers),
+         "attached_primer_ids_json": json.dumps([])},
     )
 
 
@@ -413,7 +414,7 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
             """,
             (record_id,),
         ).fetchall()
-        attached_primers = [dict(r) for r in attached_primer_rows]
+        attached_primer_ids = [r["record_id"] for r in attached_primer_rows]
 
     refs_text = "\n".join([f"{r['task_record_id']}@{r['task_version']}" for r in refs])
     return templates.TemplateResponse(
@@ -424,8 +425,8 @@ def workflow_revise_form(request: Request, record_id: str, version: int):
             "workflow": dict(wf),
             "confirmed_tasks_json": ct_json,
             "refs_text_json": json.dumps(refs_text),
-            "confirmed_primers": confirmed_primers,
-            "attached_primers": attached_primers,
+            "confirmed_primers_json": json.dumps(confirmed_primers),
+            "attached_primer_ids_json": json.dumps(attached_primer_ids),
         },
     )
 
