@@ -4,10 +4,6 @@
   <div>
     <h1>Assessments</h1>
     <div class="muted">Latest version of each assessment item.</div>
-    <div class="callout warn" style="margin-top:10px">
-      <b>Under construction</b>
-      <div class="muted" style="margin-top:6px">The assessment authoring UX is in active development. Expect rough edges.</div>
-    </div>
   </div>
   {% if can(request.state.role, 'assessment:create') %}
   <div>
@@ -84,6 +80,12 @@
 </table>
 
 {% if not items %}
-  <div class="card"><b>No assessments found</b></div>
+  <div class="card">
+    <b>No assessments found</b>
+    <p class="muted" style="margin-top:6px">Try adjusting the filters, or create a new assessment item to get started.</p>
+    {% if can(request.state.role, 'assessment:create') %}
+      <p style="margin-top:10px"><a class="btn" href="/assessments/new">New assessment</a></p>
+    {% endif %}
+  </div>
 {% endif %}
 {% endblock %}

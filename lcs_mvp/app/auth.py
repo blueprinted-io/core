@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
+from urllib.parse import urlparse
+
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,6 +14,15 @@ from .config import (
     DB_KEY_CTX, DB_PATH_CTX,
 )
 from .database import db, _selected_db_key, _db_path_for_key, _get_system_setting
+
+# Per-process CSRF secret. Used to derive a per-session CSRF token (HMAC).
+# Regenerated on restart — existing sessions get a new token automatically.
+_CSRF_SECRET: bytes = secrets.token_bytes(32)
+
+
+def make_csrf_token(session_token: str) -> str:
+    """Derive a CSRF token from the session token. Deterministic per process lifetime."""
+    return hmac.new(_CSRF_SECRET, session_token.encode(), hashlib.sha256).hexdigest()[:32]
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +55,7 @@ def _is_public_path(path: str) -> bool:
         path.startswith("/static/")
         or path.startswith("/avatar/")
         or path.startswith("/api/present/")  # token-authenticated; no session needed
-        or path in ("/login", "/login/demo", "/login/password", "/logout", "/db/pick")
+        or path in ("/login", "/login/demo", "/login/password", "/logout", "/db/pick", "/healthz")
     )
 
 
@@ -145,6 +159,12 @@ def _require_login(request: Request) -> bool:
     return not _is_public_path(str(request.url.path))
 
 
+# POST paths where CSRF checking is intentionally skipped.
+# /login/password: no session yet, nothing destructive to protect.
+# /api/*: JSON endpoints, intended for same-origin XHR or curl with explicit auth.
+_CSRF_EXEMPT: frozenset[str] = frozenset({"/login/password", "/logout"})
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # DB selection (cookie). Default to demo DB.
@@ -158,10 +178,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         request.state.user = ""
         request.state.role = DEFAULT_ROLE
         request.state.assessments_enabled = True  # safe default; overridden below
+        request.state.csrf_token = ""
 
         if _require_login(request):
-            token = (request.cookies.get(SESSION_COOKIE) or "").strip()
-            if token:
+            session_token = (request.cookies.get(SESSION_COOKIE) or "").strip()
+            if session_token:
                 with db() as conn:
                     row = conn.execute(
                         """
@@ -171,11 +192,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         WHERE s.token=? AND s.revoked_at IS NULL
                           AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
                         """,
-                        (token,),
+                        (session_token,),
                     ).fetchone()
                 if row:
                     request.state.user = str(row["username"])
                     request.state.role = str(row["role"])  # type: ignore[assignment]
+                    request.state.csrf_token = make_csrf_token(session_token)
 
             if not request.state.user:
                 accept = (request.headers.get("accept") or "").lower()
@@ -183,6 +205,20 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     return RedirectResponse(url="/login", status_code=303)
                 # Don't raise inside middleware (can produce noisy exception groups).
                 return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+        # CSRF: Origin/Referer check for state-changing requests.
+        # Primary defence is SameSite=Lax on the session cookie; this adds depth.
+        if request.method not in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            path = str(request.url.path)
+            if path not in _CSRF_EXEMPT and not path.startswith("/api/"):
+                host = request.headers.get("host", "")
+                origin = request.headers.get("origin", "")
+                referer = request.headers.get("referer", "")
+                check_header = origin or referer
+                if check_header:
+                    parsed_host = urlparse(check_header).netloc
+                    if parsed_host and parsed_host != host:
+                        return JSONResponse(status_code=403, content={"detail": "CSRF check failed"})
 
         # Load feature flags from DB (safe: defaults already set above)
         try:

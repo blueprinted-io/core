@@ -981,12 +981,17 @@ def task_upload_image(request: Request, record_id: str, image: UploadFile = File
 @router.get("/task-images/{record_id}/{filename}")
 def task_image(request: Request, record_id: str, filename: str):
     """Serve an extracted task image. Requires an authenticated session."""
+    from pathlib import Path as _Path
     if not request.state.user:
         raise HTTPException(status_code=401)
-    # Sanitise — only allow safe filenames (no path traversal)
-    if "/" in filename or "\\" in filename or ".." in filename:
+    base = _Path(TASK_IMAGES_DIR).resolve()
+    try:
+        img_path = (base / record_id / filename).resolve()
+    except (ValueError, OSError):
         raise HTTPException(status_code=400)
-    img_path = os.path.join(TASK_IMAGES_DIR, record_id, filename)
-    if not os.path.isfile(img_path):
+    # Guard against path traversal in either record_id or filename
+    if base not in img_path.parents:
+        raise HTTPException(status_code=400)
+    if not img_path.is_file():
         raise HTTPException(status_code=404)
-    return FileResponse(img_path)
+    return FileResponse(str(img_path))

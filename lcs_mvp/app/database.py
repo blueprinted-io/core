@@ -194,9 +194,10 @@ def _relink_avatars(conn: sqlite3.Connection) -> None:
             if f.is_file() and f.name.startswith(prefix)
         )
         if matches:
+            # Store relative to UPLOADS_DIR so paths survive a data directory move.
             conn.execute(
                 "UPDATE users SET avatar_path=? WHERE id=?",
-                (str(matches[-1].resolve()), int(row["id"])),
+                (str(matches[-1].relative_to(Path(UPLOADS_DIR))), int(row["id"])),
             )
 
 
@@ -674,7 +675,7 @@ def init_db_path(db_path: str) -> None:
         for _key, _default in [
             ("auth_mode", "demo"),
             ("auto_submit_on_import", "false"),
-            ("assessments_enabled", "true"),
+            ("assessments_enabled", "false"),
         ]:
             conn.execute(
                 "INSERT INTO system_settings(key, value, updated_at, updated_by) VALUES(?,?,?,?) "
@@ -756,7 +757,9 @@ def _backfill_workflow_domains(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "workflows", "domains_json"):
         return
 
-    rows = conn.execute("SELECT record_id, version, domains_json FROM workflows").fetchall()
+    rows = conn.execute(
+        "SELECT record_id, version, domains_json FROM workflows WHERE status != 'confirmed'"
+    ).fetchall()
     for r in rows:
         try:
             existing = (r["domains_json"] or "").strip()

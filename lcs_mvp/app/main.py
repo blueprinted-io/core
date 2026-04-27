@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import uuid as _uuid
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -80,6 +81,33 @@ async def _lifespan(application: FastAPI):
 
 
 app = FastAPI(title="Learning Content System MVP", lifespan=_lifespan)
+
+
+# ---------------------------------------------------------------------------
+# X-Request-ID middleware — stamps every request/response for log correlation
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def _request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or _uuid.uuid4().hex[:16]
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Health check — public, no auth required (added to _is_public_path in auth.py)
+# ---------------------------------------------------------------------------
+@app.get("/healthz")
+def healthz():
+    from .database import db as _db
+    try:
+        with _db() as conn:
+            conn.execute("SELECT 1").fetchone()
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {"status": "ok" if db_ok else "degraded", "db_ok": db_ok, "version": STATIC_ASSET_VERSION}
 
 
 _ERROR_COPY: dict[int, tuple[str, str]] = {

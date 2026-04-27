@@ -212,7 +212,9 @@ def _avatar_file_response(avatar_path: str, *, no_store: bool) -> FileResponse:
         return FileResponse(str(_DEFAULT_AVATAR), media_type="image/svg+xml")
 
     base = Path(UPLOADS_DIR).resolve()
-    f = Path(p)
+    raw = Path(p)
+    # Accept both legacy absolute paths and new relative paths (relative to UPLOADS_DIR).
+    f = raw if raw.is_absolute() else base / raw
     try:
         f_abs = f.resolve()
     except (ValueError, OSError):
@@ -296,7 +298,8 @@ def profile_save(
         if len(data) > 2_000_000:
             raise HTTPException(status_code=400, detail="Avatar too large (max 2MB)")
         out_path.write_bytes(data)
-        avatar_path = str(out_path)
+        # Store relative to UPLOADS_DIR so paths survive a data directory move.
+        avatar_path = str(out_path.relative_to(Path(UPLOADS_DIR)))
 
     with db() as conn:
         if avatar_path is None:
