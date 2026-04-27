@@ -428,7 +428,12 @@ def task_save(
         # Filter assets: keep non-image assets always; keep image assets only if
         # the user left them in the pool (kept_image) or assigned to a step.
         import json as _json
-        all_step_shots = [u for ssj in step_screenshots_json for u in (_json.loads(ssj or "[]") if ssj else []) if isinstance(u, str) and u]
+        def _parse_ssj(s: str) -> list:
+            try:
+                return _json.loads(s) if s else []
+            except _json.JSONDecodeError:
+                return []
+        all_step_shots = [u for ssj in step_screenshots_json for u in _parse_ssj(ssj) if isinstance(u, str) and u]
         kept_set = set(kept_image) | set(all_step_shots)
         src_assets = _json_load((src["task_assets_json"] if "task_assets_json" in src.keys() else None) or "[]") or []
         new_assets = [a for a in src_assets if a.get("type") != "image" or a.get("url") in kept_set]

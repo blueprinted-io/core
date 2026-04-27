@@ -161,7 +161,7 @@ def evaluate_achievements(
 
             # version_guardian: this record_id has a prior confirmed version
             if entity_type in ("task", "workflow", "assessment_items"):
-                table = entity_type if entity_type != "assessment_items" else "assessment_items"
+                table = {"task": "tasks", "workflow": "workflows"}.get(entity_type, entity_type)
                 prior_confirmed = conn.execute(
                     f"SELECT COUNT(*) AS c FROM {table}"
                     " WHERE record_id=? AND version<? AND status='confirmed'",

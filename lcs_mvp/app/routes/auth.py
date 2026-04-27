@@ -203,10 +203,13 @@ def profile_view(request: Request, msg: str | None = None):
     )
 
 
+_DEFAULT_AVATAR = Path(__file__).parent.parent / "static" / "default-avatar.svg"
+
+
 def _avatar_file_response(avatar_path: str, *, no_store: bool) -> FileResponse:
     p = str(avatar_path or "").strip()
     if not p:
-        raise HTTPException(status_code=404, detail="No avatar")
+        return FileResponse(str(_DEFAULT_AVATAR), media_type="image/svg+xml")
 
     base = Path(UPLOADS_DIR).resolve()
     f = Path(p)
@@ -218,7 +221,7 @@ def _avatar_file_response(avatar_path: str, *, no_store: bool) -> FileResponse:
     if base not in f_abs.parents:
         raise HTTPException(status_code=400, detail="Invalid avatar path")
     if not f_abs.exists():
-        raise HTTPException(status_code=404, detail="Avatar missing")
+        return FileResponse(str(_DEFAULT_AVATAR), media_type="image/svg+xml")
 
     mt = "application/octet-stream"
     low = f_abs.name.lower()
