@@ -297,6 +297,9 @@ def task_view(request: Request, record_id: str, version: int):
     assigned_urls = {url for s in task["steps"] for url in (s.get("screenshots") or [])}
     unassigned_images = len(image_urls - assigned_urls)
 
+    with db() as conn:
+        all_domains = _active_domains(conn)
+
     return templates.TemplateResponse(
         request,
         "task_view.html",
@@ -307,6 +310,7 @@ def task_view(request: Request, record_id: str, version: int):
             "workflows_using": workflows_using,
             "force_action": force_action,
             "unassigned_images": unassigned_images,
+            "all_domains": all_domains,
         },
     )
 
@@ -581,6 +585,70 @@ def task_submit(request: Request, record_id: str, version: int):
         )
     audit("task", record_id, version, "submit", actor)
     return RedirectResponse(url=f"/tasks/{record_id}/{version}", status_code=303)
+
+
+@router.post("/tasks/{record_id}/{version}/assign-domain")
+def task_assign_domain(
+    request: Request,
+    record_id: str,
+    version: int,
+    domain: str = Form(""),
+):
+    """Assign a domain to a domain-less draft, creating a new version, then submit it."""
+    require(request.state.role, "task:submit")
+    actor = request.state.user
+    domain_norm = domain.strip().lower()
+    if not domain_norm:
+        raise HTTPException(status_code=400, detail="Domain is required")
+
+    with db() as conn:
+        src = conn.execute(
+            "SELECT * FROM tasks WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not src:
+            raise HTTPException(404)
+        if src["status"] != "draft":
+            raise HTTPException(409, detail="Only draft tasks can have a domain assigned this way")
+        if (src["domain"] or "").strip():
+            raise HTTPException(409, detail="Task already has a domain — edit it directly to change")
+        all_domains = _active_domains(conn)
+        if domain_norm not in all_domains:
+            raise HTTPException(400, detail=f"Unknown domain '{domain_norm}'")
+        if not _user_has_domain(conn, actor, domain_norm):
+            raise HTTPException(403, detail=f"Forbidden: you are not authorized for domain '{domain_norm}'")
+
+        latest_v = get_latest_version(conn, "tasks", record_id) or version
+        new_v = latest_v + 1
+        now = utc_now_iso()
+
+        conn.execute(
+            """
+            INSERT INTO tasks(
+              record_id, version, status,
+              title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
+              irreversible_flag, task_assets_json,
+              domain, software_name, software_version,
+              tags_json, meta_json,
+              created_at, updated_at, created_by, updated_by,
+              reviewed_at, reviewed_by, change_note,
+              needs_review_flag, needs_review_note
+            ) SELECT
+              record_id, ?, 'submitted',
+              title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
+              irreversible_flag, task_assets_json,
+              ?, software_name, software_version,
+              tags_json, meta_json,
+              created_at, ?, created_by, ?,
+              NULL, NULL, 'domain added',
+              needs_review_flag, needs_review_note
+            FROM tasks WHERE record_id=? AND version=?
+            """,
+            (new_v, domain_norm, now, actor, record_id, version),
+        )
+
+    audit("task", record_id, new_v, "new_version", actor, note=f"from v{version}: domain added")
+    audit("task", record_id, new_v, "submit", actor)
+    return RedirectResponse(url=f"/tasks/{record_id}/{new_v}", status_code=303)
 
 
 @router.post("/tasks/{record_id}/{version}/force-submit")

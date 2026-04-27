@@ -35,7 +35,21 @@
     {% if task.status == 'draft' and not task.domain %}
       <div class="callout warn">
         <b>Domain not set</b>
-        <div style="margin-top:6px">This task cannot be submitted for review until a domain is selected. <a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and choose a domain.</div>
+        <div style="margin-top:6px">This task cannot be submitted until a domain is assigned.</div>
+        {% if can(request.state.role, 'task:submit') and all_domains %}
+        <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/assign-domain"
+              style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <select name="domain" required style="flex:1; min-width:160px">
+            <option value="">Select domain…</option>
+            {% for d in all_domains %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn" type="submit">Assign &amp; submit</button>
+        </form>
+        {% else %}
+        <div style="margin-top:6px"><a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and choose a domain.</div>
+        {% endif %}
       </div>
     {% endif %}
 
