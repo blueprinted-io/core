@@ -16,6 +16,7 @@ from ..audit import audit, _fetch_return_note, _fetch_force_action, get_latest_v
 from ..linting import lint_steps, _normalize_steps, _zip_steps, _validate_steps_required
 from ..auth import require
 from ..utils import _json_dump, _json_load, parse_lines, parse_meta
+from ..diff import diff_task
 
 router = APIRouter()
 
@@ -299,6 +300,18 @@ def task_view(request: Request, record_id: str, version: int):
 
     with db() as conn:
         all_domains = _active_domains(conn)
+        revision_diff = None
+        if task["version"] > 1:
+            prev = conn.execute(
+                "SELECT * FROM tasks WHERE record_id=? AND version=?", (record_id, task["version"] - 1)
+            ).fetchone()
+            if prev:
+                revision_diff = {
+                    "prev_version": task["version"] - 1,
+                    "change_note": task.get("change_note") or "",
+                    "entity_status": task["status"],
+                    "fields": diff_task(dict(prev), task),
+                }
 
     return templates.TemplateResponse(
         request,
@@ -311,6 +324,7 @@ def task_view(request: Request, record_id: str, version: int):
             "force_action": force_action,
             "unassigned_images": unassigned_images,
             "all_domains": all_domains,
+            "revision_diff": revision_diff,
         },
     )
 

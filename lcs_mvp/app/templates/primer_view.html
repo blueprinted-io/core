@@ -32,6 +32,8 @@
       </div>
     {% endif %}
 
+    {% include '_revision_diff.html' %}
+
     {% if primer.status == 'draft' and not primer.domain %}
       <div class="callout warn">
         <b>Domain not set</b>

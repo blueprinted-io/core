@@ -1,0 +1,112 @@
+{% if revision_diff %}
+<details class="callout revision-diff-panel" {% if revision_diff.entity_status in ('draft', 'submitted') %}open{% endif %} style="margin-bottom:16px">
+  <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px">
+    <b>Changes from v{{ revision_diff.prev_version }}</b>
+    {% if revision_diff.fields %}
+      <span class="badge" style="font-weight:400">{{ revision_diff.fields|length }} field{{ 's' if revision_diff.fields|length != 1 else '' }} changed</span>
+    {% else %}
+      <span class="muted" style="font-size:0.88em">(metadata / change note only)</span>
+    {% endif %}
+  </summary>
+
+  {% if revision_diff.change_note %}
+  <div style="margin-top:12px">
+    <div class="muted" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">Change note</div>
+    <div>{{ revision_diff.change_note }}</div>
+  </div>
+  {% endif %}
+
+  {% if revision_diff.fields %}
+  <div style="margin-top:16px;display:flex;flex-direction:column;gap:16px">
+
+    {% for f in revision_diff.fields %}
+    <div class="revision-diff-field">
+      <div class="revision-diff-label">{{ f.label }}</div>
+
+      {% if f.type == 'text' %}
+        <div class="revision-diff-body">{{ f.diff_html | safe }}</div>
+        <details class="revision-diff-prev-wrap">
+          <summary class="muted" style="font-size:0.8em;cursor:pointer;margin-top:6px">Show previous value</summary>
+          <div class="revision-diff-prev-body">{{ f.old or '(empty)' }}</div>
+        </details>
+
+      {% elif f.type == 'bool' %}
+        <div class="revision-diff-body">
+          <del class="diff-del">{{ 'Yes' if f.old else 'No' }}</del>
+          &rarr;
+          <ins class="diff-ins">{{ 'Yes' if f.new else 'No' }}</ins>
+        </div>
+
+      {% elif f.type == 'list' %}
+        <div class="revision-diff-body" style="display:flex;flex-direction:column;gap:4px">
+          {% for item in f.removed %}
+          <div class="diff-list-row"><del class="diff-del diff-list-item">{{ item }}</del></div>
+          {% endfor %}
+          {% for item in f.added %}
+          <div class="diff-list-row"><ins class="diff-ins diff-list-item">{{ item }}</ins></div>
+          {% endfor %}
+        </div>
+
+      {% elif f.type == 'steps' %}
+        <div class="revision-diff-body" style="display:flex;flex-direction:column;gap:8px">
+          {% for sd in f.diffs %}
+          <div class="diff-step {% if sd.change == 'added' %}diff-step-added{% elif sd.change == 'removed' %}diff-step-removed{% else %}diff-step-modified{% endif %}">
+            <span class="diff-step-num">Step {{ sd.index }}</span>
+            {% if sd.change == 'added' %}
+              <ins class="diff-ins">{{ sd.step.text }}</ins>
+            {% elif sd.change == 'removed' %}
+              <del class="diff-del">{{ sd.step.text }}</del>
+            {% else %}
+              {% if sd.text_diff_html %}
+                <div style="margin-top:2px">{{ sd.text_diff_html | safe }}</div>
+              {% endif %}
+              {% if sd.old.completion != sd.new.completion %}
+              <div class="muted" style="font-size:0.83em;margin-top:4px">
+                <b>Completion:</b>
+                <del class="diff-del">{{ sd.old.completion or '—' }}</del> &rarr;
+                <ins class="diff-ins">{{ sd.new.completion or '—' }}</ins>
+              </div>
+              {% endif %}
+              {% if sd.old.actions != sd.new.actions %}
+              <div class="muted" style="font-size:0.83em;margin-top:4px"><b>Actions changed</b></div>
+              {% endif %}
+              {% if sd.old.notes != sd.new.notes %}
+              <div class="muted" style="font-size:0.83em;margin-top:4px">
+                <b>Notes:</b>
+                <del class="diff-del">{{ sd.old.notes or '—' }}</del> &rarr;
+                <ins class="diff-ins">{{ sd.new.notes or '—' }}</ins>
+              </div>
+              {% endif %}
+              <details class="revision-diff-prev-wrap" style="margin-top:4px">
+                <summary class="muted" style="font-size:0.8em;cursor:pointer">Show previous step</summary>
+                <div class="revision-diff-prev-body">{{ sd.old.text }}</div>
+              </details>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+
+      {% elif f.type == 'task_refs' %}
+        <div class="revision-diff-body" style="display:flex;flex-direction:column;gap:4px">
+          {% for r in f.removed %}
+          <div class="diff-list-row"><del class="diff-del diff-list-item">{{ r.title }} (v{{ r.version }})</del></div>
+          {% endfor %}
+          {% for r in f.added %}
+          <div class="diff-list-row"><ins class="diff-ins diff-list-item">{{ r.title }} (v{{ r.version }})</ins></div>
+          {% endfor %}
+          {% for u in f.updated %}
+          <div class="diff-list-row diff-list-item">
+            {{ u.new.title }}:
+            <del class="diff-del">v{{ u.old.version }}</del> &rarr; <ins class="diff-ins">v{{ u.new.version }}</ins>
+          </div>
+          {% endfor %}
+        </div>
+
+      {% endif %}
+    </div>
+    {% endfor %}
+
+  </div>
+  {% endif %}
+</details>
+{% endif %}

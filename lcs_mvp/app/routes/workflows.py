@@ -16,6 +16,7 @@ from ..database import (
 from ..audit import audit, _normalize_domains, _fetch_return_note, _fetch_force_action, get_latest_version
 from ..auth import require
 from ..utils import _json_dump, _json_load, parse_lines, parse_meta, parse_tags
+from ..diff import diff_workflow
 
 router = APIRouter()
 
@@ -337,6 +338,49 @@ def workflow_view(request: Request, record_id: str, version: int):
             (record_id,),
         ).fetchall()
 
+        # Revision diff — compare against previous version when v > 1
+        revision_diff = None
+        if version > 1:
+            prev_wf = conn.execute(
+                "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version - 1)
+            ).fetchone()
+            if prev_wf:
+                prev_refs_rows = conn.execute(
+                    """SELECT r.task_record_id AS record_id, r.task_version AS version, t.title
+                       FROM workflow_task_refs r
+                       JOIN tasks t ON t.record_id=r.task_record_id AND t.version=r.task_version
+                       WHERE r.workflow_record_id=? AND r.workflow_version=?
+                       ORDER BY r.order_index""",
+                    (record_id, version - 1),
+                ).fetchall()
+                new_refs_rows = conn.execute(
+                    """SELECT r.task_record_id AS record_id, r.task_version AS version, t.title
+                       FROM workflow_task_refs r
+                       JOIN tasks t ON t.record_id=r.task_record_id AND t.version=r.task_version
+                       WHERE r.workflow_record_id=? AND r.workflow_version=?
+                       ORDER BY r.order_index""",
+                    (record_id, version),
+                ).fetchall()
+                prev_primer_ids = [r["primer_record_id"] for r in conn.execute(
+                    "SELECT primer_record_id FROM workflow_primer_refs WHERE workflow_record_id=?",
+                    (record_id,),
+                ).fetchall()]
+                # primer refs are not versioned so we can only show current snapshot;
+                # use the current attached list as "new" and nothing as old unless we track history
+                diff_fields = diff_workflow(
+                    dict(prev_wf), dict(wf),
+                    [dict(r) for r in prev_refs_rows],
+                    [dict(r) for r in new_refs_rows],
+                    [],  # primer refs are not versioned — skip primer diff
+                    [],
+                )
+                revision_diff = {
+                    "prev_version": version - 1,
+                    "change_note": (wf["change_note"] or "").strip(),
+                    "entity_status": wf["status"],
+                    "fields": diff_fields,
+                }
+
     return templates.TemplateResponse(
         request,
         "workflow_view.html",
@@ -355,6 +399,7 @@ def workflow_view(request: Request, record_id: str, version: int):
             "force_action": force_action,
             "return_note": return_note,
             "attached_primers": [dict(p) for p in attached_primers],
+            "revision_diff": revision_diff,
         },
     )
 

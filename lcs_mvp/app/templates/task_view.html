@@ -32,6 +32,8 @@
       </div>
     {% endif %}
 
+    {% include '_revision_diff.html' %}
+
     {% if task.status == 'draft' and not task.domain %}
       <div class="callout warn">
         <b>Domain not set</b>

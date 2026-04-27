@@ -12,6 +12,7 @@ from ..audit import audit, _fetch_return_note, _fetch_force_action, get_latest_v
 from ..auth import can, require
 from ..ingestion import _llm_generate_all_levels
 from ..utils import _json_dump, _json_load
+from ..diff import diff_primer
 
 router = APIRouter()
 
@@ -197,6 +198,18 @@ def primer_view(request: Request, record_id: str, version: int):
 
     with db() as conn:
         all_domains = _active_domains(conn)
+        revision_diff = None
+        if primer["version"] > 1:
+            prev = conn.execute(
+                "SELECT * FROM primers WHERE record_id=? AND version=?", (record_id, primer["version"] - 1)
+            ).fetchone()
+            if prev:
+                revision_diff = {
+                    "prev_version": primer["version"] - 1,
+                    "change_note": primer.get("change_note") or "",
+                    "entity_status": primer["status"],
+                    "fields": diff_primer(dict(prev), primer),
+                }
 
     return templates.TemplateResponse(
         request,
@@ -209,6 +222,7 @@ def primer_view(request: Request, record_id: str, version: int):
             "all_versions": [dict(r) for r in all_versions],
             "levels": levels,
             "all_domains": all_domains,
+            "revision_diff": revision_diff,
         },
     )
 

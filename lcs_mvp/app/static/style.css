@@ -1336,6 +1336,24 @@ body.spa-v1 .detail-inline-card{padding:10px;margin:0}
 .task-picker-empty-msg{padding:12px;color:var(--muted);font-size:14px}
 @media (max-width:980px){.task-picker{grid-template-columns:1fr}}
 
+/* Revision diff panel */
+.revision-diff-panel{border-left:4px solid var(--accent);background:color-mix(in oklab,var(--accent) 5%,var(--panel))}
+.revision-diff-panel summary::-webkit-details-marker{display:none}
+.revision-diff-field{display:flex;flex-direction:column;gap:4px}
+.revision-diff-label{font-size:0.78em;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:var(--muted)}
+.revision-diff-body{line-height:1.6}
+.revision-diff-prev-wrap summary{display:inline;cursor:pointer}
+.revision-diff-prev-body{margin-top:6px;padding:8px 10px;background:color-mix(in oklab,var(--muted) 8%,var(--panel));border-radius:6px;font-size:0.9em;line-height:1.5;white-space:pre-wrap;color:var(--muted)}
+del.diff-del{background:color-mix(in oklab,var(--danger) 18%,transparent);color:var(--danger);text-decoration:line-through;padding:1px 3px;border-radius:3px;font-style:normal}
+ins.diff-ins{background:color-mix(in oklab,var(--ok) 18%,transparent);color:var(--ok);text-decoration:none;padding:1px 3px;border-radius:3px;font-style:normal}
+.diff-list-row{padding:2px 0}
+.diff-list-item{padding:3px 8px;border-radius:4px;display:inline}
+.diff-step{padding:8px 10px;border-radius:6px;border:1px solid var(--border);font-size:0.9em;line-height:1.5}
+.diff-step-num{font-size:0.75em;text-transform:uppercase;letter-spacing:.05em;font-weight:700;color:var(--muted);margin-right:6px}
+.diff-step-added{border-color:color-mix(in oklab,var(--ok) 40%,var(--border));background:color-mix(in oklab,var(--ok) 8%,var(--panel))}
+.diff-step-removed{border-color:color-mix(in oklab,var(--danger) 40%,var(--border));background:color-mix(in oklab,var(--danger) 8%,var(--panel))}
+.diff-step-modified{border-color:color-mix(in oklab,var(--accent) 40%,var(--border));background:color-mix(in oklab,var(--accent) 5%,var(--panel))}
+
 /* Explainer page */
 .how-steps-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
 .how-step{display:flex;gap:14px;align-items:flex-start;padding:16px;background:color-mix(in oklab,var(--bg) 55%,var(--panel));border:1px solid color-mix(in oklab,var(--border) 60%,transparent);border-radius:12px}
