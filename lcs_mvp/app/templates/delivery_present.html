@@ -11,6 +11,13 @@
   <div class="section-header">Instructions</div>
   <p>Copy the prompt below and paste it into any LLM (Claude, ChatGPT, Gemini). The workflow content is embedded directly — no fetch required.</p>
   <p class="muted" style="margin-top:8px">The fetch URL below is preserved for future automated use but is not needed for copy-paste workflows.</p>
+  <div style="margin-top:12px;padding:10px 12px;background:var(--panel);border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-size:0.75em;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">Export reference</div>
+      <div style="font-family:monospace;font-size:0.9em;margin-top:2px">{{ token.id }}</div>
+    </div>
+    <button class="btn secondary" type="button" id="copy-ref-btn" style="flex-shrink:0">Copy</button>
+  </div>
 </div>
 
 <div class="card" style="margin-bottom:16px">
@@ -19,6 +26,8 @@
     <button class="btn" id="copy-btn" type="button">Copy prompt</button>
   </div>
   <textarea id="prompt-text" readonly style="width:100%;min-height:400px;font-family:monospace;font-size:0.85em;resize:vertical;margin-top:8px;box-sizing:border-box">You are a presentation design assistant. I need you to build a slide deck for a workplace learning workflow.
+
+Export reference: {{ token.id }}
 
 Here is the workflow content in JSON format:
 {{ content_json }}
@@ -37,7 +46,10 @@ Output each slide as:
 ## [Slide title]
 [Body content]
 **Speaker note:** [note text]
----</textarea>
+---
+
+Important: Every slide must include the following line at the bottom of its content:
+`Ref: {{ token.id }}`</textarea>
 </div>
 
 <details style="margin-bottom:16px">
@@ -66,5 +78,12 @@ Output each slide as:
   }
   document.getElementById('copy-btn').addEventListener('click', function() { copyText('prompt-text', 'copy-btn', 'Copy prompt'); });
   document.getElementById('copy-url-btn').addEventListener('click', function() { copyText('fetch-url-input', 'copy-url-btn', 'Copy URL'); });
+  document.getElementById('copy-ref-btn').addEventListener('click', function() {
+    navigator.clipboard.writeText('{{ token.id }}').then(function() {
+      var btn = document.getElementById('copy-ref-btn');
+      btn.textContent = 'Copied!';
+      setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+    });
+  });
 </script>
 {% endblock %}
