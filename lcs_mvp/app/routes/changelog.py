@@ -40,13 +40,13 @@ def _load_run(conn, run_id: str, actor: str):
 
 def _confirmed_tasks_in_scope(conn, software_name: str | None, scope_domain: str | None) -> list:
     """Return latest confirmed version of each task matching the scope filters."""
-    wheres = ["t.status='confirmed'"]
+    wheres = ["status='confirmed'"]
     params: list[Any] = []
     if software_name:
-        wheres.append("t.software_name=?")
+        wheres.append("software_name=?")
         params.append(software_name)
     if scope_domain:
-        wheres.append("t.domain=?")
+        wheres.append("domain=?")
         params.append(scope_domain)
     where_clause = " AND ".join(wheres)
     return conn.execute(
@@ -58,6 +58,7 @@ def _confirmed_tasks_in_scope(conn, software_name: str | None, scope_domain: str
             WHERE {where_clause}
             GROUP BY record_id
         ) latest ON t.record_id = latest.record_id AND t.version = latest.max_v
+        WHERE t.status='confirmed'
         """,
         params,
     ).fetchall()
