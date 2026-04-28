@@ -36,7 +36,7 @@ The packaging has changed, becoming more interactive, portable, and personalized
 | Social Learning Platforms | Communities of Practice | 1991 | Jean Lave, Etienne Wenger | Human dynamics identical. Tech mediation changes friction, not mechanism. |
 | Situated Cognition (marketed) | Situated Learning Theory | ~1980s | Jean Lave, John Dewey | Straight rebrand. "Real-world task alignment" is situated learning theory with a consulting sheen. |
 | Competency Mapping | Bloom's / Krathwohl's Taxonomy | 1956 / 2001 | Bloom, Anderson | More granular and visual. Structurally identical. |
-| Goal-Based Scenarios | Goal-Based Learning | 1990s | Roger Schank | Digital simulation replaces paper. The mechanism, learning through goal pursuit and failure, is unchanged. |
+| Goal-Based Scenarios | Goal-Based Learning | 1990s | Roger Schank | Digital simulation replaces paper. The mechanism is unchanged: learning through goal pursuit and failure. |
 | Performance Support Tools | Job Aids / EPSS | ~1980s–90s | Gloria Gery | Context-awareness is a delivery improvement. The job aid logic is identical. |
 | Personalized Learning | Adaptive Instruction | ~1960s–90s | Skinner, Gordon | Goal unchanged. Algorithmic scale is real but has produced novel failure modes: optimising for measurable proxies rather than transfer. Theoretically continuous, practically worth scrutiny. |
 | AI Copilots / Tutors | Cognitive Apprenticeship | 1991 | Collins, Seely Brown | Superficially continuous. Theoretically suspect: cognitive apprenticeship requires a knowing agent. Probabilistic output is not modelled expertise. The scaffolding metaphor may be broken here, not extended. |
@@ -96,7 +96,7 @@ That's not a criticism of vendors. It is a description of what the market has as
 
 The question is not why the industry keeps producing wrappers. That part makes sense.
 
-The question is what you are actually trying to achieve, and whether the next tool you evaluate is genuinely built for that, or just easier to buy.
+The question is what you are actually trying to achieve, and whether the next tool you evaluate is built for that, or just easier to buy.
 
 ---
 
