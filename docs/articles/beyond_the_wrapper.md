@@ -4,7 +4,7 @@ Modern L&D is filled with buzzwords: microlearning, xAPI, AI copilots, personali
 
 Most of these ideas are not new, and swapping out technology does not automatically lead to meaningful change in how learning works.
 
-This piece is a companion to SCORM, xAPI, and cmi5: What They Actually Are and What You Actually Get. That article focused on standards and tooling.  
+This piece is a companion to [SCORM, xAPI, and cmi5: What They Actually Are and What You Actually Get](what_is_a_tincan.md). That article focused on standards and tooling.  
 
 This one looks at the deeper patterns, ideas that keep resurfacing with new language and updated platforms but the same underlying structure.
 
