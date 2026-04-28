@@ -31,7 +31,7 @@ The packaging has changed, becoming more interactive, portable, and personalized
 
 | Modern Concept | Original Concept / Era | Origin Year | Key Figures | Honest Assessment |
 |---|---|---|---|---|
-| Microlearning | Just-in-Time Learning | ~1990 | Gloria Gery | A theoretical distinction exists, cognitive load framing could justify the term. It doesn't in practice. Nobody buys or sells microlearning on that basis. In market behaviour it's JIT with shorter videos and a newer name. |
+| Microlearning | Just-in-Time Learning | ~1990 | Gloria Gery | A theoretical distinction exists, cognitive load framing does justify the term but in practice? Nobody buys or sells microlearning on the basis of cognitive load. In market behaviour it's JIT with shorter content and a modern name. |
 | Knowledge Retention Tools | Spaced Repetition | 1973 | Sebastian Leitner | Mechanism unchanged. Gamification and interactivity are delivery decoration. No theoretical advance. |
 | Social Learning Platforms | Communities of Practice | 1991 | Jean Lave, Etienne Wenger | Human dynamics identical. Tech mediation changes friction, not mechanism. |
 | Situated Cognition (marketed) | Situated Learning Theory | ~1980s | Jean Lave, John Dewey | Straight rebrand. "Real-world task alignment" is situated learning theory with a consulting sheen. |
