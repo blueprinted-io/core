@@ -779,7 +779,8 @@ def task_confirm(request: Request, record_id: str, version: int):
         conn.execute(
             """
             UPDATE tasks
-            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            SET status='confirmed', needs_review_flag=0, needs_review_note=NULL,
+                reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
             WHERE record_id=? AND version=?
             """,
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
@@ -824,7 +825,8 @@ def task_force_confirm(request: Request, record_id: str, version: int):
         conn.execute(
             """
             UPDATE tasks
-            SET status='confirmed', reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
+            SET status='confirmed', needs_review_flag=0, needs_review_note=NULL,
+                reviewed_at=?, reviewed_by=?, updated_at=?, updated_by=?
             WHERE record_id=? AND version=?
             """,
             (utc_now_iso(), actor, utc_now_iso(), actor, record_id, version),
