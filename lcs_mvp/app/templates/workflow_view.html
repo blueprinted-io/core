@@ -70,11 +70,8 @@
       {% endif %}
 
       {% if workflow.needs_review_flag %}
-        <div class="callout warn">
-          <b>Flagged for review</b>
-          {% if workflow.needs_review_note %}
-            <div style="margin-top:6px">{{ workflow.needs_review_note }}</div>
-          {% endif %}
+        <div class="callout notice">
+          <span class="muted" style="font-size:0.85em">⚑ Flagged for review{% if workflow.needs_review_note %} — {{ workflow.needs_review_note }}{% endif %}</span>
         </div>
       {% endif %}
 

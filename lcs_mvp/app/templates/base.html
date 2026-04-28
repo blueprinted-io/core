@@ -514,12 +514,9 @@
       <form class="spa-shell-search card" role="search" aria-label="Application search" method="get" action="/search">
         <input type="text" id="spa-search" name="q" placeholder="Search tasks, workflows, domains, tags..." autocomplete="off" />
       </form>
-      <div class="global-dev-banner" role="status" aria-live="polite" id="dev-banner">
-        <span class="dev-banner-text">
-          <strong>Active development notice:</strong>
-          This application is an MVP in active development. Features, UI, and behavior may change without notice. It is not designed for operational use at this stage.
-        </span>
-        <button type="button" class="dev-banner-close" aria-label="Dismiss notice" title="Dismiss">✕</button>
+      <div class="global-dev-banner" role="status" id="dev-banner">
+        <span class="dev-banner-text">MVP in active development — features and UI may change without notice.</span>
+        <button type="button" class="dev-banner-close" aria-label="Dismiss" title="Dismiss">✕</button>
       </div>
       {% block content %}{% endblock %}
     </main>

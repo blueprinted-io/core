@@ -261,6 +261,8 @@ html[data-theme="dark"] .badge-danger{background:rgba(239,68,68,.12);border-colo
 
 html[data-theme="dark"] .callout.warn{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.10)}
 html[data-theme="dark"] .callout.danger{border-color:rgba(251,113,133,.35);background:rgba(251,113,133,.10)}
+.callout.notice{border-color:var(--border);background:color-mix(in oklab,var(--muted) 4%,var(--panel))}
+html[data-theme="dark"] .callout.notice{background:color-mix(in oklab,var(--muted) 7%,var(--panel))}
 
 .filters{margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .filters .search{margin-left:auto;display:flex;gap:8px;align-items:center}
@@ -274,15 +276,16 @@ code{background:rgba(243,244,246,.95);padding:2px 6px;border-radius:8px;border:1
 html[data-theme="dark"] code{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.12)}
 
 .global-dev-banner{
-  margin:14px 0 2px;
-  border:1px solid color-mix(in oklab, var(--warn) 40%, var(--border));
-  background:color-mix(in oklab, #fff7ed 80%, var(--panel));
-  color:color-mix(in oklab, var(--warn) 70%, var(--ink));
-  border-radius:12px;
-  padding:10px 12px;
-  font-size:13px;
+  margin:6px 0 0;
+  border:none;
+  border-bottom:1px solid var(--border);
+  background:transparent;
+  color:var(--muted);
+  border-radius:0;
+  padding:4px 0 10px;
+  font-size:11px;
   display:flex;
-  align-items:flex-start;
+  align-items:center;
   justify-content:space-between;
   gap:10px;
 }
@@ -298,17 +301,13 @@ html[data-theme="dark"] code{background:rgba(0,0,0,.25);border-color:rgba(255,25
   color:inherit;
   cursor:pointer;
   padding:0 4px;
-  font-size:16px;
+  font-size:13px;
   line-height:1;
-  opacity:0.7;
+  opacity:0.5;
   transition:opacity 0.15s ease;
 }
 .dev-banner-close:hover{
   opacity:1;
-}
-html[data-theme="dark"] .global-dev-banner{
-  background:color-mix(in oklab, var(--warn) 14%, var(--panel));
-  color:color-mix(in oklab, var(--warn) 80%, var(--ink));
 }
 
 .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}

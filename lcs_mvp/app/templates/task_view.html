@@ -35,12 +35,11 @@
     {% include '_revision_diff.html' %}
 
     {% if task.status == 'draft' and not task.domain %}
-      <div class="callout warn">
-        <b>Domain not set</b>
-        <div style="margin-top:6px">This task cannot be submitted until a domain is assigned.</div>
+      <div class="callout notice">
+        <span class="muted" style="font-size:0.85em">No domain assigned — cannot submit for review.</span>
         {% if can(request.state.role, 'task:submit') and all_domains %}
         <form method="post" action="/tasks/{{ task.record_id }}/{{ task.version }}/assign-domain"
-              style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+              style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <select name="domain" required style="flex:1; min-width:160px">
             <option value="">Select domain…</option>
             {% for d in all_domains %}
@@ -50,27 +49,24 @@
           <button class="btn" type="submit">Assign &amp; submit</button>
         </form>
         {% else %}
-        <div style="margin-top:6px"><a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and choose a domain.</div>
+        <div style="margin-top:4px; font-size:0.85em"><a href="/tasks/{{ task.record_id }}/{{ task.version }}/edit">Edit the task</a> and choose a domain.</div>
         {% endif %}
       </div>
     {% endif %}
 
     {% if task.needs_review_flag %}
-      <div class="callout warn">
-        <b>Flagged for review</b>
-        {% if task.needs_review_note %}
-          <div style="margin-top:6px">{{ task.needs_review_note }}</div>
-        {% endif %}
+      <div class="callout notice">
+        <span class="muted" style="font-size:0.85em">⚑ Flagged for review{% if task.needs_review_note %} — {{ task.needs_review_note }}{% endif %}</span>
       </div>
     {% endif %}
 
     {% if warnings %}
-      <div class="callout warn">
-        <b>Lint warnings (warnings-only)</b>
-        <ul>
-          {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
-        </ul>
-      </div>
+    <details style="margin-top:10px">
+      <summary class="muted" style="font-size:0.85em; cursor:pointer; user-select:none">{{ warnings|length }} lint warning{{ 's' if warnings|length != 1 else '' }} (non-blocking)</summary>
+      <ul class="muted" style="font-size:0.85em; margin-top:6px; padding-left:18px">
+        {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+      </ul>
+    </details>
     {% endif %}
 
     <div class="card stack-sm">

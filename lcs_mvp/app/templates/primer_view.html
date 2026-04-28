@@ -35,12 +35,11 @@
     {% include '_revision_diff.html' %}
 
     {% if primer.status == 'draft' and not primer.domain %}
-      <div class="callout warn">
-        <b>Domain not set</b>
-        <div style="margin-top:6px">This primer cannot be submitted until a domain is assigned.</div>
+      <div class="callout notice">
+        <span class="muted" style="font-size:0.85em">No domain assigned — cannot submit for review.</span>
         {% if can(request.state.role, 'primer:submit') and all_domains %}
         <form method="post" action="/primers/{{ primer.record_id }}/{{ primer.version }}/assign-domain"
-              style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+              style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <select name="domain" required style="flex:1; min-width:160px">
             <option value="">Select domain…</option>
             {% for d in all_domains %}
@@ -50,17 +49,14 @@
           <button class="btn" type="submit">Assign &amp; submit</button>
         </form>
         {% else %}
-        <div style="margin-top:6px"><a href="/primers/{{ primer.record_id }}/{{ primer.version }}/edit">Edit the primer</a> and choose a domain.</div>
+        <div style="margin-top:4px; font-size:0.85em"><a href="/primers/{{ primer.record_id }}/{{ primer.version }}/edit">Edit the primer</a> and choose a domain.</div>
         {% endif %}
       </div>
     {% endif %}
 
     {% if primer.needs_review_flag %}
-      <div class="callout warn">
-        <b>Flagged for review</b>
-        {% if primer.needs_review_note %}
-          <div style="margin-top:6px">{{ primer.needs_review_note }}</div>
-        {% endif %}
+      <div class="callout notice">
+        <span class="muted" style="font-size:0.85em">⚑ Flagged for review{% if primer.needs_review_note %} — {{ primer.needs_review_note }}{% endif %}</span>
       </div>
     {% endif %}
 
