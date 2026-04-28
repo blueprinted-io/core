@@ -94,7 +94,7 @@ The market has consistently rewarded the first option. The table above is the re
 
 That's not a criticism of vendors. It is a description of what the market has asked for. Procurement cycles, risk aversion, and the path of least internal resistance have shaped the tools available just as much as any design decision.
 
-The question worth sitting with is not why the industry keeps producing wrappers. That part makes sense.
+The question is not why the industry keeps producing wrappers. That part makes sense.
 
 The question is what you are actually trying to achieve, and whether the next tool you evaluate is genuinely built for that, or just easier to buy.
 
