@@ -17,11 +17,17 @@
 </div>
 
 {% if is_screening %}
-<div class="callout info">
-  <b>Screening in progress</b> — the LLM is reviewing each task against the changelog. This page will refresh automatically.
-  {% set screened = impacts | selectattr('item_status', 'ne', 'pending') | list | length %}
-  {% set total = impacts | length %}
-  {% if total > 0 %}<br><span class="muted">{{ screened }} of {{ total }} complete</span>{% endif %}
+<div class="callout info" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap">
+  <div>
+    <b>Screening in progress</b> — the LLM is reviewing each task against the changelog. This page will refresh automatically.
+    {% set screened = impacts | selectattr('item_status', 'ne', 'pending') | list | length %}
+    {% set total = impacts | length %}
+    {% if total > 0 %}<br><span class="muted">{{ screened }} of {{ total }} complete</span>{% endif %}
+  </div>
+  <form method="post" action="/import/changelog/{{ run.id }}/cancel"
+        onsubmit="return confirm('Cancel this screening run? Tasks already screened will be kept.')">
+    <button class="btn secondary" type="submit" style="white-space:nowrap">Abandon</button>
+  </form>
 </div>
 {% endif %}
 

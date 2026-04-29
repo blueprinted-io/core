@@ -17,8 +17,12 @@
 </div>
 
 {% if is_proposing %}
-<div class="callout info">
-  <b>Generating proposals</b> — the LLM is drafting revised versions. This page will refresh automatically.
+<div class="callout info" style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap">
+  <div><b>Generating proposals</b> — the LLM is drafting revised versions. This page will refresh automatically.</div>
+  <form method="post" action="/import/changelog/{{ run.id }}/cancel"
+        onsubmit="return confirm('Cancel proposal generation? Proposals already generated will be kept.')">
+    <button class="btn secondary" type="submit" style="white-space:nowrap">Abandon</button>
+  </form>
 </div>
 {% endif %}
 

@@ -837,16 +837,126 @@ def _llm_extract_primer_chunk(text: str, section_title: str, cfg: dict[str, Any]
     return result
 
 
-_CHANGELOG_SCREEN_SYSTEM = """Determine whether the task described is affected by any changes in the given changelog.
+_CHANGELOG_SOFTWARE_EXTRACT_SYSTEM = """Extract the primary software product name and version number described by this changelog or release notes.
+
+Output valid JSON only. No preamble, no markdown, no em dashes.
+{"software_name": "Veeam Agent for Microsoft Windows", "version": "6.1"}
+
+Use null for either field if it cannot be determined from the content."""
+
+
+def _llm_extract_changelog_software(
+    changelog_content: str,
+    cfg: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    """Return (software_name, version) extracted from the changelog. Either may be None."""
+    extract_cfg = dict(cfg)
+    extract_cfg["llm_max_tokens"] = 80
+    extract_cfg["llm_temperature"] = 0.0
+    user_msg = f"CHANGELOG (first 3000 chars):\n{changelog_content[:3000]}"
+    try:
+        raw = _llm_chat([
+            {"role": "system", "content": _CHANGELOG_SOFTWARE_EXTRACT_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ], extract_cfg)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw)
+            raw = re.sub(r"\n?```$", "", raw)
+        data = json.loads(raw)
+        name = str(data["software_name"]).strip() if data.get("software_name") else None
+        ver = str(data["version"]).strip() if data.get("version") else None
+        return name, ver
+    except Exception as exc:
+        logger.warning("Changelog software extraction failed: %s", exc)
+        return None, None
+
+
+def _version_gte(task_ver: str, changelog_ver: str) -> bool:
+    """Return True if task_ver >= changelog_ver. Returns False if comparison fails."""
+    try:
+        from packaging.version import Version
+        return Version(task_ver.strip()) >= Version(changelog_ver.strip())
+    except Exception:
+        return False
+
+
+_CHANGELOG_TRIAGE_SYSTEM = """You are doing a fast first-pass filter to identify which task titles could plausibly be affected by a software changelog.
+
+Given a list of tasks by ID and title, return only the IDs of tasks whose title describes a procedure that the changelog explicitly changes. Exclude tasks whose titles are unrelated to any area mentioned in the changelog. You are not doing detailed analysis — just filtering out tasks that are clearly unrelated.
+
+Exclude a task if its title covers a completely different area than anything in the changelog.
+Include a task if its title names a procedure, feature, or component that the changelog explicitly mentions changing.
+
+Output valid JSON only. No preamble, no markdown, no em dashes.
+{"implicated": ["id1", "id2"]}"""
+
+
+def _llm_triage_task_titles(
+    tasks: list[dict],
+    changelog_content: str,
+    cfg: dict[str, Any],
+) -> list[str]:
+    """Return record_ids of tasks whose titles are plausibly implicated by the changelog.
+
+    Processes in batches of 150. On any batch failure, includes the whole batch
+    in the short-list (safe fallback: more detail calls, no missed tasks).
+    """
+    BATCH = 150
+    implicated: set[str] = set()
+
+    triage_cfg = dict(cfg)
+    triage_cfg["llm_max_tokens"] = 512
+    triage_cfg["llm_temperature"] = 0.0
+
+    for i in range(0, len(tasks), BATCH):
+        batch = tasks[i : i + BATCH]
+        task_lines = "\n".join(f'{t["id"]}: {t["title"]}' for t in batch)
+        user_msg = f"CHANGELOG:\n{changelog_content[:6000]}\n\nTASKS:\n{task_lines}"
+        try:
+            raw = _llm_chat([
+                {"role": "system", "content": _CHANGELOG_TRIAGE_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ], triage_cfg)
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                raw = re.sub(r"\n?```$", "", raw)
+            data = json.loads(raw)
+            ids = data.get("implicated") or []
+            if isinstance(ids, list):
+                implicated.update(str(x) for x in ids)
+            logger.info(
+                "Changelog triage batch %d-%d: %d implicated",
+                i, min(i + BATCH, len(tasks)), len(ids),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Changelog triage batch %d-%d failed (%s) — including all %d tasks as fallback",
+                i, min(i + BATCH, len(tasks)), exc, len(batch),
+            )
+            implicated.update(t["id"] for t in batch)
+
+    return list(implicated)
+
+
+_CHANGELOG_SCREEN_SYSTEM = """Determine whether this specific task needs updating based on the changelog.
 
 Output valid JSON only. No preamble, no markdown fences, no em dashes.
-{"affected": true|false, "reason": "One or two sentences explaining which change impacts this task, or why it is unaffected."}
+{"affected": true|false, "reason": "One sentence quoting the specific changelog change and the specific step or command in the task it invalidates."}
 
-Rules:
-- Mark affected if any step action, CLI command, UI element, menu path, config option, or dependency changed.
-- Mark affected if the task references a feature, API, or option that the changelog deprecates or removes.
-- Mark unaffected only if the changelog changes are entirely in areas unrelated to this task.
-- Be conservative: when in doubt, mark affected."""
+Mark affected ONLY if ALL of the following are true:
+1. The changelog explicitly describes a change (not a new feature, not a general note) to something that appears in this task.
+2. That change directly invalidates a specific step, command, menu path, UI element, or config option that is written in the task's steps.
+3. You can quote both the changelog text and the task step that it contradicts.
+
+Mark unaffected if:
+- The changelog change is to a feature or area not covered by any step in this task.
+- The connection is speculative ("might affect", "could impact", "may be relevant").
+- The changelog only adds new optional features without changing existing procedures.
+- The task would still work correctly without modification after this changelog.
+
+Default to unaffected. Only mark affected when the evidence is explicit and direct."""
 
 
 _CHANGELOG_PROPOSE_SYSTEM = """You are updating a structured task record to reflect changes described in a software changelog.
@@ -927,8 +1037,26 @@ def _llm_propose_task_revision(task_row, changelog_content: str, cfg: dict[str, 
     return result
 
 
+def _changelog_is_cancelled(db_path: str, run_id: str) -> bool:
+    """Check whether a run has been cancelled. Opens a fresh connection to avoid lock contention."""
+    import sqlite3 as _sq
+    try:
+        c = _sq.connect(db_path, timeout=5.0)
+        c.row_factory = _sq.Row
+        row = c.execute("SELECT job_status FROM changelog_runs WHERE id=?", (run_id,)).fetchone()
+        c.close()
+        return bool(row and row["job_status"] == "cancelled")
+    except Exception:
+        return False
+
+
 def _run_changelog_screening(run_id: str, db_path: str) -> None:
-    """Background: LLM-screen each task impact row for a changelog run."""
+    """Background: LLM-screen each task impact row for a changelog run.
+
+    Two-pass approach:
+    Pass 1 — title triage: one LLM call per 150 tasks to shortlist by title.
+    Pass 2 — detailed screening: full per-task LLM call only for shortlisted tasks.
+    """
     import sqlite3 as _sq
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -938,7 +1066,8 @@ def _run_changelog_screening(run_id: str, db_path: str) -> None:
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
         from .database import _get_llm_config as _glc
-        cfg = _glc(conn, pipeline="extraction")
+        triage_cfg = _glc(conn, pipeline="triage")
+        screen_cfg = _glc(conn, pipeline="extraction")
 
         conn.execute("UPDATE changelog_runs SET job_status='screening' WHERE id=?", (run_id,))
         conn.commit()
@@ -951,7 +1080,13 @@ def _run_changelog_screening(run_id: str, db_path: str) -> None:
             (run_id,),
         ).fetchall()
 
-        task_rows = {}
+        if not impacts:
+            conn.execute("UPDATE changelog_runs SET job_status='screened' WHERE id=?", (run_id,))
+            conn.commit()
+            return
+
+        # Load all task rows up front
+        task_rows: dict[str, Any] = {}  # impact_id -> task row
         for imp in impacts:
             row = conn.execute(
                 "SELECT * FROM tasks WHERE record_id=? AND version=?",
@@ -960,20 +1095,109 @@ def _run_changelog_screening(run_id: str, db_path: str) -> None:
             if row:
                 task_rows[imp["id"]] = row
 
+        # --- Pass 0: software version pre-filter ---
+        # Extract the software name and version this changelog describes, then
+        # immediately exclude any task that is already at that version or newer.
+        run_row = conn.execute("SELECT software_name FROM changelog_runs WHERE id=?", (run_id,)).fetchone()
+        run_software_name = run_row["software_name"] if run_row else None
+
+        detected_sw_name, detected_sw_ver = _llm_extract_changelog_software(changelog_content, triage_cfg)
+        logger.info(
+            "Changelog software detected: name=%r version=%r (run=%s)",
+            detected_sw_name, detected_sw_ver, run_id[:8],
+        )
+
+        # Canonical software name for matching: prefer the run's scope filter (already
+        # normalised by the user) over the LLM extraction when both are available.
+        match_sw_name = (run_software_name or detected_sw_name or "").strip().lower()
+
+        version_excluded = 0
+        remaining_impacts = []
+        if detected_sw_ver and match_sw_name:
+            for imp in impacts:
+                task_row = task_rows.get(imp["id"])
+                task_sw = (task_row["software_name"] or "").strip().lower() if task_row else ""
+                task_ver = (task_row["software_version"] or "").strip() if task_row else ""
+                if (task_sw == match_sw_name
+                        and task_ver
+                        and _version_gte(task_ver, detected_sw_ver)):
+                    conn.execute(
+                        "UPDATE changelog_impacts SET affected=0, impact_summary=?, item_status='screened' WHERE id=?",
+                        (
+                            f"Task already at {task_row['software_name']} v{task_ver} "
+                            f"(changelog is for v{detected_sw_ver}).",
+                            imp["id"],
+                        ),
+                    )
+                    version_excluded += 1
+                else:
+                    remaining_impacts.append(imp)
+            conn.commit()
+            logger.info(
+                "Version pre-filter excluded %d/%d tasks (run=%s)",
+                version_excluded, len(impacts), run_id[:8],
+            )
+        else:
+            remaining_impacts = list(impacts)
+            logger.info("Version pre-filter skipped (no version detected) (run=%s)", run_id[:8])
+
+        if not remaining_impacts:
+            conn.execute("UPDATE changelog_runs SET job_status='screened' WHERE id=?", (run_id,))
+            conn.commit()
+            return
+
+        if _changelog_is_cancelled(db_path, run_id):
+            return
+
+        # --- Pass 1: title triage ---
+        task_titles: list[dict] = []
+        seen_record_ids: set[str] = set()
+        for imp in remaining_impacts:
+            row = task_rows.get(imp["id"])
+            if row and imp["task_record_id"] not in seen_record_ids:
+                task_titles.append({"id": imp["task_record_id"], "title": row["title"]})
+                seen_record_ids.add(imp["task_record_id"])
+
+        logger.info("Changelog triage pass 1: %d tasks to scan (run=%s)", len(task_titles), run_id[:8])
+        implicated_ids = set(_llm_triage_task_titles(task_titles, changelog_content, triage_cfg))
+        logger.info("Changelog triage shortlisted %d/%d tasks (run=%s)", len(implicated_ids), len(task_titles), run_id[:8])
+
+        # Mark triage-excluded impacts immediately as unaffected
+        excluded_count = 0
+        for imp in remaining_impacts:
+            if imp["task_record_id"] not in implicated_ids:
+                conn.execute(
+                    "UPDATE changelog_impacts SET affected=0, impact_summary=?, item_status='screened' WHERE id=?",
+                    ("Not implicated by title scan.", imp["id"]),
+                )
+                excluded_count += 1
+        conn.commit()
+        logger.info("Changelog triage excluded %d tasks without detailed screening (run=%s)", excluded_count, run_id[:8])
+
+        if _changelog_is_cancelled(db_path, run_id):
+            return
+
+        # --- Pass 2: detailed screening for shortlisted tasks only ---
+        shortlisted = [imp for imp in remaining_impacts if imp["task_record_id"] in implicated_ids]
+        logger.info("Changelog detailed screening: %d tasks (run=%s)", len(shortlisted), run_id[:8])
+
         def screen_one(impact_id: str):
             task_row = task_rows.get(impact_id)
             if not task_row:
                 return impact_id, False, "task not found"
             try:
-                result = _llm_screen_task_impact(task_row, changelog_content, cfg)
+                result = _llm_screen_task_impact(task_row, changelog_content, screen_cfg)
                 return impact_id, result["affected"], result["reason"]
             except Exception as exc:
                 logger.warning("Changelog screening failed for impact %s: %s", impact_id, exc)
                 return impact_id, False, f"screening error: {exc}"
 
         with ThreadPoolExecutor(max_workers=5) as pool:
-            futures = {pool.submit(screen_one, imp["id"]): imp["id"] for imp in impacts}
+            futures = {pool.submit(screen_one, imp["id"]): imp["id"] for imp in shortlisted}
             for future in as_completed(futures):
+                if _changelog_is_cancelled(db_path, run_id):
+                    logger.info("Changelog screening cancelled mid-pass (run=%s)", run_id[:8])
+                    return
                 impact_id, affected, reason = future.result()
                 write_conn = _sq.connect(db_path, timeout=30.0)
                 write_conn.execute("PRAGMA journal_mode = WAL")
@@ -1046,6 +1270,9 @@ def _run_changelog_proposing(run_id: str, db_path: str) -> None:
         with ThreadPoolExecutor(max_workers=5) as pool:
             futures = {pool.submit(propose_one, imp["id"]): imp["id"] for imp in impacts}
             for future in as_completed(futures):
+                if _changelog_is_cancelled(db_path, run_id):
+                    logger.info("Changelog proposing cancelled mid-pass (run=%s)", run_id[:8])
+                    return
                 impact_id, proposed_json = future.result()
                 write_conn = _sq.connect(db_path, timeout=30.0)
                 write_conn.execute("PRAGMA journal_mode = WAL")

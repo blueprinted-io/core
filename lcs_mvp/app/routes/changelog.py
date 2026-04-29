@@ -91,7 +91,7 @@ def changelog_index(request: Request):
 async def changelog_prepare(
     request: Request,
     background_tasks: BackgroundTasks,
-    title: str = Form(...),
+    title: str = Form(""),
     software_name: str = Form(""),
     scope_domain: str = Form(""),
     json_text: str = Form(""),
@@ -129,6 +129,15 @@ async def changelog_prepare(
 
     if not content.strip():
         raise HTTPException(400, detail="No changelog content provided.")
+
+    # Derive title from filename when uploading; require it for paste
+    if not title.strip():
+        if upload and upload.filename:
+            import os
+            stem = os.path.splitext(upload.filename)[0]
+            title = stem.replace("_", " ").replace("-", " ")
+        else:
+            raise HTTPException(400, detail="Title is required when pasting content.")
 
     sn = software_name.strip() or None
     sd = scope_domain.strip() or None
@@ -393,3 +402,39 @@ def changelog_commit(
             committed += 1
 
     return RedirectResponse(f"/tasks?status=draft", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Cancel an in-progress run
+# ---------------------------------------------------------------------------
+
+@router.post("/import/changelog/{run_id}/cancel")
+def changelog_cancel(request: Request, run_id: str):
+    require(request.state.role, "import:changelog")
+    with db() as conn:
+        run = _load_run(conn, run_id, request.state.user)
+        if run["job_status"] not in ("pending", "screening", "proposing"):
+            raise HTTPException(400, detail="Run is not currently in progress.")
+        conn.execute("UPDATE changelog_runs SET job_status='cancelled' WHERE id=?", (run_id,))
+        conn.execute(
+            "UPDATE changelog_impacts SET item_status='screened', affected=0, impact_summary='Cancelled.' "
+            "WHERE run_id=? AND item_status IN ('pending', 'selected')",
+            (run_id,),
+        )
+    return RedirectResponse("/import/changelog", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Delete a run
+# ---------------------------------------------------------------------------
+
+@router.post("/import/changelog/{run_id}/delete")
+def changelog_delete(request: Request, run_id: str):
+    require(request.state.role, "import:changelog")
+    with db() as conn:
+        run = _load_run(conn, run_id, request.state.user)
+        if run["job_status"] in ("screening", "proposing"):
+            raise HTTPException(400, detail="Cannot delete a run that is currently processing.")
+        conn.execute("DELETE FROM changelog_impacts WHERE run_id=?", (run_id,))
+        conn.execute("DELETE FROM changelog_runs WHERE id=?", (run_id,))
+    return RedirectResponse("/import/changelog", status_code=303)
