@@ -33,6 +33,9 @@
     </div>
   </div>
 
+  <label>Media URL <span class="muted" style="font-weight:normal">(optional — Storylane demo, video, or walkthrough link)</span></label>
+  <input name="media_url" type="url" value="{{ task.media_url if task and task.media_url else '' }}" placeholder="https://..." />
+
   <label>Domain</label>
   <select name="domain">
     <option value="" {% if not task or not task.domain %}selected{% endif %}>(unassigned)</option>

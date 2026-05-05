@@ -35,28 +35,34 @@
   {% set heat = (viz.pressure_heat or {}) %}
 
   <section class="dashboard-section admin-alert-layer">
-    <div class="section-header">Priority alerts <button type="button" class="info-btn js-info-btn" data-info-title="Priority alerts" data-info-content="Items that need immediate attention. Returned assessments need fixes, submitted workflows await approval, and blocked workflows have tasks preventing progress." aria-label="Explain Priority alerts">i</button></div>
+    <div class="section-header">Priority alerts <button type="button" class="info-btn js-info-btn" data-info-title="Priority alerts" data-info-content="Items that need immediate attention. Submitted workflows, primers, and tasks are awaiting reviewer confirmation. Blocked workflows have unconfirmed tasks preventing progress." aria-label="Explain Priority alerts">i</button></div>
     <div class="admin-alert-grid">
+      <a href="/workflows?status=submitted" class="card admin-alert-card warning {% if alert_submitted_workflows == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Workflows — review needed</div>
+        <div class="admin-alert-value">{{ alert_submitted_workflows }}</div>
+      </a>
+      <a href="/primers?status=submitted" class="card admin-alert-card warning {% if alert_submitted_primers == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Primers — review needed</div>
+        <div class="admin-alert-value">{{ alert_submitted_primers }}</div>
+      </a>
+      <a href="/tasks?status=submitted" class="card admin-alert-card warning {% if alert_submitted_tasks == 0 %}is-zero{% endif %}">
+        <div class="admin-alert-label">Tasks — review needed</div>
+        <div class="admin-alert-value">{{ alert_submitted_tasks }}</div>
+      </a>
+      <a href="/workflows?status=submitted" class="card admin-alert-card {% if alert_blocked_workflows > 0 %}warning{% else %}healthy is-zero{% endif %}">
+        <div class="admin-alert-label">Workflows blocked by tasks</div>
+        <div class="admin-alert-value">{{ alert_blocked_workflows }}</div>
+      </a>
       {% if assessments_enabled %}
       <a href="/assessments?status=returned" class="card admin-alert-card critical {% if alert_returned_assessments == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Returned assessments</div>
         <div class="admin-alert-value">{{ alert_returned_assessments }}</div>
       </a>
-      {% endif %}
-      <a href="/workflows?status=submitted" class="card admin-alert-card warning {% if alert_submitted_workflows == 0 %}is-zero{% endif %}">
-        <div class="admin-alert-label">Submitted workflows</div>
-        <div class="admin-alert-value">{{ alert_submitted_workflows }}</div>
-      </a>
-      {% if assessments_enabled %}
       <a href="/assessments?status=draft" class="card admin-alert-card warning {% if alert_draft_assessments == 0 %}is-zero{% endif %}">
         <div class="admin-alert-label">Draft assessments</div>
         <div class="admin-alert-value">{{ alert_draft_assessments }}</div>
       </a>
       {% endif %}
-      <a href="/workflows?status=submitted" class="card admin-alert-card {% if alert_blocked_workflows > 0 %}warning{% else %}healthy is-zero{% endif %}">
-        <div class="admin-alert-label">Workflows blocked by tasks</div>
-        <div class="admin-alert-value">{{ alert_blocked_workflows }}</div>
-      </a>
     </div>
   </section>
 

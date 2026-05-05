@@ -1278,8 +1278,8 @@ def _commit_schema10_payload(
               irreversible_flag, task_assets_json, domain, software_name, software_version,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
-              needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              needs_review_flag, needs_review_note, ingestion_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 item["record_id"], 1, initial_status,
                 title, outcome,
@@ -1297,6 +1297,7 @@ def _commit_schema10_payload(
                 None, None,
                 f"import:pdf ingestion={ingestion_id}",
                 1, "AI-imported: check for duplicates and correctness",
+                ingestion_id,
             ),
         )
         audit("task", item["record_id"], 1, "create", actor, note="import:pdf", conn=conn)
@@ -1341,8 +1342,9 @@ def _commit_schema10_payload(
               record_id, version, status, title, summary, explanation, analogies,
               media_json, domain, levels_json,
               created_at, updated_at, created_by, updated_by,
-              reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              reviewed_at, reviewed_by, change_note, needs_review_flag, needs_review_note,
+              ingestion_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 record_id, 1, initial_status,
                 title, summary, explanation, analogies,
@@ -1350,6 +1352,7 @@ def _commit_schema10_payload(
                 now, now, actor, actor,
                 None, None, f"import:pdf ingestion={ingestion_id}",
                 1, "AI-imported: check for accuracy",
+                ingestion_id,
             ),
         )
         audit("primer", record_id, 1, "create", actor, note="import:pdf", conn=conn)
@@ -1390,9 +1393,37 @@ def import_pdf_commit(
             pdf_path=pdf_path,
         )
 
-    if primers_created and not tasks_created:
-        return RedirectResponse(url="/primers?status=draft", status_code=303)
-    return RedirectResponse(url="/tasks?status=draft", status_code=303)
+    if not tasks_created and not primers_created:
+        return RedirectResponse(url="/import/pdf", status_code=303)
+    return RedirectResponse(url=f"/import/results/{ingestion_id}", status_code=303)
+
+
+@router.get("/import/results/{ingestion_id}")
+def import_results(request: Request, ingestion_id: str):
+    require(request.state.role, "import:pdf")
+    with db() as conn:
+        ing = conn.execute("SELECT * FROM ingestions WHERE id=?", (ingestion_id,)).fetchone()
+        if not ing:
+            raise HTTPException(404)
+
+        tasks = conn.execute(
+            "SELECT record_id, version, title, status, domain FROM tasks "
+            "WHERE ingestion_id=? AND version=1 ORDER BY title",
+            (ingestion_id,),
+        ).fetchall()
+
+        primers = conn.execute(
+            "SELECT record_id, version, title, status, domain FROM primers "
+            "WHERE ingestion_id=? AND version=1 ORDER BY title",
+            (ingestion_id,),
+        ).fetchall()
+
+    return templates.TemplateResponse("import_results.html", {
+        "request": request,
+        "ingestion": ing,
+        "tasks": tasks,
+        "primers": primers,
+    })
 
 
 @router.get("/import/json", response_class=HTMLResponse)

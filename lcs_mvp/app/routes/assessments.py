@@ -458,6 +458,23 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
     raise HTTPException(status_code=409, detail=f"Modality '{mod}' is not operational yet")
 
 
+@router.post("/delivery/export-package")
+def delivery_export_package(request: Request, workflow_key: str = Form(""), export_format: str = Form("")):
+    require(request.state.role, "delivery:export")
+
+    wk = (workflow_key or "").strip()
+    if "@" not in wk:
+        raise HTTPException(status_code=400, detail="workflow_key is required")
+    rid, ver_s = wk.split("@", 1)
+    try:
+        ver = int(ver_s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid workflow version")
+
+    from .exports import workflow_export_package
+    return workflow_export_package(request, rid, ver, export_format)
+
+
 @router.post("/delivery/present")
 def delivery_present_generate(request: Request, workflow_key: str = Form("")):
     require(request.state.role, "delivery:view")

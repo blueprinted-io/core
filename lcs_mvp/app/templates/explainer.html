@@ -56,7 +56,7 @@
 
 <div class="card">
   <h2 style="margin-bottom:4px">Core record types</h2>
-  <p class="muted" style="margin-top:0; margin-bottom:0; font-size:14px">Four first-class record types, all following the same governed lifecycle.</p>
+  <p class="muted" style="margin-top:0; margin-bottom:0; font-size:14px">Three first-class record types, all following the same governed lifecycle.</p>
   <div class="record-type-grid">
 
     <div class="record-type-card">
@@ -95,7 +95,7 @@
       </ul>
     </div>
 
-    <div class="record-type-card">
+    <div class="record-type-card" style="grid-column:1/-1;border-color:color-mix(in oklab,var(--accent) 30%,transparent)">
       <div class="record-type-icon">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="8" width="4" height="4" rx="1"/>
@@ -106,27 +106,11 @@
         </svg>
       </div>
       <p class="record-type-name">Workflow</p>
-      <p class="record-type-desc">An ordered sequence of Tasks that achieves one operational objective.</p>
+      <p class="record-type-desc">An ordered sequence of Tasks that achieves one operational objective. Primers can be attached to surface the conceptual knowledge learners need alongside the procedure.</p>
       <ul>
         <li>Contains <b>Tasks</b>, not low-level steps. The Workflow expresses sequencing and context.</li>
         <li>Can reference <b>Primers</b> to surface conceptual knowledge alongside the procedural steps.</li>
         <li>Always <b>human-composed</b>; never generated automatically during ingestion.</li>
-      </ul>
-    </div>
-
-    <div class="record-type-card">
-      <div class="record-type-icon">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 5h2M4 10h2M4 15h2"/>
-          <path d="M9 5h7M9 10h7M9 15h7"/>
-        </svg>
-      </div>
-      <p class="record-type-name">Step</p>
-      <p class="record-type-desc">One unit of procedure inside a Task.</p>
-      <ul>
-        <li><b>Text (required):</b> what you are doing.</li>
-        <li><b>Actions (optional):</b> tool-specific commands or UI paths for execution.</li>
-        <li><b>Completion (required):</b> how you verify the step succeeded.</li>
       </ul>
     </div>
 

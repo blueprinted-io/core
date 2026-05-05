@@ -134,6 +134,8 @@ def home(request: Request):
             "alert_blocked_workflows": admin_panels.get("alert_blocked_workflows", 0),
             "alert_returned_assessments": admin_panels.get("alert_returned_assessments", 0) if assessments_on else 0,
             "alert_submitted_workflows": admin_panels.get("alert_submitted_workflows", 0),
+            "alert_submitted_primers": admin_panels.get("alert_submitted_primers", 0),
+            "alert_submitted_tasks": admin_panels.get("alert_submitted_tasks", 0),
             "alert_draft_assessments": admin_panels.get("alert_draft_assessments", 0) if assessments_on else 0,
         },
     )

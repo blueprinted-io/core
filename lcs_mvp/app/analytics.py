@@ -831,6 +831,7 @@ def _compute_admin_panels(conn: sqlite3.Connection, doms: list[str], system_heal
     # --- Status counts ---
     tasks_status = {s: _count_entity_status(conn, "tasks", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
     workflows_status = {s: _count_entity_status(conn, "workflows", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
+    primers_status = {s: _count_entity_status(conn, "primers", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
     assessments_status = {s: _count_entity_status(conn, "assessment_items", s, "admin", dset) for s in ("draft", "submitted", "returned", "confirmed")}
 
     returned_tasks = tasks_status["returned"]
@@ -866,6 +867,8 @@ def _compute_admin_panels(conn: sqlite3.Connection, doms: list[str], system_heal
         "alert_returned_workflows": returned_workflows,
         "alert_returned_assessments": returned_assessments,
         "alert_submitted_workflows": workflows_status["submitted"],
+        "alert_submitted_primers": primers_status["submitted"],
+        "alert_submitted_tasks": tasks_status["submitted"],
         "alert_draft_assessments": assessments_status["draft"],
     }
     admin_panels["viz"] = _admin_dashboard_visuals(

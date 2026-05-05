@@ -73,6 +73,9 @@
       <p><b>Outcome:</b> {{ task.outcome }}</p>
       <p><b>Procedure name:</b> {{ task.procedure_name }}</p>
       <p><b>Irreversible:</b> {{ 'yes' if task.irreversible_flag else 'no' }}</p>
+      {% if task.media_url %}
+      <p><b>Media:</b> <a href="{{ task.media_url }}" target="_blank" rel="noopener">{{ task.media_url }}</a></p>
+      {% endif %}
 
       <h3>Facts</h3>
       {% if task.facts is string %}

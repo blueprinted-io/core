@@ -150,6 +150,7 @@ def task_create(
     procedure_name: str = Form(...),
     software_name: str = Form(""),
     software_version: str = Form(""),
+    media_url: str = Form(""),
     domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
@@ -192,12 +193,12 @@ def task_create(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain, software_name, software_version,
+              domain, software_name, software_version, media_url,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -215,6 +216,7 @@ def task_create(
                 domain_norm,
                 software_name.strip() or None,
                 software_version.strip() or None,
+                media_url.strip() or None,
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -386,6 +388,7 @@ def task_save(
     procedure_name: str = Form(...),
     software_name: str = Form(""),
     software_version: str = Form(""),
+    media_url: str = Form(""),
     domain: str = Form(""),
     tags: str = Form(""),
     meta: str = Form(""),
@@ -462,12 +465,12 @@ def task_save(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain, software_name, software_version,
+              domain, software_name, software_version, media_url,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -485,6 +488,7 @@ def task_save(
                 (domain or "").strip().lower(),
                 software_name.strip() or None,
                 software_version.strip() or None,
+                media_url.strip() or None,
                 _json_dump(tags_list),
                 _json_dump(meta_obj),
                 now,
@@ -529,12 +533,12 @@ def task_new_version(request: Request, record_id: str, version: int):
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain, software_name, software_version,
+              domain, software_name, software_version, media_url,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
               needs_review_flag, needs_review_note
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 record_id,
@@ -552,6 +556,7 @@ def task_new_version(request: Request, record_id: str, version: int):
                 (src["domain"] if "domain" in src.keys() else ""),
                 (src["software_name"] if "software_name" in src.keys() else None),
                 (src["software_version"] if "software_version" in src.keys() else None),
+                (src["media_url"] if "media_url" in src.keys() else None),
                 "[]",  # Phase 1: tasks are tagless.
                 (src["meta_json"] if "meta_json" in src.keys() else "{}"),
                 now,
@@ -641,7 +646,7 @@ def task_assign_domain(
               record_id, version, status,
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              domain, software_name, software_version,
+              domain, software_name, software_version, media_url,
               tags_json, meta_json,
               created_at, updated_at, created_by, updated_by,
               reviewed_at, reviewed_by, change_note,
@@ -650,7 +655,7 @@ def task_assign_domain(
               record_id, ?, 'submitted',
               title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
               irreversible_flag, task_assets_json,
-              ?, software_name, software_version,
+              ?, software_name, software_version, media_url,
               tags_json, meta_json,
               created_at, ?, created_by, ?,
               NULL, NULL, 'domain added',

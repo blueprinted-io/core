@@ -358,12 +358,12 @@ def changelog_commit(
                   record_id, version, status,
                   title, outcome, facts_json, concepts_json, procedure_name, steps_json, dependencies_json,
                   irreversible_flag, task_assets_json,
-                  domain, software_name, software_version,
+                  domain, software_name, software_version, media_url,
                   tags_json, meta_json,
                   created_at, updated_at, created_by, updated_by,
                   reviewed_at, reviewed_by, change_note,
                   needs_review_flag, needs_review_note
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     imp["task_record_id"],
@@ -381,6 +381,7 @@ def changelog_commit(
                     task["domain"],
                     proposed.get("software_name", task["software_name"]),
                     proposed.get("software_version", task["software_version"]),
+                    (task["media_url"] if "media_url" in task.keys() else None),
                     task["tags_json"] or "[]",
                     task["meta_json"] or "{}",
                     now, now, actor, actor,

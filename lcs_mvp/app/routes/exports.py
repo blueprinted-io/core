@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import io
+import json
 import logging
 import os
 import sqlite3
 import uuid
+import zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,7 +15,7 @@ from docx import Document
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from ..config import templates, EXPORTS_DIR
+from ..config import templates, EXPORTS_DIR, TASK_IMAGES_DIR
 from ..database import db, utc_now_iso, workflow_readiness, _user_id
 from ..audit import audit, _normalize_domains
 from ..linting import _normalize_steps
@@ -967,6 +970,1175 @@ def _build_presentation_payload(conn, workflow_record_id: str, workflow_version:
         "tasks": tasks,
         "primers": primers,
     }
+
+
+# ---------------------------------------------------------------------------
+# Export package (ZIP) — format-specific LLM prompt bundles
+# ---------------------------------------------------------------------------
+
+_EXPORT_FORMATS: dict[str, str] = {
+    "ilt_slides": "ILT Slides",
+    "ilt_facilitators_guide": "ILT Facilitators Guide",
+    "self_paced_html": "Self-Paced HTML",
+    "helpsheet": "Helpsheet",
+}
+
+_FORMAT_PROMPTS: dict[str, str] = {
+    "ilt_slides": """\
+# Export Package — ILT Slides
+
+You are generating a slide deck for an instructor-led training (ILT) session.
+This ZIP contains everything you need:
+- `data.json` — the full structured workflow and task content
+- `images/` — screenshots and diagrams referenced in the tasks (use these in slides where relevant)
+
+## Your output
+
+Produce a complete slide deck in Markdown format (one `---` separator per slide).
+Use the following structure:
+
+1. **Title slide** — workflow title, objective (one sentence)
+2. **Learning objectives slide** — bullet list of task outcomes (one per task)
+3. **Pre-reading slide** (if primers present in data.json) — list primer titles and one-line summaries
+4. For each task in order:
+   a. **Section divider slide** — task title only, large centred heading
+   b. **Context slide** — key facts (3-5 bullets max), why this task matters (from concepts)
+   c. **Procedure slide(s)** — steps in numbered list; split across slides if more than 6 steps; include any `actions` as sub-bullets
+   d. **Screenshot slide(s)** — one slide per screenshot image if present; caption with the step it relates to
+   e. **Check slide** — "How do you know you're done?" — list the `completion` text from each step as bullets
+5. **Summary slide** — recap of what was covered (task titles as bullets)
+6. **Questions slide** — blank except for "Questions?" heading
+
+## Style rules
+- Tone: professional, direct, second-person ("you will", "select", "click")
+- Each slide: maximum 6 bullet points; prefer 3-4
+- Speaker notes: add below each slide (under a `> Notes:` blockquote) with talking points, timing cues, and facilitator tips
+- Do not use em dashes (—); use commas or colons instead
+- Include the workflow record_id and version in the footer of the title slide for traceability
+
+## Data reference
+All content is in `data.json`. Key fields:
+- `workflow.title`, `workflow.objective`
+- `tasks[].title`, `.outcome`, `.facts`, `.concepts`, `.procedure_name`, `.steps`
+- Each step: `.text` (the action), `.completion` (done signal), `.actions` (sub-steps), `.screenshots` (image paths)
+- `primers[]` (optional pre-reading material)
+""",
+
+    "ilt_facilitators_guide": """\
+# Export Package — ILT Facilitators Guide
+
+You are generating a facilitator guide for an instructor-led training session.
+This ZIP contains:
+- `data.json` — full structured workflow and task content
+- `images/` — screenshots and diagrams (reference these to direct facilitators' attention)
+
+## Your output
+
+Produce a detailed facilitators guide in Markdown. Structure:
+
+### Front matter
+- Workflow title and objective
+- Total estimated duration (estimate 5 minutes per step across all tasks, plus 10 minutes intro and 5 minutes close)
+- Materials checklist (projector, participant workbooks, access to the software, etc.)
+- Learning objectives (one per task outcome)
+
+### For each task (in order)
+Use this repeating structure:
+
+**Task N: [Title]**
+- *Duration estimate:* [N] minutes
+- *Key message:* one sentence summarising why this task matters (from concepts)
+- *Preparation:* what the facilitator must have ready before starting this task
+- *Talking points:* expand on the facts and concepts — 3-5 bullet points with fuller explanation than the slides show
+- *Walkthrough steps:* numbered list mirroring the task steps; add facilitator notes on what to watch for, common mistakes, and when to pause
+- *Check for understanding:* 2-3 questions to ask participants before moving on
+- *Discussion prompt:* one open question relating the task to participants' real work
+
+### Close
+- Summary of the session (task titles and one-line outcomes)
+- Next steps / recommended follow-up
+- Evaluation prompt (what to ask participants to assess learning)
+
+## Style rules
+- Tone: direct, collegial — written for a subject-matter expert facilitating peers
+- Use second-person for participant instructions, third-person for facilitator guidance
+- Do not use em dashes; use commas or colons
+- Include workflow record_id and version in the document footer
+
+## Data reference
+- `workflow.title`, `workflow.objective`
+- `tasks[].title`, `.outcome`, `.facts`, `.concepts`, `.dependencies`, `.steps`
+- Each step: `.text`, `.completion`, `.actions`, `.notes`
+""",
+
+    "self_paced_html": """\
+# Export Package — Self-Paced HTML Course
+
+You are generating a self-paced e-learning course in HTML format from a Blueprinted workflow export package.
+
+This ZIP contains:
+
+- `data.json` — full structured workflow and task content
+- `images/` — screenshots and diagrams (referenced by task_record_id)
+- `styles.md` — visual design specification (colours, typography, spacing, buttons)
+- `editorial.md` — writing rules, product name spelling, and tone guidance
+
+Read both files before writing any HTML or CSS. They are authoritative. Where
+any instruction in this prompt conflicts with `styles.md` or `editorial.md`,
+the guidance in those files takes precedence.
+
+---
+
+## Understanding the data model
+
+Before generating output, understand what each entity is.
+
+### Workflow
+
+A Workflow is a composite outcome made of ordered Tasks. It has:
+
+- `title` — learner-facing name
+- `objective` — the organisation-defined outcome the workflow produces
+- `record_id` — unique identifier
+- `version` — content version number
+- `tasks[]` — ordered list of Task references
+
+A workflow does not contain steps, prerequisites, or learning-sequence guidance. Task order is strict and reflects capability dependencies only.
+
+### Task
+
+A Task is an atomic, self-contained unit of performance. It produces exactly one observable outcome. A Task has:
+
+- `title` — verb-driven learner-facing name
+- `outcome` — the observable result when the task is complete
+- `facts[]` — literal information the learner must know before executing the task (not opinions, not background; facts are discrete, verifiable statements)
+- `concepts[]` — the mental models required to understand WHY the steps work (concepts answer "what is this" and "why does it behave this way")
+- `procedure_name` — the name of the step sequence
+- `steps[]` — ordered atomic instructions (see below)
+- `dependencies[]` — conditions, completed tasks, or access requirements that must be true before this task can be executed
+- `task_assets[]` — optional media objects (see Media below)
+- `irreversible` — boolean flag; true means the task cannot be undone
+
+Facts, Concepts, and Steps are owned entirely by their Task. They are not shared between Tasks.
+
+Facts without Concepts produce rote behaviour. Concepts without Facts produce abstraction. Neither produces capability without the Procedure. The three elements work together: the learner must know the facts, understand the concepts, and follow the steps.
+
+### Step
+
+Each Step inside a Task has:
+
+- `text` — (required) the primary action in imperative form
+- `actions[]` — (optional) sub-steps describing HOW to execute the step in a specific tool or environment
+- `completion` — (required) the observable signal confirming the step is complete
+- `notes` — (optional) additional context or warnings
+- `screenshots[]` — (optional) list of image filenames in `images/{task_record_id}/`
+
+Each Step describes exactly one action. Completion signals are objective, not subjective ("The success banner appears" not "You feel confident").
+
+### Primer
+
+A Primer is pre-reading material attached to the workflow. Primers establish orientation and context before the learner encounters task procedures. They are not tasks and do not have steps. Each primer has:
+
+- `title` — heading for the primer card
+- `summary` — one or two sentences describing what the primer covers
+- `explanation` — full text content, rendered as formatted paragraphs
+
+Primers reduce cognitive load in the task pages by front-loading conceptual orientation. Render them before the task sequence begins.
+
+### Media (task_assets)
+
+Each task asset object has:
+
+- `url` — fully-qualified external URL
+- `type` — one of: `video`, `demo`, `image`, `audio`, `module`, `link`
+- `label` — short descriptive label
+
+For `type: video`, render an embedded video player or a clearly labelled link card using the label text.
+
+For `type: demo`, render a Storylane demo link card with an icon and the label text. Do not embed as iframe (Storylane blocks this). Open in a new tab.
+
+For other types, render an appropriate inline link card.
+
+Task-level assets appear after the Concepts section and before the procedure table.
+
+---
+
+## Output
+
+Produce a single self-contained HTML file with embedded CSS and JavaScript. No external CDN dependencies.
+
+---
+
+## Page structure
+
+### 1. Cover page
+
+- Workflow title (large heading)
+- Workflow objective (paragraph)
+- If primers are present: a "Before you begin" note with a link to the primers section
+- Ordered list of task titles as clickable navigation links
+- Progress bar showing 0 / total tasks
+
+### 2. Primers section (render only if primers[] is non-empty)
+
+- Section heading: "Before You Begin"
+- One card per primer containing: title, summary (styled as a subtitle), and explanation rendered as formatted paragraphs
+- A "Continue to Tasks" button at the end of the section
+
+### 3. Task pages (one per task)
+
+Each task page renders in sequence. Navigation is via Previous / Next buttons and the sidebar. Each task page must include:
+
+**a. Task header**
+
+- Task number (e.g. "Task 2 of 5") and title
+- Outcome: displayed as a styled callout — "When you complete this task: [outcome text]"
+- If `irreversible` is true: display a prominent warning banner — "This task includes irreversible changes. Review all steps before proceeding."
+
+**b. Dependencies (render only if dependencies[] is non-empty)**
+
+- Heading: "Before you start"
+- Bulleted list of dependency strings
+
+**c. Facts**
+
+- Heading: "What you need to know"
+- Brief instructional framing sentence before the list: "The following facts apply to this task. Read them before you begin the steps."
+- Each fact as a styled item (callout box or highlighted card). Facts are discrete and literal — render them individually, not as prose.
+
+**d. Concepts**
+
+- Heading: "Why this works"
+- Brief instructional framing sentence: "The following concepts explain the reasoning behind the procedure. Understanding these will help you troubleshoot and adapt."
+- Each concept as a paragraph. Concepts are mental models — render them as continuous prose, not bullet points.
+
+**e. Task-level media (render only if task_assets[] is non-empty)**
+
+- Heading: "Supporting resources"
+- Render each asset using the Media rules above
+
+**f. Procedure table**
+
+- Heading: [procedure_name]
+- Table with columns: # | Step | Actions | Completion signal
+- Each row:
+  - **#**: step number
+  - **Step**: step.text
+  - **Actions**: if step.actions[] is non-empty, render as a numbered sub-list; otherwise render an em-dash
+  - **Completion signal**: step.completion, styled in a distinct colour
+- If a step has notes, render them as a warning/note callout below the row
+- If a step is flagged irreversible at the step level, add a caution icon in the step column
+
+**Step screenshots**
+
+If a step has one screenshot, render it inline below the step row as a full-width image with alt text set to step.text.
+
+    src: images/{task_record_id}/{filename}
+
+If a step has two or more screenshots, render a minimal inline carousel directly below the step row. The carousel must:
+
+- Display one image at a time at full column width
+- Show Previous / Next arrow buttons (left and right of the image)
+- Show a position indicator below the image ("1 / 3" style, not dots)
+- Require no external libraries — implemented with vanilla JS and inline CSS
+- Be scoped to the step it belongs to (multiple carousels on the same page must operate independently)
+- Initialise with image 1 of N visible
+- Call event.stopPropagation() on arrow button click events so carousel navigation does not trigger page-level left/right arrow key handlers
+
+**g. Knowledge check**
+
+- Heading: "Check your understanding"
+- One question derived from the completion signals of this task's steps
+- 3 to 4 options with exactly one correct answer
+- Immediate feedback on selection (correct / incorrect with a brief explanation)
+- Question must test procedural understanding, not recall of trivia
+- Do not reveal the answer before the learner selects
+
+**h. Task footer**
+
+- "Task complete" button that marks the task done and advances the progress indicator
+
+---
+
+## Navigation and interaction
+
+- Sidebar: task list with completion indicators (dot or checkmark per task); primers appear as a separate section above the task list
+- Previous / Next buttons on every page
+- Cover page "Start" button navigates to primers (if present) or first task
+- Keyboard navigation: left arrow = previous, right arrow = next (page level only; carousels handle their own arrow events independently)
+- Progress indicator: "Task N of N complete" updated as tasks are marked done
+- Smooth scroll-to-top on page transition
+
+---
+
+## Design requirements
+
+### Visual style
+Apply the colour palette, typography scale, button specifications, and spacing
+values defined in `styles.md` exactly. Do not introduce colours, font sizes,
+or spacing values not listed there.
+
+Key constraints specific to this HTML output format:
+
+- Fully self-contained: all CSS and JS embedded in the single HTML file. No
+  external CDN dependencies, including fonts. Use the CSS font stack defined
+  in `styles.md` with system font fallbacks only.
+- Content column: max-width 800px, centred.
+- Line-height: 1.7 for body copy.
+- Mobile-responsive: sidebar collapses to a hamburger menu on narrow screens.
+- Print-friendly: @media print hides all navigation and renders content
+  sequentially without page breaks inside procedure tables.
+- Apply spacing values from the vertical spacing scale in `styles.md` for all
+  margin and padding. Do not interpolate between scale values.
+
+### Semantic colour use
+Use the colour roles defined in `styles.md` consistently:
+
+- Completion signal table cells: Viridis green tint background
+- Warning / irreversible banners: Suma orange or Ignis red tint
+- Facts callout cards: visually distinct from Concepts prose sections
+- Primer cards: visually distinct from task content pages
+- Interactive elements (buttons, links, progress indicators): use the button
+  colour variants from `styles.md` appropriate to the background context
+
+---
+
+## Writing and tone
+
+Apply all rules in `editorial.md`. Pay particular attention to the LEARNING
+OVERRIDE section, which supersedes the marketing tone of the original Veeam
+editorial guide.
+
+Rules specific to this HTML output that are not covered in `editorial.md`:
+
+- Do not use em dashes anywhere in generated interface text, headings, or
+  framing sentences (em dashes are permitted only within authored step text
+  and concept text that arrives verbatim from data.json)
+- Do not editorialize step text — render step.text exactly as authored in the
+  data; do not paraphrase, improve, or reframe it
+- Section headings must follow the exact wording defined in the Page structure
+  section of this prompt; do not substitute synonyms
+- Knowledge check questions must test whether the learner can identify a
+  correct completion signal or procedural outcome — not whether they can
+  recall a product claim or marketing fact verbatim
+
+---
+
+## Footer (every page)
+
+Display: Workflow record_id | Version [version] | Generated by Blueprinted
+
+---
+
+## Data reference
+
+    workflow.title
+    workflow.objective
+    workflow.record_id
+    workflow.version
+    workflow.tasks[]
+    workflow.primers[]          // optional
+
+    tasks[].title
+    tasks[].outcome
+    tasks[].facts[]
+    tasks[].concepts[]
+    tasks[].procedure_name
+    tasks[].steps[]
+    tasks[].dependencies[]
+    tasks[].task_assets[]       // optional; objects with url, type, label
+    tasks[].irreversible        // boolean, optional
+
+    steps[].text
+    steps[].actions[]           // optional
+    steps[].completion
+    steps[].notes               // optional
+    steps[].screenshots[]       // optional; filenames only
+""",
+
+    "helpsheet": """\
+# Export Package — Helpsheet
+
+You are generating a compact quick-reference helpsheet.
+This ZIP contains:
+- `data.json` — full structured workflow and task content
+- `images/` — screenshots (include only the most essential ones, max 1 per task)
+
+## Your output
+
+Produce a single-page (A4) quick-reference helpsheet in Markdown. It must be dense but scannable.
+
+### Structure
+- **Header** — workflow title, one-sentence objective, software name/version if present
+- **For each task** — a compact section:
+  - Task title (bold heading)
+  - Steps: numbered, condensed to the essential action only (omit explanatory text; keep the verb and the object)
+  - Key commands/actions: inline code blocks for any CLI commands, menu paths, or keyboard shortcuts from the `actions` field
+  - One screenshot if present and critical to understanding
+  - "Done when:" — one-line completion signal taken from the final step's `completion` field
+
+- **Footer** — workflow record_id and version, export date
+
+## Style rules
+- Maximum two A4 pages when printed at 10pt
+- No preamble, no introductory paragraphs, no concepts or facts sections
+- Terse imperative sentences only ("Click Save", "Run `sudo systemctl restart`")
+- Do not use em dashes
+- Use a two-column layout if there are more than 4 tasks (indicate this with a note at the top of the file)
+- Bold the first word of each step (the verb)
+
+## Data reference
+- `workflow.title`, `workflow.objective`
+- `tasks[].title`, `.steps[].text`, `.steps[].actions`, `.steps[-1].completion`
+- `tasks[].software_name`, `.software_version` (for header)
+""",
+}
+
+
+_BRAND_STYLE_GUIDE = """\
+# Veeam Brand Style Guide
+## For use by LLM-generated HTML outputs
+
+This file defines the visual and typographic standards for all Veeam-branded
+HTML content generated from Blueprinted workflow exports. Apply these rules
+exactly. Do not introduce colours, fonts, or spacing values not listed here.
+
+---
+
+## Logotypes
+
+Use the primary Veeam logo on white or light backgrounds.
+Use the secondary logo when the rendered logo width is under 200px.
+Variant logos exist for: Grey Mineral background, Viridis (green) background,
+Black background.
+
+Do not modify logo proportions, colours, or surrounding elements.
+
+The Bounce Forward Mark (the green chevron/tick mark) may be used as a
+standalone decorative element in marketing contexts at reduced opacity:
+- Marketing use: 25% opacity
+- GUI use: 20% opacity
+
+---
+
+## Colours
+
+### Primary Brand Colours
+
+| Name         | Hex       | Usage                                      |
+|--------------|-----------|--------------------------------------------|
+| Viridis      | #00D15F   | Primary brand green; CTAs, highlights      |
+| Black        | #000000   | Primary text on light backgrounds          |
+| White        | #FFFFFF   | Primary text on dark backgrounds; surfaces |
+
+### Green Palette (light to dark)
+
+| Hex       | Notes                        |
+|-----------|------------------------------|
+| #E1F4EC   | Lightest tint                |
+| #9CFFA3   | Lime                         |
+| #32F26F   | Mint                         |
+| #00D15F   | Viridis (primary)            |
+| #009277   | Hover state for primary CTAs |
+| #007F49   | Pine                         |
+| #02613F   | Darkest green                |
+
+### Blue Palette
+
+| Hex       | Notes                                  |
+|-----------|----------------------------------------|
+| #EEF4F6   | Lightest blue tint; tertiary hover bg  |
+| #E3EEFE   | Light blue tint                        |
+| #57E0FF   | Sky                                    |
+| #3700FF   | Electric Azure; default button colour  |
+| #283E8E   | Button hover state (primary/secondary) |
+| #002833   | Darkest blue                           |
+
+### Supplementary
+
+| Hex       | Name   |
+|-----------|--------|
+| #8E71F4   | Casia (purple) |
+| #CECBB8   | Warm grey      |
+
+### System / Status Colours
+
+| Hex       | Name   | Usage              |
+|-----------|--------|--------------------|
+| #ED2B3D   | Ignis  | Error, danger      |
+| #FE8A25   | Suma   | Warning, orange    |
+| #FFD839   | Sol    | Caution, yellow    |
+| #FCF8EB   | —      | Warning background |
+
+### Neutral Family
+
+| Hex       | Name          |
+|-----------|---------------|
+| #000000   | Black         |
+| #232323   | Near black    |
+| #505861   | Dark Mineral  |
+| #ADACAF   | French Grey   |
+| #F0F0F0   | Fog           |
+| #F9F9F9   | Off white     |
+| #FFFFFF   | White         |
+
+### Gradients
+
+**Green gradients** — use for hero backgrounds and feature sections:
+- Primary dark 135deg
+- Primary light 135deg
+- Secondary 180deg / 135deg
+- Tertiary 180deg / 90deg
+- Tertiary light 90deg
+- Tertiary green 135deg
+
+**Blue gradients:**
+- Azure Blue to Sky
+- Dark Grey to Dark Mineral
+- Azure Blue to Casia
+
+**White gradients:**
+- White to Neutral
+- White to Sky Pale
+- Super white 180deg
+
+---
+
+## Typography
+
+### Font Stack
+
+**Primary (web and print):** ES Build Variable
+- Request from brand@veeam.com if not available; do not substitute without fallback
+
+**Web fallback / Google Fonts:** Source Sans Pro
+- Source Sans Pro Light
+- Source Sans Pro Regular
+- Source Sans Pro Bold
+
+**MS Office / plain text fallback:** Tahoma Regular, Tahoma Bold
+
+**CSS font stack for generated HTML:**
+
+    font-family: 'ES Build', 'Source Sans Pro', 'Tahoma', sans-serif;
+
+### Type Scale
+
+All sizes in pixels. Format: font-size / line-height.
+
+| Style       | Size / Line-height | Notes                        |
+|-------------|--------------------|------------------------------|
+| Display 100 | 100 / —            | Hero display only            |
+| Display 60  | 60 / —             | Large display                |
+| H1          | 50 / 60            |                              |
+| H2          | 55 / 52            |                              |
+| H3          | 36 / 44            |                              |
+| Text 28     | 28 / 36            |                              |
+| Text 24     | 24 / 28            |                              |
+| Text 20     | 20 / 24            |                              |
+| Text 18     | 18 / 24            |                              |
+| Paragraph   | 16 / 24            | Body copy default            |
+| Caption     | 14 / 20            | Labels, footnotes            |
+| Eyebrow     | — / 28 at size 24  | Section labels above headings|
+
+### Paragraph Styles
+
+| Style       | Size / Line-height | Weight  |
+|-------------|--------------------|---------|
+| Body        | 18 / 24            | Regular |
+| Body bold   | 18 / 24            | Bold    |
+| Body        | 16 / 24            | Regular |
+| Body bold   | 16 / 24            | Bold    |
+| Caption     | 14 / 20            | Regular |
+
+---
+
+## Buttons
+
+### Corner radius
+All buttons: 6px border-radius.
+
+### Colour variants
+
+**On dark backgrounds (default brand context):**
+
+| Variant   | Default    | Hover      | Notes                         |
+|-----------|------------|------------|-------------------------------|
+| Primary   | #3700FF    | #283E8E    | Electric Azure                |
+| Secondary | #3700FF    | #283E8E    |                               |
+| Tertiary  | transparent| #EEF4F6    | Ghost/outline style           |
+
+**On white backgrounds:**
+
+| Variant   | Default    | Hover      |
+|-----------|------------|------------|
+| Primary   | #FFFFFF    | #232323    |
+| Secondary | #FFFFFF    | #232323    |
+| Tertiary  | transparent| #FFFFFF    |
+
+**Green variant:**
+
+| Variant   | Default    | Hover      |
+|-----------|------------|------------|
+| Primary   | #00D15F    | #009277    |
+| Secondary | #00D15F    | #009277    |
+| Tertiary  | transparent| #EEF4F6    |
+
+### Button sizing
+
+**Large CTA (default behaviour):**
+- Padding: 12px top/bottom, 24px left/right
+- Text: centred
+
+**Small CTA:**
+- Padding: 8px top/bottom, 20px left/right
+- Text: centred
+
+**Fixed width:**
+- Large: 285px wide
+- Small: 285px wide
+
+**Mobile (full width):**
+- Large and small: 100% width
+
+**Minimum widths:**
+- Large: 190px
+- Small: 66px (rendered as 166px in spec)
+
+---
+
+## Grid System
+
+### Breakpoints
+
+| Label | Min-width | Layout     | Content padding |
+|-------|-----------|------------|-----------------|
+| L     | 1260px    | Centred    | 0 15px          |
+| M     | 1024px    | Stretched  | 30px            |
+| S     | 768px     | Stretched  | 30px            |
+| xS    | < 767px   | Stretched  | 30px            |
+
+**L breakpoint:** content area max-width 1260px, centred, 15px horizontal padding.
+
+### Vertical spacing scale (pixels)
+
+8, 16, 24, 32, 48, 64, 80, 120
+
+Use only these values for margin and padding. Do not interpolate.
+
+---
+
+## Icons and Illustrations
+
+- **Line icons:** Veeam line icons library (access via brand portal)
+- **Illustrations:** Veeam new illustrations library (access via brand portal)
+- Icon gradient alignment: use the provided gradient direction guide; do not
+  apply arbitrary gradients to icons
+- Marketing illustrations use an isometric approach with unified component
+  libraries
+
+---
+
+## Things to Avoid
+
+- Do not use 3D styling on book covers or document covers — use 2D only
+- Container values with images or icons must be even numbers divisible by two
+- Do not introduce colours outside the defined palette
+- Do not use ES Build substitutes without falling back to Source Sans Pro
+
+---
+
+## Notes for LLM-generated HTML
+
+When generating HTML from this style guide:
+
+1. Use the CSS font stack defined above. Do not load external font files unless
+   ES Build or Source Sans Pro are confirmed available in the delivery environment.
+2. Apply the Viridis green (#00D15F) as the primary interactive accent.
+3. Use Electric Azure (#3700FF) for primary CTA buttons on dark backgrounds.
+4. Apply the neutral family for backgrounds: #000000 or #232323 for dark
+   surfaces, #F0F0F0 or #F9F9F9 for light surfaces.
+5. Use Ignis (#ED2B3D) for error/danger states and Suma (#FE8A25) for warnings.
+6. Respect the vertical spacing scale strictly — 8px increments only.
+7. All buttons must have 6px border-radius.
+8. Body copy default: 16px / 24px line-height, Source Sans Pro Regular.
+9. Do not introduce drop shadows, gradients, or decorative elements not
+   specified in this guide.
+"""
+
+
+_EDITORIAL_STYLE_GUIDE = """\
+# Veeam Editorial Style Guide — Learning Content Edition
+## Extracted and adapted for Blueprinted HTML course output
+
+This file is derived from the Veeam Editorial Style Guide 2024. It has been
+filtered and annotated for use in self-paced learning content. Not all rules
+from the original guide apply here.
+
+Where the original guide produces marketing or technical language that is
+hostile to new learners, this document overrides it. Those overrides are
+marked clearly.
+
+---
+
+## Language
+
+### English variant
+Use American English throughout.
+- virtualize (not virtualise)
+- center (not centre)
+- backup (not back-up)
+
+### Tone — LEARNING OVERRIDE
+The original style guide is written for marketing collateral and partner
+communications. That tone is inappropriate for learning content.
+
+Do not use:
+- Superlatives and brand claims ("industry-leading," "#1," "radically resilient")
+- Benefit-forward language that describes outcomes before explaining what
+  something is ("Bounce forward with confidence" means nothing to a new learner)
+- Passive constructions that obscure the action ("data can be protected" vs
+  "back up your data")
+- Acronym-first introductions without plain-language context
+
+Do use:
+- Second-person, present tense: "Select the dropdown. The list expands."
+- Plain descriptions before product names: explain what the thing does before
+  naming it
+- Concrete actions with observable results
+- The simplest word that is accurate
+
+If you find yourself writing a sentence that could appear on a product
+brochure, rewrite it.
+
+---
+
+## Capitalisation rules (apply these)
+
+### Sentence case
+Use sentence case (first word and proper nouns only) for:
+- Section headers and sub-headers within learning content
+- Step text and action text
+- Body copy, bullet points, callout boxes
+- Knowledge check questions and answer options
+- Outcome statements and completion signals
+
+### Title case
+Use title case (all major words capitalised) only for:
+- The workflow title (cover page heading)
+- Task titles
+- Primer titles
+- Page-level navigation labels
+
+### Product names
+All Veeam product names are title-cased and must be written exactly as
+specified in the Product Names section below. Never abbreviate on first use.
+
+---
+
+## Numbers
+
+- Spell out numbers one through nine in body copy
+- Use numerals for 10 and above
+- Use numerals for all units of measurement: 2 CPUs, 10GB, 5-minute RTO
+- No space between a numeral and its unit: 10GB (not 10 GB)
+- Do not begin a sentence with a numeral; restructure the sentence
+
+---
+
+## Punctuation
+
+### Oxford comma
+Always use the Oxford (serial) comma in lists of three or more items.
+- Correct: facts, concepts, and steps
+- Incorrect: facts, concepts and steps
+
+### Em dash
+Use sparingly in learning content. When used, place one space on each side.
+- Acceptable use: to introduce a clarification mid-sentence
+- Do not use as a bullet substitute or list opener
+
+### En dash
+Use to express ranges without spaces: 9–10 minutes, steps 3–5.
+
+### Hyphen
+Use for compound modifiers before a noun: cloud-native environment,
+step-by-step procedure. No space around a hyphen.
+
+### Ampersand
+Do not use & in body copy or step text. Spell out "and."
+Exception: Veeam Backup & Replication — the ampersand is part of the
+official product name and must be retained.
+
+### Symbols
+- Use % not "percent"
+- Use # only in the specific phrase "#1" when that claim is editorially
+  required. Do not use in learning content.
+- Do not use trademark symbols (®, ™) in learning materials
+
+---
+
+## Dates and times
+
+- Date format: Jan. 12, 2023 (abbreviate all months except March, April, May,
+  June, July when paired with a specific date)
+- Time format: 11 a.m., 2:30 p.m. (12-hour clock; no zeroes on the hour)
+- Do not reference time zones unless the content is event-specific
+
+---
+
+## Product names and spelling
+
+Write all product names exactly as shown. Do not abbreviate on first use.
+Do not add trademark or registered symbols.
+
+### Platform products
+
+- Veeam Data Platform (umbrella term)
+  - Veeam Data Platform Premium
+  - Veeam Data Platform Advanced
+  - Veeam Data Platform Foundation
+  - Veeam Data Platform Essentials (small business; max 50 workloads)
+- Veeam Data Cloud
+  - Veeam Data Cloud for Microsoft 365
+  - Veeam Data Cloud for Microsoft Azure
+  - Veeam Data Cloud Vault (second reference: Veeam Vault)
+
+### Core products
+
+- Veeam Backup & Replication (the ampersand is required)
+- Veeam ONE
+- Veeam Recovery Orchestrator
+- Veeam Service Provider Console
+- Veeam Kasten (first reference); Kasten (second reference)
+  - Do not use Kasten K10 or K10
+
+### Backup products (the "for" portion is always italicised)
+
+- Veeam Backup *for Microsoft 365*
+- Veeam Backup *for Salesforce*
+- Veeam Backup *for AWS*
+- Veeam Backup *for Microsoft Azure*
+- Veeam Backup *for Google Cloud*
+- Veeam Backup *for Nutanix AHV*
+- Veeam Backup *for Red Hat Virtualization*
+
+### Agent products (the "for" portion is always italicised)
+
+- Veeam Agent *for Microsoft Windows*
+- Veeam Agent *for Linux*
+- Veeam Agent *for Mac*
+- Veeam Agent *for IBM AIX*
+- Veeam Agent *for Oracle Solaris*
+
+When listing multiple agents together, conjunctions ("and") are not italicised:
+Veeam Agents *for Microsoft Windows*, *Mac*, *Linux*, *IBM AIX* and *Oracle Solaris*
+
+### Explorer products (the "for" portion is always italicised)
+
+- Veeam Explorer *for Microsoft Active Directory*
+- Veeam Explorer *for Microsoft Exchange*
+- Veeam Explorer *for Microsoft SharePoint*
+- Veeam Explorer *for Microsoft SQL Server*
+- Veeam Explorer *for Microsoft Teams*
+- Veeam Explorer *for Oracle*
+- Veeam Explorer *for PostgreSQL*
+- Veeam Explorer for Storage Snapshots (no italics — multi-partner exception)
+
+### Plug-ins (the "for" portion is always italicised)
+
+- Veeam Plug-in *for Oracle RMAN*
+- Veeam Plug-in *for SAP HANA*
+
+### Community and free editions
+
+- Veeam Backup & Replication Community Edition
+- Veeam ONE Community Edition
+- Veeam Agent *for Windows* Free
+- Veeam Agent *for Linux* Free
+
+### Version numbers
+
+When the product name is present: lowercase v, no trailing .0 for major versions.
+- Veeam Backup & Replication v12
+- Veeam Backup & Replication v12a
+
+When the product name is absent: uppercase V.
+- V12 introduces new recovery options.
+- This feature was added in V12A.
+
+Only products receive version numbers. Features do not.
+
+---
+
+## Common word usage
+
+| Word | Correct form | Notes |
+|------|-------------|-------|
+| backup | backup (noun/adjective) | "Create a backup"; "backup job" |
+| back up | back up (verb) | "Back up your data" |
+| resilience | resilience | Never "resiliency" |
+| resilient | resilient | Adjective form of resilience |
+| cyberattack | cyberattack | One word, no hyphen |
+| cybersecurity | cybersecurity | One word, no hyphen |
+| cyber resilience | cyber resilience | Two words |
+| cyberthreat | cyberthreat | One word, no hyphen |
+| log-in | log-in (noun/adjective) | "Enter your log-in details" |
+| log in | log in (verb) | "Log in to the console" |
+| sign-in | sign-in (noun/adjective) | "Use your sign-in credentials" |
+| sign in | sign in (verb) | "Sign in to continue" |
+
+---
+
+## Hypervisors
+
+First reference: VMware vSphere, Microsoft Hyper-V (full names).
+Subsequent references: vSphere, Hyper-V.
+Do not abbreviate when both appear in the same document.
+
+---
+
+## Alliance partner names (commonly referenced in Veeam content)
+
+Use full name on first reference, abbreviation thereafter where noted.
+
+| Partner | First reference | Subsequent |
+|---------|----------------|------------|
+| Amazon Web Services | Amazon Web Services (AWS) | AWS |
+| Hewlett Packard Enterprise | Hewlett Packard Enterprise (HPE) | HPE |
+| VMware | VMware vSphere | vSphere |
+| Google Cloud | Google Cloud | Google Cloud |
+| Microsoft Azure | Microsoft Azure | Azure |
+
+Never use "Google Cloud Platform." Use "Google Cloud" only.
+
+---
+
+## Learning content — additional rules
+
+These rules apply specifically to Blueprinted-generated HTML output and are
+not in the original Veeam style guide.
+
+**Step text:** Write in imperative form. One action per step.
+- Correct: "Select Save from the File menu."
+- Incorrect: "The user should navigate to the File menu and then save."
+
+**Completion signals:** State the observable result, not a feeling.
+- Correct: "The backup job status shows Completed."
+- Incorrect: "You will know the backup is done."
+
+**Facts:** State as discrete, verifiable sentences. Do not editorialize.
+- Correct: "Veeam Backup & Replication stores restore points as incremental
+  backup files after the first full backup."
+- Incorrect: "Veeam's industry-leading backup technology creates restore
+  points so you can recover with confidence."
+
+**Concepts:** Explain the mechanism in plain language. Avoid brand framing.
+- Correct: "A restore point represents the state of a VM at a specific moment
+  in time. Each incremental backup captures only the blocks that changed since
+  the last backup, which reduces storage usage and backup duration."
+- Incorrect: "Veeam's revolutionary instant recovery technology leverages
+  restore points to deliver RTOs of minutes."
+
+**Product claims in learning content:** Omit entirely. The learner is already
+using the product. Claims are marketing, not instruction.
+
+**Acronyms:** Define on first use, then use the acronym.
+- "Recovery Time Objective (RTO)" on first use, "RTO" thereafter.
+"""
+
+
+def _build_package_data(conn, record_id: str, version: int) -> dict[str, Any]:
+    """Build the full data.json payload for an export package.
+
+    Image URLs are rewritten from /task-images/{rid}/{file} to images/{rid}/{file}
+    so they resolve as relative paths within the ZIP.
+    """
+    wf = conn.execute(
+        "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+    ).fetchone()
+    if not wf:
+        raise HTTPException(404)
+
+    ref_rows = conn.execute(
+        "SELECT order_index, task_record_id, task_version FROM workflow_task_refs "
+        "WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+        (record_id, version),
+    ).fetchall()
+
+    primer_rows = conn.execute(_PRIMER_ATTACH_QUERY, (record_id,)).fetchall()
+
+    def _rewrite_url(url: str) -> str:
+        if url and url.startswith("/task-images/"):
+            return "images/" + url[len("/task-images/"):]
+        return url
+
+    tasks = []
+    for r in ref_rows:
+        t = conn.execute(
+            "SELECT * FROM tasks WHERE record_id=? AND version=?",
+            (r["task_record_id"], int(r["task_version"])),
+        ).fetchone()
+        if not t:
+            raise HTTPException(409, detail=f"Referenced task {r['task_record_id']} not found")
+        steps = _normalize_steps(_json_load(t["steps_json"]) or [])
+        for step in steps:
+            step["screenshots"] = [_rewrite_url(u) for u in (step.get("screenshots") or [])]
+        assets = [
+            {**a, "url": _rewrite_url(a.get("url", ""))}
+            for a in (_json_load(t["task_assets_json"]) or [])
+        ]
+        tasks.append({
+            "order_index": int(r["order_index"]),
+            "record_id": t["record_id"],
+            "version": int(t["version"]),
+            "title": t["title"],
+            "outcome": t["outcome"],
+            "facts": _json_load(t["facts_json"]) or [],
+            "concepts": _json_load(t["concepts_json"]) or [],
+            "dependencies": _json_load(t["dependencies_json"]) or [],
+            "procedure_name": t["procedure_name"],
+            "irreversible": bool(t["irreversible_flag"]),
+            "steps": steps,
+            "task_assets": assets,
+            "media_url": (t["media_url"] if "media_url" in t.keys() else None),
+            "software_name": (t["software_name"] if "software_name" in t.keys() else None),
+            "software_version": (t["software_version"] if "software_version" in t.keys() else None),
+        })
+
+    return {
+        "workflow": {
+            "record_id": wf["record_id"],
+            "version": int(wf["version"]),
+            "title": wf["title"],
+            "objective": wf["objective"],
+            "domains": _normalize_domains(wf["domains_json"]),
+        },
+        "tasks": tasks,
+        "primers": [
+            {
+                "title": p["title"],
+                "summary": p["summary"],
+                "explanation": p["explanation"],
+                "analogies": p["analogies"],
+            }
+            for p in primer_rows
+        ],
+    }
+
+
+def _collect_package_images(data: dict[str, Any]) -> list[tuple[str, str]]:
+    """Return [(zip_path, abs_disk_path), ...] for all images referenced in the package data.
+
+    Skips files that don't exist on disk.
+    """
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for task in data.get("tasks", []):
+        for step in task.get("steps", []):
+            for url in (step.get("screenshots") or []):
+                if url and url.startswith("images/") and url not in seen:
+                    seen.add(url)
+                    rel = url[len("images/"):]  # {task_record_id}/{filename}
+                    abs_path = os.path.join(TASK_IMAGES_DIR, rel)
+                    if os.path.isfile(abs_path):
+                        pairs.append((url, abs_path))
+                    else:
+                        logger.warning("Export package: image not found on disk: %s", abs_path)
+        for asset in task.get("task_assets", []):
+            url = asset.get("url", "")
+            if url and url.startswith("images/") and url not in seen:
+                seen.add(url)
+                rel = url[len("images/"):]
+                abs_path = os.path.join(TASK_IMAGES_DIR, rel)
+                if os.path.isfile(abs_path):
+                    pairs.append((url, abs_path))
+                else:
+                    logger.warning("Export package: image not found on disk: %s", abs_path)
+    return pairs
+
+
+@router.post("/workflows/{record_id}/{version}/export-package")
+def workflow_export_package(
+    request: Request,
+    record_id: str,
+    version: int,
+    export_format: str = Form(...),
+):
+    """Generate a ZIP export package for a confirmed workflow.
+
+    The ZIP contains instructions.md (LLM prompt), data.json, and all referenced images.
+    """
+    require(request.state.role, "workflow:export")
+    actor = request.state.user
+
+    if export_format not in _EXPORT_FORMATS:
+        raise HTTPException(400, detail=f"Unknown export format '{export_format}'")
+
+    with db() as conn:
+        wf = conn.execute(
+            "SELECT * FROM workflows WHERE record_id=? AND version=?", (record_id, version)
+        ).fetchone()
+        if not wf:
+            raise HTTPException(404)
+        if wf["status"] != "confirmed":
+            raise HTTPException(409, detail="Export is allowed for confirmed workflows only")
+
+        ref_rows = conn.execute(
+            "SELECT order_index, task_record_id, task_version FROM workflow_task_refs "
+            "WHERE workflow_record_id=? AND workflow_version=? ORDER BY order_index",
+            (record_id, version),
+        ).fetchall()
+        readiness = workflow_readiness(conn, [(r["task_record_id"], int(r["task_version"])) for r in ref_rows])
+        if readiness != "ready":
+            raise HTTPException(409, detail="Export is allowed only when all referenced task versions are confirmed")
+
+        data = _build_package_data(conn, record_id, version)
+
+    images = _collect_package_images(data)
+
+    # Build ZIP in memory
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("instructions.md", _FORMAT_PROMPTS[export_format])
+        zf.writestr("style.md", _BRAND_STYLE_GUIDE)
+        zf.writestr("editorial.md", _EDITORIAL_STYLE_GUIDE)
+        zf.writestr("data.json", json.dumps(data, ensure_ascii=False, indent=2))
+        for zip_path, abs_path in images:
+            zf.write(abs_path, zip_path)
+    zip_bytes = buf.getvalue()
+
+    # Save to EXPORTS_DIR and record artifact
+    short = _short_code("WF", record_id)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"workflow__{short}__v{version}__{export_format}__{ts}.zip"
+    out_path = os.path.join(EXPORTS_DIR, filename)
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(zip_bytes)
+
+    sha = _sha256_bytes(zip_bytes)
+    task_refs_json = json.dumps([
+        {"record_id": r["task_record_id"], "version": int(r["task_version"])} for r in ref_rows
+    ])
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO export_artifacts(id, kind, filename, path, sha256,
+               workflow_record_id, workflow_version, task_refs_json,
+               exported_at, exported_by, retention_days)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (str(uuid.uuid4()), "zip_package", filename, out_path, sha,
+             record_id, version, task_refs_json,
+             utc_now_iso(), actor, 30),
+        )
+    audit("workflow", record_id, version, "export", actor, note=f"kind=zip_package format={export_format}")
+
+    logger.info("Export package generated: %s (%d images)", filename, len(images))
+    return FileResponse(
+        path=out_path,
+        media_type="application/zip",
+        filename=filename,
+    )
 
 
 @router.get("/api/present/{token_id}")

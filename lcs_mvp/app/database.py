@@ -543,6 +543,12 @@ def init_db_path(db_path: str) -> None:
             conn.execute("ALTER TABLE tasks ADD COLUMN software_version TEXT")
         if not _column_exists(conn, "tasks", "software_name"):
             conn.execute("ALTER TABLE tasks ADD COLUMN software_name TEXT")
+        if not _column_exists(conn, "tasks", "media_url"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN media_url TEXT")
+        if not _column_exists(conn, "tasks", "ingestion_id"):
+            conn.execute("ALTER TABLE tasks ADD COLUMN ingestion_id TEXT")
+        if not _column_exists(conn, "primers", "ingestion_id"):
+            conn.execute("ALTER TABLE primers ADD COLUMN ingestion_id TEXT")
         if not _column_exists(conn, "workflows", "needs_review_flag"):
             conn.execute("ALTER TABLE workflows ADD COLUMN needs_review_flag INTEGER NOT NULL DEFAULT 0")
         if not _column_exists(conn, "workflows", "needs_review_note"):

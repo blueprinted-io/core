@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import complete</h1>
+    <p class="muted">{{ ingestion.filename }}{% if ingestion.domain %} · {{ ingestion.domain }}{% endif %}</p>
+  </div>
+</div>
+
+<div class="card stack-sm">
+  <p>
+    {% set tc = tasks | length %}
+    {% set pc = primers | length %}
+    {% if tc and pc %}
+      <strong>{{ tc }} task{{ 's' if tc != 1 else '' }}</strong> and <strong>{{ pc }} primer{{ 's' if pc != 1 else '' }}</strong> were created as drafts.
+    {% elif tc %}
+      <strong>{{ tc }} task{{ 's' if tc != 1 else '' }}</strong> {{ 'were' if tc != 1 else 'was' }} created as {{ 'drafts' if tc != 1 else 'a draft' }}.
+    {% elif pc %}
+      <strong>{{ pc }} primer{{ 's' if pc != 1 else '' }}</strong> {{ 'were' if pc != 1 else 'was' }} created as {{ 'drafts' if pc != 1 else 'a draft' }}.
+    {% endif %}
+    Review each record before submitting for approval.
+  </p>
+  <div class="actions-bar">
+    {% if tasks %}
+      <a class="btn secondary" href="/tasks?status=draft">View all draft tasks</a>
+    {% endif %}
+    {% if primers %}
+      <a class="btn secondary" href="/primers?status=draft">View all draft primers</a>
+    {% endif %}
+    <a class="btn secondary" href="/import/pdf">Back to import library</a>
+  </div>
+</div>
+
+{% if tasks %}
+<div class="card stack-sm">
+  <div class="section-header">Tasks ({{ tasks | length }})</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th style="width:120px">Domain</th>
+        <th style="width:100px">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tasks %}
+      <tr>
+        <td><a href="/tasks/{{ t.record_id }}/{{ t.version }}">{{ t.title }}</a></td>
+        <td class="muted">{{ t.domain or '—' }}</td>
+        <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if primers %}
+<div class="card stack-sm">
+  <div class="section-header">Primers ({{ primers | length }})</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th style="width:120px">Domain</th>
+        <th style="width:100px">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in primers %}
+      <tr>
+        <td><a href="/primers/{{ p.record_id }}/{{ p.version }}">{{ p.title }}</a></td>
+        <td class="muted">{{ p.domain or '—' }}</td>
+        <td><span class="badge badge-{{ p.status }}">{{ p.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

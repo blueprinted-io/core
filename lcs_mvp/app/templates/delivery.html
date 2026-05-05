@@ -41,8 +41,9 @@
 </div>
 
 <div class="card stack-sm">
-  <div class="section-header">Generate export</div>
-  <form method="post" action="/delivery/export" class="stack-sm">
+  <div class="section-header">Generate export package</div>
+  <p class="muted">Downloads a ZIP containing structured content data, all referenced images, and format-specific LLM instructions. Upload the ZIP directly to Claude, ChatGPT, or any other LLM to generate the finished document.</p>
+  <form method="post" action="/delivery/export-package" class="stack-sm">
     <div>
       <label>Workflow (confirmed only)</label>
       <select name="workflow_key" required>
@@ -51,21 +52,22 @@
           <option value="{{ w.record_id }}@{{ w.version }}">{{ w.title }} (v{{ w.version }})</option>
         {% endfor %}
       </select>
-      <div class="muted" style="margin-top:6px">Only confirmed workflows are listed. Export will fail if referenced tasks are not confirmed.</div>
+      <div class="muted" style="margin-top:6px">Only confirmed workflows are listed. All referenced tasks must also be confirmed.</div>
     </div>
 
     <div>
       <label>Output format</label>
-      <select name="modality" required>
-        <option value="docx">Word (DOCX) — ILT-ready handout</option>
-        <option value="md">Markdown — plain text, version-control friendly</option>
-        <option value="html">HTML — browser view, print to PDF via Ctrl+P</option>
+      <select name="export_format" required>
+        <option value="ilt_slides">ILT Slides</option>
+        <option value="ilt_facilitators_guide">ILT Facilitators Guide</option>
+        <option value="self_paced_html">Self-Paced HTML</option>
+        <option value="helpsheet">Helpsheet</option>
+        <option value="scorm" disabled>Self-Paced SCORM (coming soon)</option>
       </select>
-      <div class="muted" style="margin-top:6px">To generate a PDF: choose HTML, then use your browser's print function (Ctrl+P → Save as PDF).</div>
     </div>
 
     <div class="actions-bar" style="margin-top:4px">
-      <button class="btn" type="submit">Generate</button>
+      <button class="btn" type="submit">Generate →</button>
       <a class="btn secondary" href="/workflows">Browse workflows</a>
     </div>
   </form>
