@@ -1389,6 +1389,16 @@ ins.diff-ins{background:color-mix(in oklab,var(--ok) 18%,transparent);color:var(
 .xp-role-name{font-size:14px;font-weight:700;margin:0 0 5px;letter-spacing:-0.01em}
 .xp-role-desc{font-size:12px;color:var(--muted);margin:0;line-height:1.5}
 @media(max-width:640px){.how-steps-grid,.record-type-grid,.xp-roles-grid{grid-template-columns:1fr}.xp-flow-rail{flex-direction:column;align-items:stretch}.xp-flow-arrow{transform:rotate(90deg);align-self:center}.xp-return-row{display:none}}
+/* Export format checkboxes */
+.format-checkbox-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:6px}
+.format-checkbox-item{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;cursor:pointer;transition:border-color .12s,background .12s;background:var(--panel)}
+.format-checkbox-item:hover{border-color:var(--accent);background:color-mix(in oklab,var(--accent) 7%,var(--panel))}
+.format-checkbox-item input[type="checkbox"]{width:auto;height:auto;flex-shrink:0;margin-top:3px;padding:0;border-radius:3px;accent-color:var(--accent)}
+.format-checkbox-item:has(input:checked){border-color:var(--accent);background:color-mix(in oklab,var(--accent) 10%,var(--panel))}
+.format-checkbox-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.format-checkbox-name{font-size:13px;font-weight:600;line-height:1.3}
+.format-checkbox-desc{font-size:12px;color:var(--muted);line-height:1.4}
+@media(max-width:560px){.format-checkbox-grid{grid-template-columns:1fr}}
 /* Contributor dashboard sections */
 .contrib-section{margin-bottom:28px}
 .contrib-section-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}

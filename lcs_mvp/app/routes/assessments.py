@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 import json
 
-from ..config import templates
+from ..config import templates, LOGO_TEMP_DIR
 from ..database import db, utc_now_iso, _active_domains, _user_has_domain, _workflow_domains
 from ..audit import audit, _normalize_domains, _fetch_return_note, get_latest_version
 from ..linting import _normalize_steps
@@ -458,8 +460,34 @@ def delivery_export(request: Request, workflow_key: str = Form(""), modality: st
     raise HTTPException(status_code=409, detail=f"Modality '{mod}' is not operational yet")
 
 
+@router.post("/delivery/upload-logo")
+async def delivery_upload_logo(request: Request, logo: UploadFile = File(...)):
+    require(request.state.role, "delivery:export")
+
+    ext = Path(logo.filename or "").suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"}:
+        raise HTTPException(status_code=400, detail="Unsupported logo format. Use PNG, JPG, SVG, WebP, or GIF.")
+
+    contents = await logo.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Logo file too large (max 5MB).")
+
+    os.makedirs(LOGO_TEMP_DIR, exist_ok=True)
+    token = str(uuid.uuid4()) + ext
+    logo_path = os.path.join(LOGO_TEMP_DIR, token)
+    with open(logo_path, "wb") as f:
+        f.write(contents)
+
+    return JSONResponse({"token": token})
+
+
 @router.post("/delivery/export-package")
-def delivery_export_package(request: Request, workflow_key: str = Form(""), export_format: str = Form("")):
+def delivery_export_package(
+    request: Request,
+    workflow_key: str = Form(""),
+    export_format: str = Form(""),
+    logo_token: str = Form(""),
+):
     require(request.state.role, "delivery:export")
 
     wk = (workflow_key or "").strip()
@@ -471,8 +499,14 @@ def delivery_export_package(request: Request, workflow_key: str = Form(""), expo
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid workflow version")
 
+    logo_path = None
+    if logo_token:
+        candidate = os.path.join(LOGO_TEMP_DIR, os.path.basename(logo_token))
+        if os.path.isfile(candidate):
+            logo_path = candidate
+
     from .exports import workflow_export_package
-    return workflow_export_package(request, rid, ver, export_format)
+    return workflow_export_package(request, rid, ver, export_format, logo_path=logo_path)
 
 
 @router.post("/delivery/present")

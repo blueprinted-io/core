@@ -27,6 +27,7 @@ DB_BLANK_PATH = os.path.join(DATA_DIR, "lcs_blank.db")
 UPLOADS_DIR = os.path.join(DATA_DIR, "uploads")
 EXPORTS_DIR = os.path.join(DATA_DIR, "exports")
 TASK_IMAGES_DIR = os.path.join(DATA_DIR, "task_images")
+LOGO_TEMP_DIR = os.path.join(DATA_DIR, "logo_temp")
 
 # ---------------------------------------------------------------------------
 # Database key / profile constants
@@ -69,7 +70,7 @@ PHASE1_OPERATIONAL_DOMAINS = [
 
 STALENESS_DAYS = 90   # confirmed content not reviewed within this threshold is considered stale
 SESSION_TTL_HOURS = int(os.environ.get("LCS_SESSION_TTL_HOURS", "24"))
-STATIC_ASSET_VERSION = "92"   # bump on each deploy to bust cached JS/CSS
+STATIC_ASSET_VERSION = "94"   # bump on each deploy to bust cached JS/CSS
 
 # ---------------------------------------------------------------------------
 # Jinja2 templates singleton (shared across all route modules)

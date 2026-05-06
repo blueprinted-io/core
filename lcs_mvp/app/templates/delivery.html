@@ -43,7 +43,7 @@
 <div class="card stack-sm">
   <div class="section-header">Generate export package</div>
   <p class="muted">Downloads a ZIP containing structured content data, all referenced images, and format-specific LLM instructions. Upload the ZIP directly to Claude, ChatGPT, or any other LLM to generate the finished document.</p>
-  <form method="post" action="/delivery/export-package" class="stack-sm">
+  <form method="post" action="/delivery/export-package" class="stack-sm" id="export-package-form">
     <div>
       <label>Workflow (confirmed only)</label>
       <select name="workflow_key" required>
@@ -56,21 +56,104 @@
     </div>
 
     <div>
-      <label>Output format</label>
-      <select name="export_format" required>
-        <option value="ilt_slides">ILT Slides</option>
-        <option value="ilt_facilitators_guide">ILT Facilitators Guide</option>
-        <option value="self_paced_html">Self-Paced HTML</option>
-        <option value="helpsheet">Helpsheet</option>
-        <option value="scorm" disabled>Self-Paced SCORM (coming soon)</option>
-      </select>
+      <label>Output formats</label>
+      <div class="format-checkbox-grid">
+        <label class="format-checkbox-item">
+          <input type="checkbox" name="export_format" value="ilt_slides">
+          <span class="format-checkbox-body">
+            <span class="format-checkbox-name">ILT Slides</span>
+            <span class="format-checkbox-desc">Slide deck for instructor-led training</span>
+          </span>
+        </label>
+        <label class="format-checkbox-item">
+          <input type="checkbox" name="export_format" value="ilt_facilitators_guide">
+          <span class="format-checkbox-body">
+            <span class="format-checkbox-name">ILT Facilitators Guide</span>
+            <span class="format-checkbox-desc">Facilitator notes, timing, and talking points</span>
+          </span>
+        </label>
+        <label class="format-checkbox-item">
+          <input type="checkbox" name="export_format" value="self_paced_html">
+          <span class="format-checkbox-body">
+            <span class="format-checkbox-name">Self-Paced HTML</span>
+            <span class="format-checkbox-desc">Interactive e-learning page with navigation</span>
+          </span>
+        </label>
+        <label class="format-checkbox-item">
+          <input type="checkbox" name="export_format" value="helpsheet">
+          <span class="format-checkbox-body">
+            <span class="format-checkbox-name">Helpsheet</span>
+            <span class="format-checkbox-desc">Just-in-time quick reference, A4</span>
+          </span>
+        </label>
+      </div>
+      <p class="muted" style="margin-top:6px;margin-bottom:0;font-size:13px">Each selected format downloads as a separate ZIP.</p>
+    </div>
+
+    <div>
+      <label>Client logo <span class="muted" style="font-weight:400">(optional)</span></label>
+      <input type="file" id="logo-file" accept=".png,.jpg,.jpeg,.svg,.webp,.gif" style="cursor:pointer">
+      <p class="muted" style="margin-top:6px;margin-bottom:0;font-size:13px">Placed on cover pages and footers. PNG or SVG recommended. Not stored after download.</p>
     </div>
 
     <div class="actions-bar" style="margin-top:4px">
-      <button class="btn" type="submit">Generate →</button>
+      <button class="btn" id="export-package-btn" type="submit">Generate →</button>
       <a class="btn secondary" href="/workflows">Browse workflows</a>
     </div>
   </form>
+
+  <script>
+  (function () {
+    var form = document.getElementById('export-package-form');
+    if (!form) return;
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var wkEl = form.querySelector('[name="workflow_key"]');
+      var workflowKey = wkEl ? wkEl.value : '';
+      if (!workflowKey) { alert('Please select a workflow.'); return; }
+      var checked = Array.from(form.querySelectorAll('input[name="export_format"]:checked'));
+      if (!checked.length) { alert('Please select at least one output format.'); return; }
+      var btn = document.getElementById('export-package-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+      var formats = checked.map(function (el) { return el.value; });
+
+      var logoToken = '';
+      var logoFileEl = document.getElementById('logo-file');
+      if (logoFileEl && logoFileEl.files && logoFileEl.files[0]) {
+        try {
+          if (btn) btn.textContent = 'Uploading logo…';
+          var fd = new FormData();
+          fd.append('logo', logoFileEl.files[0]);
+          var resp = await fetch('/delivery/upload-logo', { method: 'POST', body: fd });
+          if (resp.ok) { var data = await resp.json(); logoToken = data.token || ''; }
+        } catch (err) { console.warn('Logo upload failed, continuing without logo:', err); }
+        if (btn) btn.textContent = 'Generating…';
+      }
+
+      function triggerDownload(format, delay, token) {
+        setTimeout(function () {
+          var f = document.createElement('form');
+          f.method = 'POST'; f.action = '/delivery/export-package'; f.style.display = 'none';
+          var i1 = document.createElement('input'); i1.type = 'hidden'; i1.name = 'workflow_key'; i1.value = workflowKey; f.appendChild(i1);
+          var i2 = document.createElement('input'); i2.type = 'hidden'; i2.name = 'export_format'; i2.value = format; f.appendChild(i2);
+          if (token) { var i3 = document.createElement('input'); i3.type = 'hidden'; i3.name = 'logo_token'; i3.value = token; f.appendChild(i3); }
+          var iframeName = 'dl_' + format + '_' + Date.now();
+          var iframe = document.createElement('iframe'); iframe.name = iframeName; iframe.style.display = 'none';
+          document.body.appendChild(iframe); f.target = iframeName; document.body.appendChild(f); f.submit();
+          setTimeout(function () {
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            if (f.parentNode) f.parentNode.removeChild(f);
+          }, 90000);
+        }, delay);
+      }
+
+      formats.forEach(function (format, i) { triggerDownload(format, i * 900, logoToken); });
+      setTimeout(function () {
+        if (btn) { btn.disabled = false; btn.textContent = 'Generate →'; }
+      }, formats.length * 900 + 500);
+    });
+  })();
+  </script>
 </div>
 
 <div class="card stack-sm">
